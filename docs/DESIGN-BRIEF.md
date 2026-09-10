@@ -22,7 +22,7 @@
 - **一般ユーザー**: 残高・トランザクション・モザイク（トークン）・ネームスペースの照会、手数料の目安、アドレス検証
 - **ノード運用者**: ノードの状態、同期確認、ハーベスティング状況、**Votingキーの失効日の算出**
 
-既存実装 [husqvaluna/symbol-blockchain-mcp-server](https://github.com/husqvaluna/symbol-blockchain-mcp-server) は反面教師。REST の67エンドポイントを機械的に67ツールにしただけで付加価値がなく、`SYMBOL_API_URL` 環境変数を読んでログに出すのに**実際のリクエストには使われずテストネット固定**というバグがあり、LICENSEが無く、2025年4月以降放置。**これらを全部裏返したものを作る。**
+設計上の要点は次の 3 つ。REST エンドポイントをそのまま写すのではなく、質問単位のツールにする（§2-2）。設定したノード URL が実際のリクエストに使われることを回帰テストで保証する（§7）。LICENSE（MIT）を初回コミットに含める（§3）。
 
 ## 2. 設計原則（必須）
 
@@ -49,7 +49,7 @@
 | Lint/Format | biome | 軽量 |
 | CI | GitHub Actions。Node 20 / 22 のマトリクスで lint + test | |
 | 配布 | npm。`bin` で `npx` 起動。**ビルド済み JS（`dist/`）を配布**（利用者に tsx を要求しない） | |
-| ライセンス | **MIT**（初回コミットに含める） | 既存実装の欠陥 |
+| ライセンス | **MIT**（初回コミットに含める） | 公開リポジトリの必須要件 |
 
 **SDK v2 を使う上での注意**
 - v2 は公開から日が浅い。致命的な不具合に当たったら `@modelcontextprotocol/sdk` 1.x（`server.tool()` API）へ退避する選択肢はあるが、その場合も本書の設計は変えない。v1→v2 は `npx @modelcontextprotocol/codemod@latest v1-to-v2 .` で機械移行できる。
@@ -201,7 +201,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 `createMcpHandler(createServer)` を作り、`@modelcontextprotocol/client` の `Client` を `StreamableHTTPClientTransport(url, { fetch: (u, i) => handler.fetch(new Request(u, i)) })` で接続して `client.callTool()` を呼ぶ。ノードへの `fetch` は `vi.stubGlobal('fetch', ...)` で差し替え、固定レスポンスを返す。
 - 各ツールが `structuredContent` と `text` の両方を返し、`structuredContent` が `outputSchema` を満たす
 - 入力不正が `isError: true` で返り、本文に修正のヒントが含まれる
-- **`SYMBOL_NODE_URL` に設定したホストへ実際にリクエストが飛ぶこと**（stub した fetch が受け取った URL のホストを検証）。既存実装のバグに対する回帰テスト
+- **`SYMBOL_NODE_URL` に設定したホストへ実際にリクエストが飛ぶこと**（stub した fetch が受け取った URL のホストを検証）。設定した URL が実際に使われることを保証する回帰テスト
 - `SYMBOL_NETWORK=mainnet` で `/node/info` が testnet の generationHashSeed を返したら**起動失敗**すること
 - `SYMBOL_REFERENCE_NODES` に無いホストへは一切 fetch が呼ばれないこと
 - 64桁hex（秘密鍵に見える値）を `symbol_account_get` に渡しても公開鍵として扱うだけで、ログ・出力・外部送信に含めないこと
@@ -284,7 +284,6 @@ README、CHANGELOG、SECURITY.md、`evals/`（代表的な質問10件と期待�
 - 公式ドキュメント: https://docs.symbol.dev / ソース https://github.com/symbol/symbol-docs
 - コアリポジトリ（SDK・catbuffer・catapult）: https://github.com/symbol/symbol — JS SDK は `sdk/javascript`
 - nodewatch: https://nodewatch.symbol.tools/
-- 反面教師: https://github.com/husqvaluna/symbol-blockchain-mcp-server
 
 **MCP**
 - TypeScript SDK v2（リポジトリ内 `docs/` が一次情報。特に `docs/servers/tools.md`, `docs/servers/errors.md`, `docs/serving/stdio.md`, `docs/testing.md`, `docs/get-started/first-server.md`）: https://github.com/modelcontextprotocol/typescript-sdk
