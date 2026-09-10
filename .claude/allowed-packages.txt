@@ -1,0 +1,14 @@
+# Dependencies the agent may install (exact npm names, one per line).
+# Humans add entries here after reviewing the package (maintainer, downloads, provenance).
+# Runtime
+@modelcontextprotocol/server
+zod
+# Dev / test
+@modelcontextprotocol/client
+typescript
+tsx
+vitest
+@biomejs/biome
+@types/node
+# Only for verifying address / namespace-id test vectors in tests
+symbol-sdk

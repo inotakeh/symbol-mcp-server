@@ -1,0 +1,42 @@
+name: Release (npm trusted publishing)
+
+# A human creates the tag (v1.2.3). The agent is blocked from creating tags.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # GitHub Environment with "Required reviewers" = you. The job pauses until you approve in the UI.
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write   # OIDC for npm trusted publishing (no NPM_TOKEN anywhere)
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Trusted publishing needs npm >= 11.5.1
+      - run: npm install -g npm@latest
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Tag must match package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$ver" ]; then
+            echo "::error::tag v$tag does not match package.json version $ver"; exit 1
+          fi
+      - name: Publish
+        run: npm publish --access public --provenance

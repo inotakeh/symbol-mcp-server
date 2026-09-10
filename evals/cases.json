@@ -1,0 +1,144 @@
+{
+  "$comment": "Representative user questions and the tool call a well-behaved model should make. Validated deterministically by test/evals/cases.test.ts; see evals/README.md.",
+  "cases": [
+    {
+      "id": "voting-key-expiry",
+      "audience": "node-operator",
+      "question": "When does the voting key of NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY expire, and when should I register the next one?",
+      "question_ja": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY の Voting キーはいつ失効しますか。次のキーはいつ登録すべきですか。",
+      "expectedTool": "symbol_voting_key_status",
+      "expectedArguments": {
+        "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
+      },
+      "notes": "One call answers both halves: expiry epoch/height/date and the recommended renewal window (7 to 3 days before expiry). symbol_account_get also lists the keys but computes no dates."
+    },
+    {
+      "id": "node-sync-health",
+      "audience": "node-operator",
+      "question": "Is my node healthy and in sync right now?",
+      "question_ja": "私のノードは今、健全で同期していますか。",
+      "expectedTool": "symbol_node_status",
+      "expectedArguments": {},
+      "notes": "\"My node\" is the node fixed by SYMBOL_NODE_URL; no argument is needed. The tool reports /node/health, the age of the latest block and a synced flag."
+    },
+    {
+      "id": "delegated-harvesting-unlocked",
+      "audience": "node-operator",
+      "question": "Is NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY actually harvesting on my node? Which delegated harvesters are unlocked?",
+      "question_ja": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY は私のノードで実際にハーベストできていますか。解錠中の委任ハーベスターは誰ですか。",
+      "expectedTool": "symbol_harvesting_status",
+      "expectedArguments": {
+        "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
+      },
+      "notes": "account is optional; passing it makes the tool check whether the account's linked key is in the node's unlocked list."
+    },
+    {
+      "id": "node-lagging-reference",
+      "audience": "node-operator",
+      "question": "Is my node behind the other nodes?",
+      "question_ja": "私のノードは他のノードより遅れていますか。",
+      "expectedTool": "symbol_network_compare",
+      "expectedArguments": {},
+      "notes": "Compares SYMBOL_NODE_URL with SYMBOL_REFERENCE_NODES. Tools never accept node URLs as arguments; if no reference nodes are configured the tool says so instead of erroring."
+    },
+    {
+      "id": "network-parameters",
+      "audience": "node-operator",
+      "question": "What are this network's parameters: epoch length (voting set grouping), block target time, the XYM mosaic id and the current fee multipliers?",
+      "question_ja": "このネットワークの設定（エポック長 = votingSetGrouping、ブロック生成目標時間、XYM の mosaicId、現在の手数料乗数）を教えてください。",
+      "expectedTool": "symbol_network_info",
+      "expectedArguments": {},
+      "notes": "Network-wide constants come from /network/properties and /network/fees/transaction and need no argument. Account-specific eligibility (balance vs minVoterBalance) is reported by symbol_voting_key_status, harvesting limits by symbol_harvesting_status."
+    },
+    {
+      "id": "account-balance",
+      "audience": "general",
+      "question": "How much XYM does NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY hold?",
+      "question_ja": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY の XYM 残高はいくらですか。",
+      "expectedTool": "symbol_account_get",
+      "expectedArguments": {
+        "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
+      },
+      "notes": "Balances come back with the alias (symbol.xym), the divisibility-adjusted amount and the raw integer. format defaults to concise."
+    },
+    {
+      "id": "recent-transfers",
+      "audience": "general",
+      "question": "Show me the last 20 transfers involving NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY.",
+      "question_ja": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY が関わる直近 20 件の転送トランザクションを見せてください。",
+      "expectedTool": "symbol_transaction_search",
+      "expectedArguments": {
+        "address": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY",
+        "type": "transfer",
+        "pageSize": 20
+      },
+      "notes": "\"Transfers\" maps to type \"transfer\" (name or code 16724 both work). Default order is desc (newest first). pageSize must be 10 to 100 because the node rejects smaller pages."
+    },
+    {
+      "id": "transaction-details",
+      "audience": "general",
+      "question": "What is in transaction FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F?",
+      "question_ja": "トランザクション FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F の中身は何ですか。",
+      "expectedTool": "symbol_transaction_get",
+      "expectedArguments": {
+        "transactionHash": "FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F"
+      },
+      "notes": "A 64-hex value is a transaction hash, not a public key. The tool checks confirmed, unconfirmed and partial groups and reports the status; messages are decoded when plain and flagged when encrypted."
+    },
+    {
+      "id": "mosaic-supply",
+      "audience": "general",
+      "question": "What is the total supply and divisibility of XYM?",
+      "question_ja": "XYM の総供給量と可分性（divisibility）はいくつですか。",
+      "expectedTool": "symbol_mosaic_get",
+      "expectedArguments": {
+        "mosaic": "symbol.xym"
+      },
+      "notes": "The alias symbol.xym is accepted directly; the tool resolves it to the mosaic id. The hex id 6BED913FA20223F8 would also be valid on mainnet."
+    },
+    {
+      "id": "fee-estimate",
+      "audience": "general",
+      "question": "How much fee should I attach to a 200-byte transfer right now?",
+      "question_ja": "今、200 バイトの転送トランザクションに付ける手数料はいくらが目安ですか。",
+      "expectedTool": "symbol_fee_estimate",
+      "expectedArguments": {
+        "transactionSizeBytes": 200
+      },
+      "notes": "Returns slow/average/median/fast tiers in XYM from the node's current multipliers. Nothing is signed or sent. transactionSizeBytes is optional; omit it for a typical transfer."
+    },
+    {
+      "id": "namespace-owner-expiry",
+      "audience": "general",
+      "question": "Who owns the namespace symbol.xym and when does it expire?",
+      "question_ja": "ネームスペース symbol.xym の所有者は誰で、いつ期限が切れますか。",
+      "expectedTool": "symbol_namespace_get",
+      "expectedArguments": {
+        "namespace": "symbol.xym"
+      },
+      "notes": "Names and hex ids are both accepted. Expiry is an estimated date derived from the end height and the measured average block time."
+    },
+    {
+      "id": "address-validation",
+      "audience": "general",
+      "question": "Is NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY a valid mainnet address?",
+      "question_ja": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY は正しい mainnet アドレスですか。",
+      "expectedTool": "symbol_address_parse",
+      "expectedArguments": {
+        "value": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
+      },
+      "notes": "Purely offline: checksum, network byte (N = mainnet, T = testnet), base32/hex forms. A 64-hex public key is also accepted and yields the derived addresses."
+    },
+    {
+      "id": "future-height-date",
+      "audience": "general",
+      "question": "Roughly when will block 6,000,000 be produced?",
+      "question_ja": "ブロック高 6,000,000 はおおよそいつ生成されますか。",
+      "expectedTool": "symbol_time_convert",
+      "expectedArguments": {
+        "height": 6000000
+      },
+      "notes": "Exactly one of height, epoch or timestamp. A future height is an estimate from the measured average block time and is flagged isEstimate: true."
+    }
+  ]
+}

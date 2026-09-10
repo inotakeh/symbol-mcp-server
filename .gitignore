@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.tmp/
+# Claude Code local files (never commit)
+.claude/settings.local.json
+CLAUDE.local.md
+# secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store
+
+# operator-identifying strings used by scan-secrets.py (never commit)
+.claude/private-identifiers.txt

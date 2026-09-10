@@ -1,0 +1,49 @@
+{
+  "account": {
+    "version": 1,
+    "address": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+    "addressHeight": "210000",
+    "publicKey": "CE1992333C60AFEABDB289A14CC1A593FB797339C6D93DEEDB97052AED51845E",
+    "publicKeyHeight": "210007",
+    "accountType": 1,
+    "supplementalPublicKeys": {
+      "linked": {
+        "publicKey": "54E48E0C3625F1AC6DE5A8B2CD495D1DA3140745FD28145C9BCDE4FDA16F992B"
+      },
+      "node": {
+        "publicKey": "CEF91B106670BC3FDD3614D8B9E816DAA3286817F79A99F902BDC9CD73EF3568"
+      },
+      "vrf": {
+        "publicKey": "0D54BCD78C7E1544B9AA606B2501FAC97ECF2D6729856284444D61161E415316"
+      },
+      "voting": {
+        "publicKeys": [
+          {
+            "publicKey": "C38F80FBE1388C1C9BF7E5EF4664DA3AF45D750D65230FBFCC42CEC6481E68FE",
+            "startEpoch": 3340,
+            "endEpoch": 3699
+          },
+          {
+            "publicKey": "534A99C9338ECD32AD8E8C3F38304D2A9477049601ECE134A11F36EB4D36D549",
+            "startEpoch": 3700,
+            "endEpoch": 4059
+          }
+        ]
+      }
+    },
+    "activityBuckets": [],
+    "mosaics": [
+      {
+        "id": "6BED913FA20223F8",
+        "amount": "4321000000000"
+      },
+      {
+        "id": "66BAE04E8758599E",
+        "amount": "1000000000"
+      }
+    ],
+    "importance": "6543210987654",
+    "importanceHeight": "5763600"
+  },
+  "id": "94C191B206E2A80B09D4A3E3"
+}

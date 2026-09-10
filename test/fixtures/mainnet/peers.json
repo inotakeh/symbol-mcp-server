@@ -1,0 +1,32 @@
+[
+  {
+    "version": 16777993,
+    "publicKey": "0D90FF9DBF4F3A0F0696B99E802672A287123C9C377E694142792C46334F85E1",
+    "networkGenerationHashSeed": "57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6",
+    "roles": 3,
+    "port": 7900,
+    "networkIdentifier": 104,
+    "host": "xym.symbol-network.com",
+    "friendlyName": "xym.symbol-network.com"
+  },
+  {
+    "version": 16777993,
+    "publicKey": "1D90FF9DBF4F3A0F0696B99E802672A287123C9C377E694142792C46334F85E2",
+    "networkGenerationHashSeed": "57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6",
+    "roles": 1,
+    "port": 7900,
+    "networkIdentifier": 104,
+    "host": "peer-one.example",
+    "friendlyName": "peer one"
+  },
+  {
+    "version": 16777993,
+    "publicKey": "2D90FF9DBF4F3A0F0696B99E802672A287123C9C377E694142792C46334F85E3",
+    "networkGenerationHashSeed": "57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6",
+    "roles": 7,
+    "port": 7900,
+    "networkIdentifier": 104,
+    "host": "peer-two.example",
+    "friendlyName": "peer\u0007two\u202E"
+  }
+]

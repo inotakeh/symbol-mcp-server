@@ -1,0 +1,41 @@
+{
+  "network": {
+    "identifier": "mainnet",
+    "nemesisSignerPublicKey": "BE0B4CF546B7B4F4BBFCFF9F574FDA527C07A53D3FC76F8BB7DB746F8E8E0A9F",
+    "nodeEqualityStrategy": "host",
+    "generationHashSeed": "57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6",
+    "epochAdjustment": "1615853185s"
+  },
+  "chain": {
+    "enableVerifiableState": true,
+    "enableVerifiableReceipts": true,
+    "currencyMosaicId": "0x6BED'913F'A202'23F8",
+    "harvestingMosaicId": "0x6BED'913F'A202'23F8",
+    "blockGenerationTargetTime": "30s",
+    "blockTimeSmoothingFactor": "3000",
+    "blockFinalizationInterval": "30",
+    "importanceGrouping": "720",
+    "importanceActivityPercentage": "5",
+    "maxRollbackBlocks": "0",
+    "maxDifficultyBlocks": "60",
+    "defaultDynamicFeeMultiplier": "100",
+    "maxTransactionLifetime": "6h",
+    "maxBlockFutureTime": "300ms",
+    "initialCurrencyAtomicUnits": "7'842'928'625'000'000",
+    "maxMosaicAtomicUnits": "8'999'999'999'000'000",
+    "totalChainImportance": "7'842'928'625'000'000",
+    "minHarvesterBalance": "10'000'000'000",
+    "maxHarvesterBalance": "50'000'000'000'000",
+    "minVoterBalance": "3'000'000'000'000",
+    "votingSetGrouping": "1440",
+    "maxVotingKeysPerAccount": "3",
+    "minVotingKeyLifetime": "112",
+    "maxVotingKeyLifetime": "360",
+    "harvestBeneficiaryPercentage": "25",
+    "harvestNetworkPercentage": "5",
+    "harvestNetworkFeeSinkAddress": "NBUTOBVT5JQDCV6UEPCPFHWWOAOPOCLA5AY5FKI",
+    "maxTransactionsPerBlock": "6'000"
+  },
+  "plugins": {},
+  "forkHeights": {}
+}

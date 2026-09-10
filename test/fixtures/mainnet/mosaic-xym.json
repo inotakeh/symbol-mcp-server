@@ -1,0 +1,14 @@
+{
+  "mosaic": {
+    "version": 1,
+    "id": "6BED913FA20223F8",
+    "supply": "7842928625000000",
+    "startHeight": "1",
+    "ownerAddress": "6816B9E6B5FCC12A8E09C5B5D8C4D4A5F1F2C3D4E5F60718",
+    "revision": 1,
+    "flags": 2,
+    "divisibility": 6,
+    "duration": "0"
+  },
+  "id": "605221F8E27EB94C92742000"
+}

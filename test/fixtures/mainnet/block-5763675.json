@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "hash": "18A0750D2E160DA1220F245B29CAD8502717BD53A72145B606E497DE9A740224",
+    "generationHash": "FA86E387101C33F869D470AA6BF7E1304C0ED06EDEAF191863659A7B2E45F16F",
+    "totalFee": "0",
+    "totalTransactionsCount": 0,
+    "stateHashSubCacheMerkleRoots": [],
+    "transactionsCount": 0,
+    "statementsCount": 1
+  },
+  "block": {
+    "size": 376,
+    "signature": "DFA0ADA78B34B6DB6BD871DC0183AA69A3AE036A949DFC9B03AC85D96FF3D7F63FB4F015DE7D93007E88B7985DD6A3F38EFFA1919E69D464E4BED78219313907",
+    "signerPublicKey": "8B30D19BCD7A61E7E4B1612A7C75C93832CB1599A0715B80614B9EC2C386821A",
+    "version": 1,
+    "network": 104,
+    "type": 33091,
+    "height": "5763675",
+    "timestamp": "173156113808",
+    "difficulty": "127491039663979",
+    "feeMultiplier": 0
+  },
+  "id": "6AA21D8C10F2331B401CF8B8"
+}

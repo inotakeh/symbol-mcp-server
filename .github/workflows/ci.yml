@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least privilege by default. Jobs that need more must declare it themselves.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      # SECURITY: pin every third-party action to a full commit SHA before the first release
+      # (Dependabot keeps pinned SHAs updated). Tags are used here only as a starting point.
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Audit (high and above)
+        run: npm audit --omit=dev --audit-level=high
+
+  # Fails the PR when a new dependency carries a known vulnerability or a disallowed license.
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: on-failure
+
+  # Refuses PRs that touch guardrail/governance files unless opened by the maintainer.
+  protected-files:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check protected paths
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          MAINTAINER: inotakeh
+        run: |
+          changed=$(git diff --name-only "$BASE" "$HEAD")
+          echo "$changed"
+          if echo "$changed" | grep -E '^(\.claude/|\.github/|CLAUDE\.md$|SECURITY\.md$|LICENSE|server\.json$|\.npmrc$)' ; then
+            if [ "$AUTHOR" != "$MAINTAINER" ]; then
+              echo "::error::Protected files changed by $AUTHOR. Only $MAINTAINER may change guardrail/governance files."
+              exit 1
+            fi
+          fi

@@ -1,0 +1,11 @@
+{
+  "version": 16777993,
+  "publicKey": "CE1992333C60AFEABDB289A14CC1A593FB797339C6D93DEEDB97052AED51845E",
+  "networkGenerationHashSeed": "57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6",
+  "roles": 7,
+  "port": 7900,
+  "networkIdentifier": 104,
+  "host": "mainnet-node.example",
+  "friendlyName": "fixture-node",
+  "nodePublicKey": "CEF91B106670BC3FDD3614D8B9E816DAA3286817F79A99F902BDC9CD73EF3568"
+}

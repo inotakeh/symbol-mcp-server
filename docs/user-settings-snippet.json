@@ -1,0 +1,28 @@
+{
+  "$comment": "Merge into ~/.claude/settings.json (your user settings). Some keys are honored only at user/managed level, not in the repo's .claude/settings.json.",
+
+  "permissions": {
+    "disableBypassPermissionsMode": "disable"
+  },
+
+  "sandbox": {
+    "enabled": true,
+    "network": {
+      "strictAllowlist": true
+    }
+  },
+
+  "hooks": {
+    "ConfigChange": [
+      {
+        "matcher": "project_settings|local_settings",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json,sys,datetime; d=json.load(sys.stdin); open(__import__('os').path.expanduser('~/claude-config-audit.log'),'a').write(json.dumps({'t':datetime.datetime.now().isoformat(),'source':d.get('source'),'file':d.get('file_path')})+'\\n'); print(json.dumps({'decision':'block','reason':'Settings changed during the session. Review the change and restart the session to apply it.'}))\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "_comment": "Synthetic fixture: height 5763675 - 10000 with a timestamp chosen so the measured average block time is exactly 30.030s.",
+  "meta": {
+    "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "totalFee": "0",
+    "totalTransactionsCount": 0,
+    "transactionsCount": 0,
+    "statementsCount": 1
+  },
+  "block": {
+    "size": 376,
+    "version": 1,
+    "network": 104,
+    "type": 33091,
+    "height": "5753675",
+    "timestamp": "172855813808",
+    "feeMultiplier": 0
+  },
+  "id": "000000000000000000000000"
+}

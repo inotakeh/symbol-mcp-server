@@ -1,0 +1,26 @@
+{
+  "_source": "https://github.com/symbol/symbol/blob/dev/tests/vectors/symbol/crypto/1.test-address.json (first three entries; public keys only)",
+  "vectors": [
+    {
+      "publicKey": "2E834140FD66CF87B254A693A2C7862C819217B676D3943267156625E816EC6F",
+      "address_Public": "NATNE7Q5BITMUTRRN6IB4I7FLSDRDWZA34SQ33Y",
+      "address_PublicTest": "TATNE7Q5BITMUTRRN6IB4I7FLSDRDWZA37JGO5Q"
+    },
+    {
+      "publicKey": "4875FD2E32875D1BC6567745F1509F0F890A1BF8EE59FA74452FA4183A270E03",
+      "address_Public": "NDR6EW2WBHJQDYMNGFX2UBZHMMZC5PGL2YCZOQQ",
+      "address_PublicTest": "TDR6EW2WBHJQDYMNGFX2UBZHMMZC5PGL2YBO3KA"
+    },
+    {
+      "publicKey": "9F780097FB6A1F287ED2736A597B8EA7F08D20F1ECDB9935DE6694ECF1C58900",
+      "address_Public": "NCOXVZMAZJTT4I3F7EAZYGNGR77D6WPTRH6SYIQ",
+      "address_PublicTest": "TCOXVZMAZJTT4I3F7EAZYGNGR77D6WPTRE3VIBQ"
+    }
+  ],
+  "fixture": {
+    "_note": "Synthetic account used by test/fixtures/mainnet (see test/fixtures/README.md). Consistency check only; the entries above are the correctness vectors.",
+    "publicKey": "CE1992333C60AFEABDB289A14CC1A593FB797339C6D93DEEDB97052AED51845E",
+    "hex": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+    "base32": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
+  }
+}

@@ -1,0 +1,8 @@
+# Packages the agent may execute via npx / pnpm dlx / bunx (exact names).
+vitest
+tsc
+tsx
+biome
+@biomejs/biome
+@modelcontextprotocol/inspector
+@modelcontextprotocol/codemod

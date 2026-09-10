@@ -1,0 +1,9 @@
+# Every change needs the maintainer's review.
+*                         @inotakeh
+/.claude/                 @inotakeh
+/.github/                 @inotakeh
+/CLAUDE.md                @inotakeh
+/package.json             @inotakeh
+/package-lock.json        @inotakeh
+/server.json              @inotakeh
+/.npmrc                   @inotakeh

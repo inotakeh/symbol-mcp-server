@@ -1,0 +1,7 @@
+{
+  "status": 404,
+  "body": {
+    "code": "ResourceNotFound",
+    "message": "no resource exists with id 'FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F'"
+  }
+}
