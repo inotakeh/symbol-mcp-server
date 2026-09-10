@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-10
+
 Initial release candidate (0.1.0).
 
 ### Changed
@@ -58,4 +60,5 @@ Initial release candidate (0.1.0).
 - Every request has a timeout, a `User-Agent`, a 5 MB response cap and a concurrency limit of 4,
   and every response is schema-validated before use.
 
-[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/commits/main
+[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/inotakeh/symbol-mcp-server/releases/tag/v0.1.0
