@@ -2,7 +2,7 @@
 
 Representative questions a user might ask an assistant that has this server attached, together
 with the tool call a well-behaved model is expected to make. They document intended tool selection
-and argument shapes for the 13 tools, and they double as a deterministic regression test.
+and argument shapes for the 14 tools, and they double as a deterministic regression test.
 
 ## Files
 

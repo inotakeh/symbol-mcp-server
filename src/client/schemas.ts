@@ -245,6 +245,42 @@ export const NamespaceInfoSchema = z.object({
 });
 export type NamespaceInfo = z.infer<typeof NamespaceInfoSchema>;
 
+/**
+ * Receipts inside a transaction statement (symbol-openapi spec/plugins/receipt/schemas/
+ * *ReceiptDTO.yml). Balance-change receipts such as HarvestFee (8515) carry mosaicId, amount and
+ * targetAddress; Inflation (20803) has no targetAddress; other kinds vary, so the object is loose.
+ */
+export const ReceiptSchema = z
+  .object({
+    version: z.number().int(),
+    type: z.number().int().nonnegative(),
+    mosaicId: Hex16.optional(),
+    amount: Uint64String.optional(),
+    targetAddress: Hex48.optional(),
+  })
+  .loose();
+export type Receipt = z.infer<typeof ReceiptSchema>;
+
+/** One row of `GET /statements/transaction` (TransactionStatementInfoDTO). */
+export const TransactionStatementInfoSchema = z.object({
+  id: z.string().optional(),
+  meta: z.object({ timestamp: Uint64String }).loose(),
+  statement: z
+    .object({
+      height: Uint64String,
+      source: z.object({ primaryId: z.number().int(), secondaryId: z.number().int() }).loose(),
+      receipts: z.array(ReceiptSchema),
+    })
+    .loose(),
+});
+export type TransactionStatementInfo = z.infer<typeof TransactionStatementInfoSchema>;
+
+export const TransactionStatementPageSchema = z.object({
+  data: z.array(TransactionStatementInfoSchema),
+  pagination: z.object({ pageNumber: z.number().int(), pageSize: z.number().int() }),
+});
+export type TransactionStatementPage = z.infer<typeof TransactionStatementPageSchema>;
+
 /** `GET /node/unlockedaccount`: key is singular (test/fixtures/mainnet/unlockedaccount.json). */
 export const UnlockedAccountSchema = z.object({ unlockedAccount: z.array(Hex64) });
 export type UnlockedAccount = z.infer<typeof UnlockedAccountSchema>;

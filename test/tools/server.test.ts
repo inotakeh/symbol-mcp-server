@@ -30,6 +30,7 @@ describe('server registration', () => {
       'symbol_time_convert',
       'symbol_harvesting_status',
       'symbol_network_compare',
+      'symbol_harvesting_income',
     ]);
     for (const tool of tools) {
       expect(tool.name).toMatch(/^symbol_[a-z]+_[a-z_]+$/);
@@ -65,6 +66,7 @@ describe('every tool returns structuredContent that validates against its output
     ['symbol_time_convert', { height: 5_763_675 }],
     ['symbol_harvesting_status', { account: ACCOUNT }],
     ['symbol_network_compare', {}],
+    ['symbol_harvesting_income', { account: ACCOUNT, fromHeight: 5_763_675, toHeight: 5_763_675 }],
   ];
   for (const [name, args] of calls) {
     it(name, async () => {
@@ -100,6 +102,11 @@ describe('outbound requests', () => {
     await server.callTool('symbol_address_parse', { value: ACCOUNT });
     await server.callTool('symbol_time_convert', { epoch: 4004 });
     await server.callTool('symbol_harvesting_status', { account: ACCOUNT });
+    await server.callTool('symbol_harvesting_income', {
+      account: ACCOUNT,
+      fromHeight: 5_763_675,
+      toHeight: 5_763_675,
+    });
     expect(server.requests.length).toBeGreaterThan(5);
     const hosts = new Set(server.requests.map((u) => u.host));
     expect([...hosts]).toEqual([TEST_NODE_HOST]);

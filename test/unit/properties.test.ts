@@ -74,6 +74,7 @@ describe('parseNetworkProperties', () => {
     expect(props.minVotingKeyLifetime).toBe(112);
     expect(props.maxVotingKeyLifetime).toBe(360);
     expect(props.harvestBeneficiaryPercentage).toBe(25);
+    expect(props.harvestNetworkPercentage).toBe(5);
   });
   it('fails loudly when a property is missing', () => {
     const raw = fixture<{ network: Record<string, unknown>; chain: Record<string, unknown> }>(

@@ -82,6 +82,8 @@ export interface NetworkProperties {
   readonly minVotingKeyLifetime: number;
   readonly maxVotingKeyLifetime: number;
   readonly harvestBeneficiaryPercentage: number;
+  /** Share of each block's harvest fee that goes to the network sink account (mainnet 5). */
+  readonly harvestNetworkPercentage: number;
 }
 
 export interface RawNetworkProperties {
@@ -120,5 +122,6 @@ export function parseNetworkProperties(raw: RawNetworkProperties): NetworkProper
     minVotingKeyLifetime: parsePropertyNumber(chain('minVotingKeyLifetime')),
     maxVotingKeyLifetime: parsePropertyNumber(chain('maxVotingKeyLifetime')),
     harvestBeneficiaryPercentage: parsePropertyNumber(chain('harvestBeneficiaryPercentage')),
+    harvestNetworkPercentage: parsePropertyNumber(chain('harvestNetworkPercentage')),
   };
 }

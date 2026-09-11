@@ -4,6 +4,7 @@ import { type AnyToolDefinition, registerTools } from './tools/_shared.js';
 import { accountGetTool } from './tools/symbol_account_get.js';
 import { addressParseTool } from './tools/symbol_address_parse.js';
 import { feeEstimateTool } from './tools/symbol_fee_estimate.js';
+import { harvestingIncomeTool } from './tools/symbol_harvesting_income.js';
 import { harvestingStatusTool } from './tools/symbol_harvesting_status.js';
 import { mosaicGetTool } from './tools/symbol_mosaic_get.js';
 import { namespaceGetTool } from './tools/symbol_namespace_get.js';
@@ -36,6 +37,8 @@ export const TOOLS: readonly AnyToolDefinition[] = [
   timeConvertTool,
   harvestingStatusTool,
   networkCompareTool,
+  // 0.2.0
+  harvestingIncomeTool,
 ];
 
 export function createServer(ctx: AppContext): McpServer {
