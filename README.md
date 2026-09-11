@@ -6,7 +6,7 @@
 
 [日本語版 README](README.ja.md)
 
-Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 13
+Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 14
 task-level tools. Instead of mirroring REST endpoints one-to-one, each tool answers a question a
 person actually asks:
 
@@ -128,7 +128,7 @@ Or commit a project-level `.mcp.json`:
 
 ## Tools
 
-All 13 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
+All 14 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
 identifiers only, never URLs.
 
 | Tool | Arguments | Answers |
@@ -146,6 +146,7 @@ identifiers only, never URLs.
 | `symbol_time_convert` | one of `height`, `epoch`, `timestamp` | Height, finalization epoch, network timestamp and wall-clock time. Exact for the past, estimated (and flagged) for the future. |
 | `symbol_harvesting_status` | `account` (optional) | Unlocked delegated harvesters on the node, harvesting limits and beneficiary percentage, and whether the given account's linked key is unlocked here. |
 | `symbol_network_compare` | none | Height and finalization of the node versus `SYMBOL_REFERENCE_NODES`, blocks behind the best, `lagging` flags. Explains what to do when no reference nodes are configured. |
+| `symbol_harvesting_income` | `account`, `fromDate` + `toDate` or `fromHeight` + `toHeight`, `granularity`, `format` | Harvest rewards received in the period: receipt count and exact XYM total (summed on the server as integers), harvester / beneficiary / unknown split, per-day buckets in `SYMBOL_TIMEZONE` or UTC, or a list of receipts. Dates are resolved to heights from block timestamps. |
 
 ### Example questions
 
@@ -169,6 +170,12 @@ full decoded messages and inner transactions.
 **"Is my node behind?"**
 → `symbol_node_status {}` checks the age of the latest block on the configured node;
 → `symbol_network_compare {}` reports how many blocks it trails `SYMBOL_REFERENCE_NODES`.
+
+**"How much did NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY earn from harvesting in August 2026?"**
+→ `symbol_harvesting_income { "account": "NCV5HR…", "fromDate": "2026-08-01", "toDate": "2026-08-31" }`
+Resolves the dates to block heights, reads every HarvestFee receipt addressed to the account and
+sums them as exact integers: total XYM, harvester versus beneficiary share, and one row per day.
+Nothing is left for the model to add up.
 
 More cases, with the exact arguments expected for each, are in [`evals/cases.json`](evals/cases.json).
 
@@ -215,6 +222,9 @@ https://nodewatch.symbol.tools/.
 - **Confirmed transactions only** in search. Unconfirmed and partial transactions are visible
   through `symbol_transaction_get` by hash.
 - **Harvesting status covers the configured node** (`/node/unlockedaccount`), not the whole network.
+- **Harvest income reads at most 20,000 statements per call** (200 pages of 100). A longer period
+  comes back `truncated`; split it with `fromHeight`/`toHeight`. Rewards are summed from HarvestFee
+  receipts, so a node that prunes receipts reports less than the chain holds.
 - **Mainnet and testnet only.** No transaction building, signing or announcing, by design.
 - **The URL is used as given.** The server does not switch ports or schemes on its own; if a node
   only serves port 3000 over http, it cannot be used unless it is on localhost.
