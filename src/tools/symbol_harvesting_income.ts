@@ -248,6 +248,7 @@ export const harvestingIncomeTool = defineTool({
   name: 'symbol_harvesting_income',
   title: 'Symbol harvesting income',
   description:
+    "Use this tool whenever the user asks about harvesting rewards, harvest income, or earnings for a period (e.g. 'last month', 'this year', 'per day'). Do not use symbol_transaction_search or a browser for this; harvest rewards are receipts, not transactions. " +
     'Total the harvest rewards (HarvestFee receipts of the network currency) an account received in a period, computed on the server with exact integer arithmetic: receipt count and XYM total, split into harvester (blocks the account harvested), beneficiary (blocks others harvested with this account as beneficiary) and unknown. Period is a date range (YYYY-MM-DD, resolved to heights from block timestamps) or a height range. granularity=daily gives per-day buckets, granularity=receipt lists each receipt. Read-only; no fiat conversion.',
   inputSchema,
   outputSchema,
