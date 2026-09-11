@@ -1,0 +1,50 @@
+{
+  "data": [
+    {
+      "statement": {
+        "height": "5764879",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51247120"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3660508"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18302542"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "5AEB6521F4FFD00EBBAF7D01",
+      "meta": {
+        "timestamp": "173192454149"
+      }
+    }
+  ],
+  "pagination": {
+    "pageNumber": 1,
+    "pageSize": 20
+  }
+}

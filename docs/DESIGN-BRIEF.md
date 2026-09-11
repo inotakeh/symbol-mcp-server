@@ -27,7 +27,7 @@
 ## 2. 設計原則（必須）
 
 1. **読み取り専用**。秘密鍵・ニーモニックを受け取る引数を作らない。署名しない。`PUT /transactions`（アナウンス）はツール化しない。
-2. **ツールは「質問に答える」単位**。エンドポイントの写しにしない。合計 13 ツール（§5）。Anthropicのガイド「複数の下位操作を1つの目的別ツールに統合する」に従う。
+2. **ツールは「質問に答える」単位**。エンドポイントの写しにしない。合計 14 ツール（§5）。Anthropicのガイド「複数の下位操作を1つの目的別ツールに統合する」に従う。
 3. **ノードURLは環境変数でのみ設定**（`SYMBOL_NODE_URL`）。**ツール引数でURLを受け取らない**（モデルが内部ネットワークへリクエストを向けられる SSRF 経路になるため）。起動時に `/node/info` を取得し、`networkGenerationHashSeed` で mainnet/testnet を判定。`SYMBOL_NETWORK` が指定されていて不一致なら**起動失敗**。使用ノードとネットワークを stderr にログ。
 4. **出力は構造化＋人間向け**。全ツールに `outputSchema` を定義し、`structuredContent` と、その JSON 文字列を入れた `text` ブロックの**両方**を返す（仕様の後方互換要件）。`structuredContent` の先頭に `summary: string`（1〜3行の要約）を必ず含める。金額は divisibility 適用後の値と生の整数の両方。日時は ISO 8601（UTC）＋ `SYMBOL_TIMEZONE` 指定時はローカル時刻も。数値IDは名前解決（例: `6BED913FA20223F8` → `symbol.xym`、`16724` → `transfer`）。
 5. **ネットワーク定数はハードコードしない**。`/network/properties` から取得してプロセス内キャッシュ。既知の値はテストの期待値としてのみ使う（例外: §4 の generationHashSeed 照合表）。
@@ -146,6 +146,14 @@ friendlyName、host、ロール（ビットフラグを Peer/API/Voting に展�
 
 **`symbol_network_compare`** — 引数なし（対象は `SYMBOL_REFERENCE_NODES`）。
 自ノードと各参照ノードの高さ・ファイナライズ高さ、最大差分、`lagging: boolean`（差が10ブロック超）。参照ノード未設定なら、その旨と https://nodewatch.symbol.tools/ を案内する（エラーにしない）。
+
+**`symbol_harvesting_income`**（0.2.0 で追加。ツール配列の末尾に登録し、既存の順序を変えない）— `account`（アドレスまたは公開鍵）、期間は `fromDate`/`toDate`（`YYYY-MM-DD`、両端含む。`SYMBOL_TIMEZONE` の日付、未指定なら UTC）または `fromHeight`/`toHeight` の**どちらか一方**（両方・どちらも無し・片方だけ・逆順・実在しない日付は `isError`）、`granularity`（`daily` 既定 / `receipt`）、`format`（`receipt` 時の上限: concise 50 件 / detailed 500 件）。
+- 指定期間にそのアカウント宛に発生した Harvest_Fee（8515）レシートのうち、通貨モザイク（`/network/properties` の `currencyMosaicId`）のものだけを集計する。件数・合計は**サーバー内で BigInt により決定的に計算**し、divisibility 適用後の文字列と生の整数を両方返す。summary の数値もその文字列を埋め込む（LLM に計算させない、丸めない）。
+- 日付→高さ: `/blocks/{h}` のタイムスタンプに対する二分探索（下限 1、上限 `/chain/info` の高さ）。from/to の探索は並行、それぞれ逐次なので同時リクエストは 2 本。
+- 取得: `GET /statements/transaction?receiptType=8515&targetAddress=<base32>&fromHeight&toHeight&pageSize=100&order=asc&pageNumber=n` を 100 件未満のページが返るまで読む（クエリ名と DTO は symbol-openapi `spec/plugins/receipt/` で確認済み）。上限 200 ページ（20,000 ステートメント）を超えたら `truncated: true`、`truncationReasons: ['pageLimit']`、summary に「期間を狭めるか fromHeight/toHeight で分割」。`/statements/transaction` と `/blocks/*` はキャッシュしない。
+- 分類（harvester / beneficiary / unknown）: 1 ブロックの 8515 レシートは harvester・beneficiary・ネットワークの 3 件が常に別レシートで（ハーベスターと beneficiary が同一アカウントでも 2 件別々。mainnet 実データで確認済み）、返却順は金額順ではない。同一ステートメント内の 8515 を amount 降順に並べ、`harvestBeneficiaryPercentage`(B) と `harvestNetworkPercentage`(N) から導いた (100-B-N):B:N（3 件）または (100-N):N（2 件、beneficiary 未設定のブロック）と各金額が合計の ±1 ポイント以内で一致すれば、最大 = harvester、2 番目（3 件時）= beneficiary。一致しなければそのステートメントの受取分は `unknown`（集計には含め、`unknownStatements` と summary に件数を出す）。比率をコードに焼かない。
+- 出力: `summary`、`period`（種別・日付・使用タイムゾーン）、`range`（fromHeight/toHeight と両端ブロックの日時）、`totals` と `daily[]`（`SYMBOL_TIMEZONE` の日付境界でバケット）または `receipts[]`、各行に harvester / beneficiary / unknown の内訳（`xym*` と `raw*`）、`truncated`、`notes`（「ハーベストは確率的で日ごとの変動が大きい」「為替換算は含まない」）。
+- 参照: `GET /statements/transaction`（TransactionStatementPage → `statement.receipts[]` の BalanceChangeReceiptDTO `{ type, mosaicId, amount, targetAddress }`、`meta.timestamp` はブロックのネットワークタイムスタンプ）、`GET /blocks/{height}`、`GET /chain/info`、`GET /accounts/{id}`。レシート種別の名前表は catbuffer `receipt_type.cats` から取り込む（`src/domain/receipttype.ts`）。
 
 ## 6. ドメイン知識と落とし穴
 

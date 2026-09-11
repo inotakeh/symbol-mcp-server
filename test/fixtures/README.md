@@ -9,7 +9,7 @@ Captured from a Symbol mainnet node and stored unchanged (`scripts/capture-fixtu
 transaction, namespace and unlocked-account files; the rest by hand):
 
 `chain-info.json`, `network-properties.json`, `fees.json`, `node-health.json`, `peers.json`
-(hosts partly replaced with `.example` names), `block-*.json`, `mosaic-xym.json`,
+(hosts partly replaced with `.example` names), `block-5753675.json`, `block-5763675.json`, `mosaic-xym.json`,
 `namespace-symbol.json`, `namespace-symbol-xym.json`, `namespace-names.json`,
 `transaction-transfer.json`, `transaction-aggregate.json`, `transaction-unconfirmed-404.json`,
 `not-found.json`.
@@ -27,6 +27,8 @@ remains. The response **shape** is untouched; only values were replaced:
 | `unlockedaccount.json` | all 15 delegated harvester public keys |
 | `mosaic-other.json`, `mosaic-names.json` | mosaic id, owner address, document id |
 | `transactions-search.json` | hashes, signatures, signer / cosigner / linked public keys, heights, timestamps, epochs, document ids |
+| `statements-harvest-page1.json`, `statement-harvest-one-block.json` | every receipt `targetAddress` (the account, the other delegated harvesters, the network sink), document ids. Heights, timestamps and amounts are verbatim |
+| `block-5764879.json` | signer public key, beneficiary address, block and generation hash, signature, VRF proof, previous / transactions / receipts / state hashes, sub-cache merkle roots, document id. Height, timestamp, difficulty and size are verbatim |
 
 Every synthetic value is derived deterministically, so the fixtures can be regenerated without
 the original data. `H(label)` is SHA3-256 of the UTF-8 label, upper-case hex:
@@ -45,6 +47,9 @@ the original data. `H(label)` is SHA3-256 of the UTF-8 label, upper-case hex:
 | signature, row *n* | `H("fixture:tx-sig-n:a") + H("fixture:tx-sig-n:b")`; cosignatures use `fixture:cosig-n` |
 | document `id` | first 12 bytes of `H("fixture:doc-id-n")`, `H("fixture:doc-id-account")`, `H("fixture:doc-id-mosaic")` |
 | other mosaic id | first 8 bytes of `H("fixture:mosaic-other")` with the top bit cleared |
+| harvest receipt targets other than the main account | `H("fixture:harvest-peer-n")` (n = 1…3, in order of receipt frequency) taken as a public key, then `publicKeyToAddress(…, 104)` in hex |
+| statement document `id`, row *n* | first 12 bytes of `H("fixture:doc-id-statement-n")` |
+| block 5764879 | `signerPublicKey` = the linked key above, `beneficiaryAddress` = the main address; `meta.hash` `H("fixture:block-hash-5764879")`, `generationHash` `H("fixture:block-generation-hash")`, signature `H("fixture:block-sig:a") + H("fixture:block-sig:b")`, `proofGamma` `H("fixture:block-proof-gamma")`, `proofVerificationHash` first 16 bytes of `H("fixture:block-proof-verification-hash")`, `proofScalar` `H("fixture:block-proof-scalar")`, `previousBlockHash` / `transactionsHash` / `receiptsHash` / `stateHash` `H("fixture:block-<previous|transactions|receipts|state>-hash")`, `stateHashSubCacheMerkleRoots[i]` `H("fixture:block-subcache-root-i")` (1-based), document id first 12 bytes of `H("fixture:doc-id-block-5764879")` |
 | node host / friendlyName | `mainnet-node.example` / `fixture-node` |
 
 Numbers were changed to round synthetic values that keep the tests' arithmetic consistent with

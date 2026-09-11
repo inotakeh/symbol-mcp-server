@@ -169,6 +169,23 @@ describe.skipIf(!enabled)('live node', () => {
     expect(withAccount.account).not.toBeNull();
   });
 
+  it.skipIf(!INTEGRATION_ACCOUNT)(
+    'symbol_harvesting_income totals the last three days for SYMBOL_INTEGRATION_ACCOUNT',
+    async () => {
+      const today = new Date();
+      const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+      const income = await call('symbol_harvesting_income', {
+        account: INTEGRATION_ACCOUNT,
+        fromDate: isoDay(new Date(today.getTime() - 2 * 86_400_000)),
+        toDate: isoDay(today),
+      });
+      expect((income.totals as { receipts: number }).receipts).toBeGreaterThanOrEqual(1);
+      const days = (income.daily as unknown[]).length;
+      expect(days).toBeGreaterThanOrEqual(1);
+      expect(days).toBeLessThanOrEqual(4);
+    },
+  );
+
   it('symbol_network_compare answers (reference nodes optional)', async () => {
     const result = await call('symbol_network_compare');
     const nodes = result.nodes as Array<{ role: string; reachable: boolean }>;

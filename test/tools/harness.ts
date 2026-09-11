@@ -33,6 +33,10 @@ export const TRANSFER_HASH = 'FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986
 export const AGGREGATE_HASH = '1B39E0DDA84039ECBB33F14E1937C68493E4076366D5DDD68F63D8AD4D19D402';
 
 export type RouteHandler = (request: Request, url: URL) => Response | Promise<Response>;
+/**
+ * Keys are `METHOD /path`. A key ending in `*` (`GET /blocks/*`) matches every path with that
+ * prefix and is consulted only when no exact key matches.
+ */
 export type Routes = Record<string, unknown | RouteHandler>;
 
 export function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
@@ -80,6 +84,9 @@ export function mainnetRoutes(): Routes {
     'GET /namespaces/A95F1F8A96159516': fixture('mainnet/namespace-symbol.json'),
     'POST /namespaces/names': fixture('mainnet/namespace-names.json'),
     'GET /node/unlockedaccount': fixture('mainnet/unlockedaccount.json'),
+    // 0.2.0 fixtures (harvest receipts; identifiers synthetic, see test/fixtures/README.md)
+    'GET /blocks/5764879': fixture('mainnet/block-5764879.json'),
+    'GET /statements/transaction': fixture('mainnet/statement-harvest-one-block.json'),
   };
 }
 
@@ -96,7 +103,13 @@ export function createFakeFetch(routes: Routes): FakeFetch {
     const url = new URL(request.url);
     requests.push(url);
     const key = `${request.method} ${url.pathname}`;
-    const route = routes[key];
+    let route = routes[key];
+    if (route === undefined) {
+      const wildcard = Object.keys(routes).find(
+        (k) => k.endsWith('*') && key.startsWith(k.slice(0, -1)),
+      );
+      if (wildcard !== undefined) route = routes[wildcard];
+    }
     if (route === undefined) {
       return jsonResponse(fixture('mainnet/not-found.json'), 404);
     }

@@ -7,6 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `symbol_harvesting_income`: totals the harvest rewards (HarvestFee receipts of the network
+  currency) an account received in a date range (`fromDate`/`toDate`, resolved to heights by a
+  binary search over block timestamps) or a height range. Sums are exact integers (BigInt) and are
+  split into harvester / beneficiary / unknown using `harvestBeneficiaryPercentage` and
+  `harvestNetworkPercentage` from the node; output is per-day buckets in `SYMBOL_TIMEZONE` (or UTC)
+  or a per-receipt list, with a 200-page (20,000 statement) cap reported as `truncated`. Registered
+  after the existing tools, so `tools/list` order is unchanged for them.
+- Receipt type table (`src/domain/receipttype.ts`, from catbuffer `receipt_type.cats`) and
+  `harvestNetworkPercentage` in the parsed network properties.
+
 ## [0.1.0] - 2026-09-10
 
 Initial release candidate (0.1.0).

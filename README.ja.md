@@ -6,7 +6,7 @@
 
 [English README](README.md)
 
-[Symbol](https://docs.symbol.dev/) の REST API を 13 個の目的別ツールとして公開する、読み取り専用の
+[Symbol](https://docs.symbol.dev/) の REST API を 14 個の目的別ツールとして公開する、読み取り専用の
 [MCP](https://modelcontextprotocol.io/) サーバーです。REST エンドポイントを 1 対 1 で写すのではなく、
 各ツールが「人が実際に尋ねる質問」に答えます。
 
@@ -124,7 +124,7 @@ claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/
 
 ## ツール
 
-13 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
+14 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
 
 | ツール | 引数 | 答えること |
 |---|---|---|
@@ -141,6 +141,7 @@ claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/
 | `symbol_time_convert` | `height` / `epoch` / `timestamp` のいずれか 1 つ | 高さ、確定エポック、ネットワークタイムスタンプ、実時刻の相互変換。過去は実測、将来は推定（その旨を明記）。 |
 | `symbol_harvesting_status` | `account`（任意） | ノードで解錠中の委任ハーベスター、ハーベスティングの残高制限と受益者割合、指定アカウントの linked キーがこのノードで解錠されているか。 |
 | `symbol_network_compare` | なし | 自ノードと `SYMBOL_REFERENCE_NODES` の高さ・確定高さ、最良ノードとの差、`lagging` フラグ。参照ノード未設定時はその旨と対処を案内。 |
+| `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。 |
 
 ### 質問の例
 
@@ -162,6 +163,11 @@ claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/
 **「私のノードは遅れていますか?」**
 → `symbol_node_status {}` が設定ノードの最新ブロックの古さを確認し、
 → `symbol_network_compare {}` が `SYMBOL_REFERENCE_NODES` に対して何ブロック遅れているかを返します。
+
+**「NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY の 2026 年 8 月のハーベスト報酬はいくら？」**
+→ `symbol_harvesting_income { "account": "NCV5HR…", "fromDate": "2026-08-01", "toDate": "2026-08-31" }`
+日付をブロック高さに解決し、そのアカウント宛の HarvestFee レシートを全件読んで整数のまま合算します。
+XYM 合計、harvester と beneficiary の内訳、日ごとの行を返すので、モデルが足し算をする余地はありません。
 
 期待される引数まで含めた他の例は [`evals/cases.json`](evals/cases.json) にあります。
 
@@ -204,6 +210,9 @@ claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/
 - **検索は確定トランザクションのみ。** 未確定・partial のトランザクションはハッシュ指定の
   `symbol_transaction_get` で参照できます。
 - **ハーベスティング状況は設定ノードの範囲**（`/node/unlockedaccount`）で、ネットワーク全体ではありません。
+- **ハーベスト報酬の集計は 1 回あたり最大 20,000 ステートメント**（100 件 × 200 ページ）。超える期間は
+  `truncated` になるので `fromHeight`/`toHeight` で分割してください。HarvestFee レシートから合算するため、
+  レシートを prune しているノードではチェーン上の実績より少なく出ます。
 - **mainnet と testnet のみ。** トランザクションの作成・署名・送信は設計上行いません。
 - **URL は指定どおりに使います。** ポートやスキームを勝手に変えません。http の 3000 番しか開いていないノードは
   localhost 以外では使えません。

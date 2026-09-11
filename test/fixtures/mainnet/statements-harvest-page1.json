@@ -1,0 +1,470 @@
+{
+  "data": [
+    {
+      "statement": {
+        "height": "5764879",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51247120"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3660508"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18302542"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "5AEB6521F4FFD00EBBAF7D01",
+      "meta": {
+        "timestamp": "173192454149"
+      }
+    },
+    {
+      "statement": {
+        "height": "5765591",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51247120"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3660508"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18302542"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "FC950F4E8A4F81273B03EE12",
+      "meta": {
+        "timestamp": "173213711715"
+      }
+    },
+    {
+      "statement": {
+        "height": "5765956",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51247120"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3660508"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18302542"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "D56EBE0411F3280FFF26110E",
+      "meta": {
+        "timestamp": "173224548297"
+      }
+    },
+    {
+      "statement": {
+        "height": "5766022",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51247120"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3660508"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18302542"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "934F834B99C81A748B5F7156",
+      "meta": {
+        "timestamp": "173226512997"
+      }
+    },
+    {
+      "statement": {
+        "height": "5766286",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51247120"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3660508"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18302542"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "A78A65E3BC0343C852D66A9F",
+      "meta": {
+        "timestamp": "173234576146"
+      }
+    },
+    {
+      "statement": {
+        "height": "5766293",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "688F66FC37C76ABBFFB324277D2CF1E85A56D3FF4F48301B",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51247120"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3660508"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18302542"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "F73B026DFD4B174A8362253F",
+      "meta": {
+        "timestamp": "173234779244"
+      }
+    },
+    {
+      "statement": {
+        "height": "5766548",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68503F8379FDC2B9925387846AC7D8651614716C84998F8B",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51247120"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3660508"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18302542"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "C33079219DF81C4ECE2805D6",
+      "meta": {
+        "timestamp": "173242465052"
+      }
+    },
+    {
+      "statement": {
+        "height": "5766616",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51247120"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3660508"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18302542"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "BBF7409A4EA8A46EA109BFA4",
+      "meta": {
+        "timestamp": "173244551489"
+      }
+    },
+    {
+      "statement": {
+        "height": "5767216",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51263430"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3661673"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18308367"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "E6BFAD74BF847F3482D76B02",
+      "meta": {
+        "timestamp": "173262460073"
+      }
+    },
+    {
+      "statement": {
+        "height": "5767471",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51247120"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3660508"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18302542"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "3EB503EE2DA813B1FEA38A60",
+      "meta": {
+        "timestamp": "173270004093"
+      }
+    },
+    {
+      "statement": {
+        "height": "5767496",
+        "source": {
+          "primaryId": 0,
+          "secondaryId": 0
+        },
+        "receipts": [
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "51247120"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "685F0E42A9D2150CE9C9AD18B9940B64DF6E1145BA0402E8",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "3660508"
+          },
+          {
+            "version": 1,
+            "type": 8515,
+            "targetAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "18302542"
+          },
+          {
+            "version": 1,
+            "type": 20803,
+            "mosaicId": "6BED913FA20223F8",
+            "amount": "73210170"
+          }
+        ]
+      },
+      "id": "26A6C0A708CF8D64844B1A01",
+      "meta": {
+        "timestamp": "173270718948"
+      }
+    }
+  ],
+  "pagination": {
+    "pageNumber": 1,
+    "pageSize": 100
+  }
+}

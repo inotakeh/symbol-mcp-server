@@ -139,6 +139,20 @@
         "height": 6000000
       },
       "notes": "Exactly one of height, epoch or timestamp. A future height is an estimate from the measured average block time and is flagged isEstimate: true."
+    },
+    {
+      "id": "harvest-income-last-month",
+      "audience": "node-operator",
+      "question": "How much did NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY earn from harvesting last month (August 2026)?",
+      "question_ja": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY の先月（2026 年 8 月）のハーベスト報酬はいくらでしたか。",
+      "expectedTool": "symbol_harvesting_income",
+      "expectedArguments": {
+        "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY",
+        "fromDate": "2026-08-01",
+        "toDate": "2026-08-31",
+        "granularity": "daily"
+      },
+      "notes": "\"Last month\" becomes a fromDate/toDate pair (inclusive, in SYMBOL_TIMEZONE or UTC); the server resolves the dates to heights and sums the HarvestFee receipts itself, so the model must not add amounts. Use fromHeight/toHeight instead of dates only when the user names heights. symbol_harvesting_status says whether the account can harvest; it reports no income."
     }
   ]
 }
