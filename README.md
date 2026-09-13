@@ -148,7 +148,7 @@ identifiers only, never URLs.
 | `symbol_network_compare` | none | Height and finalization of the node versus `SYMBOL_REFERENCE_NODES`, blocks behind the best, `lagging` flags. Explains what to do when no reference nodes are configured. |
 | `symbol_harvesting_income` | `account`, `fromDate` + `toDate` or `fromHeight` + `toHeight`, `granularity`, `format` | Harvest rewards received in the period: receipt count and exact XYM total (summed on the server as integers), harvester / beneficiary / unknown split, per-day buckets in `SYMBOL_TIMEZONE` or UTC, or a list of receipts. Dates are resolved to heights from block timestamps. |
 | `symbol_transaction_status` | `transactionHashes` (array, 1 to 20) | Where each transaction stands right now: confirmed (with height), unconfirmed, partial (waiting for cosignatures), failed (with the node's code and its meaning) or not_found. One request for the whole batch. |
-| `symbol_finality_participation` | `account`, `epoch` (optional, default latest finalized), `epochs` (1 to 20, default 1), `format` | Whether the account's voting key actually signed the finalization proof of each epoch: participated (both prevote and precommit), missed (which stage was not signed), no_active_key or unavailable, with the signature count per stage and a warning for the most recent epoch. |
+| `symbol_finality_participation` | `account`, `epoch` (optional, default latest finalized), `epochs` (1 to 20, default 1), `format` | Whether the account's voting key actually signed the finalization proof of each epoch: participated (both prevote and precommit), missed (which stage was not signed), no_active_key or unavailable, with the signature count per stage and a warning when no key covers the current epoch or the current epoch was missed (historical epochs never warn). |
 
 ### Example questions
 
@@ -190,7 +190,7 @@ meaning) or not_found. Always an array, up to 20 hashes per call.
 Reads the finalization proof of the latest finalized epoch and the 13 before it (an epoch is
 `votingSetGrouping` blocks, about 12 hours on mainnet) and reports per epoch whether one of the
 account's voting keys is among the signers of both stages, how many voters signed, and a warning
-if the most recent epoch was missed.
+if the current epoch was missed or no key covers it.
 
 More cases, with the exact arguments expected for each, are in [`evals/cases.json`](evals/cases.json).
 

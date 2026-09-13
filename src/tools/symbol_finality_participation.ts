@@ -121,7 +121,7 @@ const outputSchema = z.object({
   }),
   warning: nullable(
     z.string(),
-    'Set when the most recent epoch checked was missed by an active key, or no registered key covers it.',
+    'About voting NOW: set when no registered key covers the current finalization epoch (whatever was requested), or when the current epoch was requested and missed. Historical epochs never warn; see epochs[].status.',
   ),
   notes: z.array(z.string()),
 });
@@ -227,7 +227,7 @@ export const finalityParticipationTool = defineTool({
       return evaluateEpochParticipation(e, keys, input);
     });
     const totals = totalsOf(results);
-    const warning = participationWarning(results);
+    const warning = participationWarning(results, keys, latestEpoch);
     const activeNow = keys.filter((k) => isKeyActiveForEpoch(k, target));
 
     const lines = [

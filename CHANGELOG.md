@@ -15,7 +15,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (a registered key is among the root signers of both prevote and precommit), `missed` (with the
   stage that was not signed), `no_active_key` or `unavailable` (the node holds no proof; not an
   error unless every requested epoch is missing), the signature count per stage, and a warning
-  when the most recent epoch was missed. Other voters' keys are never reported. The renewal
+  when no key covers the current finalization epoch or the current epoch was missed (historical
+  epochs never warn). Other voters' keys are never reported. The renewal
   prompt and the server instructions point to it. Registered after `symbol_transaction_status`.
 - `symbol_transaction_status`: where 1 to 20 transactions stand right now, from one
   `POST /transactionStatus` call: confirmed (with height), unconfirmed, partial (waiting for

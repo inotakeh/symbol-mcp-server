@@ -87,6 +87,20 @@ function withVotingKeys(keys: Array<{ publicKey: string; startEpoch: number; end
   return acct;
 }
 
+/** chain-info fixture with the latest finalized epoch moved to `finalizationEpoch`. */
+function chainAt(finalizationEpoch: number) {
+  const chain = fixture<{ latestFinalizedBlock: Record<string, unknown> }>(
+    'mainnet/chain-info.json',
+  );
+  chain.latestFinalizedBlock = {
+    ...chain.latestFinalizedBlock,
+    finalizationEpoch,
+    finalizationPoint: PROOF_POINT,
+    height: String(PROOF_HEIGHT),
+  };
+  return chain;
+}
+
 function routes(extra: Routes = {}): Routes {
   return { ...mainnetRoutes(), ...extra };
 }
@@ -212,16 +226,7 @@ describe('symbol_finality_participation', () => {
   });
 
   it('defaults to the latest finalized epoch from /chain/info', async () => {
-    const chain = fixture<{ latestFinalizedBlock: Record<string, unknown> }>(
-      'mainnet/chain-info.json',
-    );
-    chain.latestFinalizedBlock = {
-      ...chain.latestFinalizedBlock,
-      finalizationEpoch: PROOF_EPOCH,
-      finalizationPoint: PROOF_POINT,
-      height: String(PROOF_HEIGHT),
-    };
-    server = await startTestServer({ routes: routes({ 'GET /chain/info': chain }) });
+    server = await startTestServer({ routes: routes({ 'GET /chain/info': chainAt(PROOF_EPOCH) }) });
     const result = await server.callTool('symbol_finality_participation', { account: ADDRESS });
     expect(result.isError).toBe(false);
     expect(result.structuredContent?.requested).toEqual({ epoch: PROOF_EPOCH, epochs: 1 });
@@ -229,10 +234,11 @@ describe('symbol_finality_participation', () => {
     expect(server.requests.map((u) => u.pathname)).toContain(PROOF_PATH);
   });
 
-  it('reports missed when the registered key signed neither stage, with a warning', async () => {
+  it('reports missed when the registered key signed neither stage of the current epoch, with a warning', async () => {
     const stranger = H('fixture:voting-key-3');
     server = await startTestServer({
       routes: routes({
+        'GET /chain/info': chainAt(PROOF_EPOCH),
         [`GET /accounts/${ADDRESS}`]: withVotingKeys([
           { publicKey: stranger, startEpoch: 3700, endEpoch: 4059 },
         ]),
@@ -251,12 +257,33 @@ describe('symbol_finality_participation', () => {
       ['precommit', false, null],
     ]);
     expect(result.structuredContent?.warning).toMatch(
-      /did not sign any stage of the finalization proof for epoch 4010/,
+      /did not sign any stage of the finalization proof for epoch 4010, the current finalization epoch/,
     );
     expect(result.structuredContent?.summary).toMatch(
       /Epoch 4010: MISSED, the account's key signed neither stage/,
     );
     expect(result.structuredContent?.summary).toMatch(/Warning: /);
+  });
+
+  it('keeps a missed historical epoch in the status without a warning', async () => {
+    // Latest finalized epoch is 4004 (fixture); 4010 is requested explicitly, so it is not
+    // "now" for warning purposes even though the fixture proof exists for it.
+    const stranger = H('fixture:voting-key-3');
+    server = await startTestServer({
+      routes: routes({
+        [`GET /accounts/${ADDRESS}`]: withVotingKeys([
+          { publicKey: stranger, startEpoch: 3700, endEpoch: 4059 },
+        ]),
+      }),
+    });
+    const result = await server.callTool('symbol_finality_participation', {
+      account: ADDRESS,
+      epoch: PROOF_EPOCH,
+    });
+    expect(result.isError).toBe(false);
+    expect(firstEpoch(result).status).toBe('missed');
+    expect(result.structuredContent?.warning).toBeNull();
+    expect(result.structuredContent?.summary).not.toMatch(/Warning: /);
   });
 
   it('reports missed with stage detail when only the prevote was signed', async () => {
@@ -266,7 +293,9 @@ describe('symbol_finality_participation', () => {
     for (const s of precommit.signatures) {
       if (s.root.parentPublicKey === OWN_KEY) s.root.parentPublicKey = H('fixture:voter-99');
     }
-    server = await startTestServer({ routes: routes({ [`GET ${PROOF_PATH}`]: p }) });
+    server = await startTestServer({
+      routes: routes({ 'GET /chain/info': chainAt(PROOF_EPOCH), [`GET ${PROOF_PATH}`]: p }),
+    });
     const result = await server.callTool('symbol_finality_participation', {
       account: ADDRESS,
       epoch: PROOF_EPOCH,
@@ -305,9 +334,32 @@ describe('symbol_finality_participation', () => {
     };
     expect(sc.epochs[0]?.status).toBe('no_active_key');
     expect(sc.account.votingKeys.map((k) => k.activeForEpoch)).toEqual([false]);
-    expect(sc.warning).toMatch(/No registered voting key .* covers epoch 4010/);
+    // The only key ended at 3699, so the current epoch (4004 in the fixture) is uncovered too.
+    expect(sc.warning).toMatch(
+      /No registered voting key .* covers the current finalization epoch 4004/,
+    );
     expect(sc.summary).toMatch(/Voting keys: 1 registered, 0 cover epoch 4010\./);
     expect(sc.summary).toMatch(/Epoch 4010: no registered voting key covers this epoch/);
+  });
+
+  it('does not warn about a keyless historical epoch when a key covers the current epoch', async () => {
+    // A key that covers the current epoch 4004 but ended before 4010: 4010 is no_active_key
+    // as a fact about the past, and there is nothing to fix today.
+    server = await startTestServer({
+      routes: routes({
+        [`GET /accounts/${ADDRESS}`]: withVotingKeys([
+          { publicKey: H('fixture:voting-key-3'), startEpoch: 3700, endEpoch: 4005 },
+        ]),
+      }),
+    });
+    const result = await server.callTool('symbol_finality_participation', {
+      account: ADDRESS,
+      epoch: PROOF_EPOCH,
+    });
+    expect(result.isError).toBe(false);
+    expect(firstEpoch(result).status).toBe('no_active_key');
+    expect(result.structuredContent?.warning).toBeNull();
+    expect(result.structuredContent?.summary).not.toMatch(/Warning: /);
   });
 
   it('marks epochs whose proof the node lacks as unavailable without failing', async () => {

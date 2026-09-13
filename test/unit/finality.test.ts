@@ -176,17 +176,45 @@ describe('totalsOf and participationWarning', () => {
     });
   });
 
-  it('warns about the most recent epoch only', () => {
-    expect(participationWarning([participated, missedAll])).toBeNull();
-    expect(participationWarning([unavailable, missedAll])).toBeNull();
-    expect(participationWarning([])).toBeNull();
-    expect(participationWarning([missedAll, participated])).toMatch(
-      /did not sign any stage of the finalization proof for epoch 4009/,
+  it('warns when no registered key covers the current epoch, whatever was requested', () => {
+    // Epoch 4100 is past activeKey's endEpoch 4059: the account cannot vote now, even though
+    // the requested epoch 4010 was fine.
+    expect(participationWarning([participated], [activeKey], 4100)).toMatch(
+      /No registered voting key .* covers the current finalization epoch 4100/,
     );
-    expect(participationWarning([missedPrecommit])).toMatch(
+    expect(participationWarning([noKey], [expiredKey], 4007)).toMatch(
+      /covers the current finalization epoch 4007/,
+    );
+    expect(participationWarning([noKey], [expiredKey], 4007)).toMatch(/symbol_voting_key_status/);
+    expect(participationWarning([], [], 4010)).toMatch(/current finalization epoch 4010/);
+  });
+
+  it('warns when the current epoch was requested and missed', () => {
+    expect(participationWarning([missedAll, participated], [activeKey], 4009)).toMatch(
+      /did not sign any stage of the finalization proof for epoch 4009, the current finalization epoch/,
+    );
+    expect(participationWarning([missedPrecommit], [activeKey], 4008)).toMatch(
       /did not sign the precommit stage of the finalization proof for epoch 4008/,
     );
-    expect(participationWarning([noKey])).toMatch(/No registered voting key .* covers epoch 4007/);
-    expect(participationWarning([noKey])).toMatch(/symbol_voting_key_status/);
+  });
+
+  it('stays null for missed or unavailable historical epochs and when nothing was checked', () => {
+    // A vote missed in the past is visible in the per-epoch status only.
+    expect(participationWarning([missedAll], [activeKey], 4010)).toBeNull();
+    expect(participationWarning([missedPrecommit], [activeKey], 4010)).toBeNull();
+    expect(participationWarning([participated, missedAll], [activeKey], 4010)).toBeNull();
+    expect(participationWarning([participated], [activeKey], 4010)).toBeNull();
+    expect(participationWarning([unavailable], [activeKey], 4006)).toBeNull();
+    expect(participationWarning([unavailable, missedAll], [activeKey], 4006)).toBeNull();
+    expect(participationWarning([], [activeKey], 4010)).toBeNull();
+  });
+
+  it('is null for a keyless historical epoch when the current key covers the current epoch', () => {
+    // Epoch 5 predates every key of the account: normal, not a problem for voting today.
+    const historical = evaluateEpochParticipation(5, [activeKey], proof([OTHER_1], [OTHER_1]));
+    expect(historical.status).toBe('no_active_key');
+    expect(participationWarning([historical], [activeKey], 4010)).toBeNull();
+    expect(participationWarning([historical, participated], [activeKey], 4010)).toBeNull();
+    expect(participationWarning([historical], [expiredKey, activeKey], 4059)).toBeNull();
   });
 });

@@ -150,24 +150,26 @@ export function totalsOf(results: readonly EpochParticipation[]): ParticipationT
 }
 
 /**
- * Warning about the most recent epoch checked (`results[0]`): a registered key that should have
- * voted but did not, or no key covering the epoch at all. Null otherwise.
+ * Warning about the account's ability to vote NOW, judged against the current finalization
+ * epoch. Historical epochs never warn: a key that did not exist yet, or a vote missed long ago,
+ * is visible in the per-epoch status only.
+ * - No registered key covers `currentEpoch` (whatever epochs were requested): cannot vote.
+ * - The most recent requested epoch is `currentEpoch` and it was missed: registered, not voting.
  */
-export function participationWarning(results: readonly EpochParticipation[]): string | null {
-  const latest = results[0];
-  if (!latest) return null;
-  switch (latest.status) {
-    case 'missed': {
-      const missed = latest.stages.filter((s) => !s.participated).map((s) => s.stageName);
-      const what =
-        missed.length === latest.stages.length
-          ? 'any stage'
-          : `the ${missed.join(' and ')} stage${missed.length === 1 ? '' : 's'}`;
-      return `The account's voting key did not sign ${what} of the finalization proof for epoch ${latest.epoch}, the most recent epoch checked. Check that the voting node is running, in sync, and configured with this voting key.`;
-    }
-    case 'no_active_key':
-      return `No registered voting key of this account covers epoch ${latest.epoch}, the most recent epoch checked; the account cannot take part in finalization until a key whose start/end epochs include the current epoch is linked (symbol_voting_key_status shows free slots and key lifetimes).`;
-    default:
-      return null;
+export function participationWarning(
+  results: readonly EpochParticipation[],
+  keys: readonly VotingKeyInput[],
+  currentEpoch: number,
+): string | null {
+  if (!keys.some((k) => isKeyActiveForEpoch(k, currentEpoch))) {
+    return `No registered voting key of this account covers the current finalization epoch ${currentEpoch}; the account cannot take part in finalization until a key whose start/end epochs include it is linked (symbol_voting_key_status shows free slots and key lifetimes).`;
   }
+  const latest = results[0];
+  if (!latest || latest.epoch !== currentEpoch || latest.status !== 'missed') return null;
+  const missed = latest.stages.filter((s) => !s.participated).map((s) => s.stageName);
+  const what =
+    missed.length === latest.stages.length
+      ? 'any stage'
+      : `the ${missed.join(' and ')} stage${missed.length === 1 ? '' : 's'}`;
+  return `The account's voting key did not sign ${what} of the finalization proof for epoch ${currentEpoch}, the current finalization epoch. Check that the voting node is running, in sync, and configured with this voting key.`;
 }
