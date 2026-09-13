@@ -2,7 +2,9 @@
  * Shared plumbing for tool definitions: annotations, result shaping and error translation.
  *
  * Every tool returns BOTH `structuredContent` and a text block containing the same JSON
- * (spec backwards-compatibility requirement), with `summary` as the first field. Failures are
+ * (spec backwards-compatibility requirement), with `summary` as the first field. A tool may
+ * opt out of the JSON text for particular outputs through `renderText` (symbol_harvesting_income
+ * puts the CSV body there when output=csv); structuredContent is always the JSON. Failures are
  * `{ isError: true }` results whose text says what went wrong and how to fix it. Stack traces
  * and raw HTTP bodies never reach the model.
  */
@@ -51,6 +53,11 @@ export interface ToolDefinition<I extends z.ZodObject | undefined, O extends z.Z
     ctx: AppContext,
     input: I extends z.ZodObject ? z.output<I> : Record<string, never>,
   ) => Promise<z.output<O>>;
+  /**
+   * Text for the content block instead of the structuredContent JSON, for outputs that are
+   * meant to be pasted elsewhere (a CSV body). Return undefined to keep the JSON text.
+   */
+  readonly renderText?: (output: z.output<O>) => string | undefined;
 }
 
 export function defineTool<I extends z.ZodObject | undefined, O extends z.ZodObject>(
@@ -62,9 +69,9 @@ export function defineTool<I extends z.ZodObject | undefined, O extends z.ZodObj
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous tool list
 export type AnyToolDefinition = ToolDefinition<any, any>;
 
-export function okResult(structured: Record<string, unknown>): CallToolResult {
+export function okResult(structured: Record<string, unknown>, text?: string): CallToolResult {
   return {
-    content: [{ type: 'text', text: JSON.stringify(structured, null, 2) }],
+    content: [{ type: 'text', text: text ?? JSON.stringify(structured, null, 2) }],
     structuredContent: structured,
   };
 }
@@ -116,7 +123,7 @@ async function execute(
 ): Promise<CallToolResult> {
   try {
     const output = (await tool.run(ctx, args)) as Record<string, unknown>;
-    return okResult(output);
+    return okResult(output, tool.renderText?.(output));
   } catch (err) {
     return errorResult(describeError(err, ctx));
   }

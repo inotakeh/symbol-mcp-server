@@ -31,6 +31,19 @@ export function formatAmount(raw: string | number | bigint, divisibility: number
   return `${negative ? '-' : ''}${whole.toString()}.${frac}`;
 }
 
+/**
+ * Inserts thousands separators into the integer part of a formatted amount, for prose only:
+ * groupThousands('23237.845492') -> '23,237.845492'. Never used for JSON or CSV values.
+ */
+export function groupThousands(formatted: string): string {
+  const match = /^(-?)(\d+)(\.\d+)?$/.exec(formatted);
+  if (!match) throw new Error(`not a formatted amount: ${formatted}`);
+  const sign = match[1] ?? '';
+  const whole = match[2] ?? '';
+  const frac = match[3] ?? '';
+  return `${sign}${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${frac}`;
+}
+
 /** Ratio helper used for "margin" style outputs; returns a signed formatted amount. */
 export function formatSignedAmount(raw: bigint, divisibility: number): string {
   return formatAmount(raw, divisibility);

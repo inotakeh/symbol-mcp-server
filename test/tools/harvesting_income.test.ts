@@ -174,6 +174,160 @@ describe('symbol_harvesting_income', () => {
     expect(new Set(server.requests.map((u) => u.host))).toEqual(new Set([TEST_NODE_HOST]));
   });
 
+  it('buckets by calendar month and keeps the period total as the first summary line', async () => {
+    server = await startTestServer({ routes: routes(), now: NOW });
+    const result = await server.callTool('symbol_harvesting_income', {
+      account: ADDRESS,
+      fromHeight: 5_764_879,
+      toHeight: 5_767_496,
+      granularity: 'monthly',
+    });
+    expect(result.isError).toBe(false);
+    const sc = result.structuredContent as Record<string, unknown>;
+    expect(outputSchema?.safeParse(sc).success).toBe(true);
+    expect(sc.daily).toBeUndefined();
+    expect(sc.receipts).toBeUndefined();
+    expect(sc.csv).toBeNull();
+    expect(sc.monthly).toEqual([
+      {
+        month: '2026-09',
+        receipts: 20,
+        xym: '662.574177',
+        raw: '662574177',
+        receiptsHarvester: 9,
+        xymHarvester: '461.240390',
+        rawHarvester: '461240390',
+        receiptsBeneficiary: 11,
+        xymBeneficiary: '201.333787',
+        rawBeneficiary: '201333787',
+        receiptsUnknown: 0,
+        xymUnknown: '0.000000',
+        rawUnknown: '0',
+      },
+    ]);
+    const lines = (sc.summary as string).split('\n');
+    expect(lines[0]).toMatch(/^NCV5HR.* 20 harvest receipts totalling 662\.574177 symbol\.xym/);
+    expect(lines[1]).toBe(
+      '2026-09: 20 receipts, 662.574177 symbol.xym (9 harvester / 11 beneficiary)',
+    );
+    expect(result.text).toBe(JSON.stringify(sc, null, 2));
+  });
+
+  describe('output=csv', () => {
+    const BUCKET_HEADER =
+      'period,receipts,xym,raw,receipts_harvester,xym_harvester,raw_harvester,receipts_beneficiary,xym_beneficiary,raw_beneficiary,receipts_unknown,xym_unknown,raw_unknown';
+
+    it('puts the daily rows in the text block and repeats them in csv', async () => {
+      server = await startTestServer({ routes: routes(), now: NOW });
+      const result = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: 5_764_879,
+        toHeight: 5_767_496,
+        output: 'csv',
+      });
+      expect(result.isError).toBe(false);
+      const sc = result.structuredContent as Record<string, unknown>;
+      expect(outputSchema?.safeParse(sc).success).toBe(true);
+      expect(result.text).toBe(
+        [
+          BUCKET_HEADER,
+          '2026-09-10,8,278.198648,278198648,4,204.988480,204988480,4,73.210168,73210168,0,0.000000,0',
+          '2026-09-11,12,384.375529,384375529,5,256.251910,256251910,7,128.123619,128123619,0,0.000000,0',
+          '',
+        ].join('\n'),
+      );
+      expect(sc.csv).toBe(result.text);
+      expect(() => JSON.parse(result.text)).toThrow();
+      expect(result.text).not.toContain('\r');
+      expect(result.text.charCodeAt(0)).not.toBe(0xfeff);
+      // The JSON side is unchanged by the output switch.
+      expect(sc.daily).toHaveLength(2);
+      expect(sc.totals).toMatchObject({ receipts: 20, xym: '662.574177' });
+      expect(sc.summary).toMatch(/CSV: 2 data rows \(daily\) in the text block/);
+    });
+
+    it('writes one row per month for granularity=monthly', async () => {
+      server = await startTestServer({ routes: routes(), now: NOW });
+      const result = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: 5_764_879,
+        toHeight: 5_767_496,
+        granularity: 'monthly',
+        output: 'csv',
+      });
+      expect(result.isError).toBe(false);
+      expect(result.text).toBe(
+        `${BUCKET_HEADER}\n2026-09,20,662.574177,662574177,9,461.240390,461240390,11,201.333787,201333787,0,0.000000,0\n`,
+      );
+      expect(result.structuredContent?.csv).toBe(result.text);
+      expect(outputSchema?.safeParse(result.structuredContent).success).toBe(true);
+    });
+
+    it('writes one row per receipt with local times, empty without a zone', async () => {
+      server = await startTestServer({
+        routes: routes(),
+        now: NOW,
+        env: { SYMBOL_TIMEZONE: 'Asia/Tokyo' },
+      });
+      const local = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: 5_764_879,
+        toHeight: 5_767_496,
+        granularity: 'receipt',
+        output: 'csv',
+      });
+      expect(local.isError).toBe(false);
+      const lines = local.text.split('\n');
+      expect(lines[0]).toBe('height,timestamp_utc,timestamp_local,kind,xym,raw');
+      expect(lines[1]).toBe(
+        '5764879,2026-09-10T13:07:19.149Z,2026-09-10T22:07:19+09:00,harvester,51.247120,51247120',
+      );
+      expect(lines[2]).toMatch(
+        /^5764879,2026-09-10T13:07:19\.149Z,2026-09-10T22:07:19\+09:00,beneficiary,/,
+      );
+      expect(lines).toHaveLength(22); // header + 20 receipts + trailing empty string
+      expect(local.structuredContent?.csv).toBe(local.text);
+      await server.close();
+
+      server = await startTestServer({ routes: routes(), now: NOW });
+      const utc = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: 5_764_879,
+        toHeight: 5_767_496,
+        granularity: 'receipt',
+        output: 'csv',
+      });
+      expect(utc.text.split('\n')[1]).toBe(
+        '5764879,2026-09-10T13:07:19.149Z,,harvester,51.247120,51247120',
+      );
+    });
+
+    it('applies the receipt cap of format to the CSV rows', async () => {
+      const pages = routes({
+        'GET /statements/transaction': statementsRoute((pageNumber) =>
+          pageNumber <= 2 ? syntheticStatements(5_764_879 + (pageNumber - 1) * 100, 100) : [],
+        ),
+      });
+      server = await startTestServer({ routes: pages, now: NOW });
+      const result = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: 5_764_879,
+        toHeight: 5_765_078,
+        granularity: 'receipt',
+        output: 'csv',
+      });
+      expect(result.isError).toBe(false);
+      expect(result.text.split('\n')).toHaveLength(52); // header + 50 + trailing
+      expect(result.structuredContent).toMatchObject({
+        receiptsListed: 50,
+        truncated: true,
+        truncationReasons: ['receiptList'],
+      });
+      expect(result.structuredContent?.summary).toMatch(/lists 50 of 400 receipts/);
+      expect(result.structuredContent?.summary).toMatch(/CSV: 50 data rows \(receipt\)/);
+    });
+  });
+
   it('lists receipts with local times when SYMBOL_TIMEZONE is set', async () => {
     server = await startTestServer({
       routes: routes(),

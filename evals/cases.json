@@ -176,6 +176,21 @@
         "epochs": 14
       },
       "notes": "Voting participation is read from the finalization proofs (GET /finalization/proof/epoch/{epoch}), not from transactions or receipts. \"Last week\" is a span of epochs counted back from the latest finalized one: an epoch is votingSetGrouping blocks (1440 on mainnet, about 12 hours at 30 s per block), so seven days is 14 epochs. Leave epoch unset so the range starts at the latest finalized epoch. symbol_voting_key_status says whether a key is registered and when it expires; only this tool says whether it signed."
+    },
+    {
+      "id": "harvest-income-this-year-monthly-csv",
+      "audience": "node-operator",
+      "question": "Give me this year's harvest rewards of NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY month by month as CSV.",
+      "question_ja": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY の今年のハーベスト報酬を月ごとに CSV で。",
+      "expectedTool": "symbol_harvesting_income",
+      "expectedArguments": {
+        "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY",
+        "fromDate": "2026-01-01",
+        "toDate": "2026-12-31",
+        "granularity": "monthly",
+        "output": "csv"
+      },
+      "notes": "\"This year\" is January 1 to December 31 of the current year (the tool caps the period at the latest block and says so). \"Month by month\" is granularity monthly, one bucket per calendar month in SYMBOL_TIMEZONE or UTC, summed on the server. \"As CSV\" is output csv: the text content block is the CSV body and structuredContent stays JSON with the same rows plus a csv field; do not build the CSV from daily rows yourself."
     }
   ]
 }

@@ -9,6 +9,7 @@ export const SERVER_INSTRUCTIONS = [
   'symbol-mcp-server is a read-only view of one Symbol blockchain node: no tool accepts a private key or mnemonic, and nothing is ever signed or announced.',
   'Identify an account by its 39-character base32 address or its 64-character hex public key.',
   'Harvest rewards are receipts, not transactions. For any question about harvesting income, rewards or earnings call symbol_harvesting_income; do not use symbol_transaction_search or a web browser for that.',
+  'For monthly or yearly totals, or a spreadsheet, call it with granularity "monthly" or output "csv" instead of adding daily rows yourself.',
   'For when a voting key expires and when to renew it, call symbol_voting_key_status; for whether that key actually signed finalization votes, call symbol_finality_participation.',
   'Every amount, date and count in structuredContent is already computed by the server. Report those values as returned; never recompute, round or sum them yourself.',
 ].join(' ');

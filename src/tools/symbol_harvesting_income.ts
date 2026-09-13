@@ -7,7 +7,8 @@ import {
 } from '../client/schemas.js';
 import type { AppContext } from '../context.js';
 import { hexAddressToBase32 } from '../domain/address.js';
-import { formatAmount } from '../domain/amount.js';
+import { formatAmount, groupThousands } from '../domain/amount.js';
+import { type CsvCell, toCsv } from '../domain/csv.js';
 import { parseHeight } from '../domain/epoch.js';
 import {
   aggregateHarvestIncome,
@@ -81,18 +82,41 @@ const inputSchema = z.object({
       'Last block height of the period (inclusive; capped at the current height). Requires fromHeight.',
     ),
   granularity: z
-    .enum(['daily', 'receipt'])
+    .enum(['daily', 'monthly', 'receipt'])
     .default('daily')
     .describe(
-      'daily (default): one row per calendar day with receipts. receipt: one row per receipt (block, time, kind, amount).',
+      'daily (default): one row per calendar day with receipts. monthly: one row per calendar month (SYMBOL_TIMEZONE or UTC), for yearly or multi-month questions. receipt: one row per receipt (block, time, kind, amount).',
     ),
   format: z
     .enum(['concise', 'detailed'])
     .default('concise')
     .describe(
-      `Only affects granularity=receipt: concise lists at most ${CONCISE_RECEIPT_LIMIT} receipts, detailed at most ${DETAILED_RECEIPT_LIMIT}. Totals always cover the whole period.`,
+      `Detail level of the JSON; only affects granularity=receipt: concise lists at most ${CONCISE_RECEIPT_LIMIT} receipts, detailed at most ${DETAILED_RECEIPT_LIMIT}. Totals always cover the whole period. Independent of output.`,
+    ),
+  output: z
+    .enum(['json', 'csv'])
+    .default('json')
+    .describe(
+      'Form of the text content block. json (default): the structuredContent JSON. csv: an RFC 4180 CSV for spreadsheets with one row per day, month or receipt (following granularity, and the receipt cap of format); structuredContent stays JSON and repeats the CSV in its csv field. Independent of format.',
     ),
 });
+
+const BUCKET_CSV_HEADER = [
+  'period',
+  'receipts',
+  'xym',
+  'raw',
+  'receipts_harvester',
+  'xym_harvester',
+  'raw_harvester',
+  'receipts_beneficiary',
+  'xym_beneficiary',
+  'raw_beneficiary',
+  'receipts_unknown',
+  'xym_unknown',
+  'raw_unknown',
+];
+const RECEIPT_CSV_HEADER = ['height', 'timestamp_utc', 'timestamp_local', 'kind', 'xym', 'raw'];
 
 const TotalsSchema = z.object({
   receipts: z.number(),
@@ -111,6 +135,10 @@ const TotalsSchema = z.object({
 
 const DailySchema = TotalsSchema.extend({
   date: z.string().describe('Calendar day (YYYY-MM-DD) in SYMBOL_TIMEZONE or UTC.'),
+});
+
+const MonthlySchema = TotalsSchema.extend({
+  month: z.string().describe('Calendar month (YYYY-MM) in SYMBOL_TIMEZONE or UTC.'),
 });
 
 const ReceiptRowSchema = z.object({
@@ -147,6 +175,7 @@ const outputSchema = z.object({
   }),
   totals: TotalsSchema,
   daily: z.array(DailySchema).optional(),
+  monthly: z.array(MonthlySchema).optional(),
   receipts: z.array(ReceiptRowSchema).optional(),
   receiptsListed: z.number(),
   unknownStatements: z.number(),
@@ -160,7 +189,29 @@ const outputSchema = z.object({
   truncated: z.boolean(),
   truncationReasons: z.array(z.enum(['pageLimit', 'receiptList'])),
   notes: z.array(z.string()),
+  csv: nullable(
+    z.string(),
+    'CSV body when output=csv (identical to the text content block: header row, one row per day / month / receipt, LF line endings); null for output=json.',
+  ),
 });
+
+function bucketCsvRow(period: string, t: z.output<typeof TotalsSchema>): CsvCell[] {
+  return [
+    period,
+    t.receipts,
+    t.xym,
+    t.raw,
+    t.receiptsHarvester,
+    t.xymHarvester,
+    t.rawHarvester,
+    t.receiptsBeneficiary,
+    t.xymBeneficiary,
+    t.rawBeneficiary,
+    t.receiptsUnknown,
+    t.xymUnknown,
+    t.rawUnknown,
+  ];
+}
 
 type Period =
   | { readonly kind: 'dates'; readonly from: CalendarDate; readonly to: CalendarDate }
@@ -249,12 +300,13 @@ export const harvestingIncomeTool = defineTool({
   title: 'Symbol harvesting income',
   description:
     "Use this tool whenever the user asks about harvesting rewards, harvest income, or earnings for a period (e.g. 'last month', 'this year', 'per day'). Do not use symbol_transaction_search or a browser for this; harvest rewards are receipts, not transactions. " +
-    'Total the harvest rewards (HarvestFee receipts of the network currency) an account received in a period, computed on the server with exact integer arithmetic: receipt count and XYM total, split into harvester (blocks the account harvested), beneficiary (blocks others harvested with this account as beneficiary) and unknown. Period is a date range (YYYY-MM-DD, resolved to heights from block timestamps) or a height range. granularity=daily gives per-day buckets, granularity=receipt lists each receipt. Read-only; no fiat conversion.',
+    'Total the harvest rewards (HarvestFee receipts of the network currency) an account received in a period, computed on the server with exact integer arithmetic: receipt count and XYM total, split into harvester (blocks the account harvested), beneficiary (blocks others harvested with this account as beneficiary) and unknown. Period is a date range (YYYY-MM-DD, resolved to heights from block timestamps) or a height range. granularity=daily gives per-day buckets, granularity=monthly per-calendar-month buckets (yearly questions), granularity=receipt lists each receipt; output=csv returns the same rows as CSV text for a spreadsheet. Read-only; no fiat conversion.',
   inputSchema,
   outputSchema,
+  renderText: (out) => out.csv ?? undefined,
   run: async (ctx, input) => {
     const period = resolvePeriod(input);
-    const { granularity, format } = input;
+    const { granularity, format, output } = input;
     const timeZone = ctx.config.timeZone;
     const zoneLabel = timeZone ?? 'UTC';
 
@@ -389,6 +441,37 @@ export const harvestingIncomeTool = defineTool({
       granularity === 'daily'
         ? aggregate.daily.map((d) => ({ date: d.date, ...flatTotals(d, div) }))
         : undefined;
+    const monthly =
+      granularity === 'monthly'
+        ? aggregate.monthly.map((m) => ({ month: m.month, ...flatTotals(m, div) }))
+        : undefined;
+
+    let csv: string | null = null;
+    if (output === 'csv') {
+      if (receiptRows) {
+        csv = toCsv(
+          RECEIPT_CSV_HEADER,
+          receiptRows.map((r) => [
+            r.height,
+            r.timestamp.utc,
+            r.timestamp.local ?? '',
+            r.kind,
+            r.xym,
+            r.raw,
+          ]),
+        );
+      } else if (monthly) {
+        csv = toCsv(
+          BUCKET_CSV_HEADER,
+          monthly.map((m) => bucketCsvRow(m.month, m)),
+        );
+      } else {
+        csv = toCsv(
+          BUCKET_CSV_HEADER,
+          (daily ?? []).map((d) => bucketCsvRow(d.date, d)),
+        );
+      }
+    }
 
     const periodText =
       period.kind === 'dates'
@@ -406,9 +489,22 @@ export const harvestingIncomeTool = defineTool({
       lines.push(
         `Per day (${zoneLabel}): ${shown.map((d) => `${d.date} ${d.xym} (${d.receipts})`).join(', ')}${daily.length > SUMMARY_DAYS ? `, and ${daily.length - SUMMARY_DAYS} more days in daily` : ''}.`,
       );
+    } else if (monthly) {
+      // One line per month after the period total; the total stays first however many months.
+      for (const m of monthly) {
+        lines.push(
+          `${m.month}: ${plural(m.receipts, 'receipt')}, ${groupThousands(m.xym)} ${label} (${formatInteger(m.receiptsHarvester)} harvester / ${formatInteger(m.receiptsBeneficiary)} beneficiary${m.receiptsUnknown > 0 ? ` / ${formatInteger(m.receiptsUnknown)} unknown` : ''})`,
+        );
+      }
     } else if (receiptRows) {
       lines.push(
         `receipts lists ${formatInteger(receiptRows.length)} of ${formatInteger(aggregate.rows.length)} receipts${receiptRows.length < aggregate.rows.length ? (format === 'concise' ? ' (use format=detailed or a narrower period for the rest)' : ' (use a narrower period for the rest)') : ''}.`,
+      );
+    }
+    if (csv !== null) {
+      const dataRows = csv.split('\n').length - 2;
+      lines.push(
+        `CSV: ${plural(dataRows, 'data row')} (${granularity}) in the text block and in the csv field; the totals above are the same data.`,
       );
     }
     if (aggregate.unknownStatements > 0) {
@@ -442,6 +538,7 @@ export const harvestingIncomeTool = defineTool({
       range: { fromHeight, toHeight, fromTime, toTime, blocks: toHeight - fromHeight + 1 },
       totals,
       ...(daily ? { daily } : {}),
+      ...(monthly ? { monthly } : {}),
       ...(receiptRows ? { receipts: receiptRows } : {}),
       receiptsListed: receiptRows?.length ?? 0,
       unknownStatements: aggregate.unknownStatements,
@@ -455,6 +552,7 @@ export const harvestingIncomeTool = defineTool({
       truncated: truncationReasons.length > 0,
       truncationReasons,
       notes,
+      csv,
     };
   },
 });

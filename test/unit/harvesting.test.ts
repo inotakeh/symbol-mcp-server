@@ -159,6 +159,88 @@ describe('aggregateHarvestIncome', () => {
     ]);
   });
 
+  describe('monthly buckets', () => {
+    // Network timestamp (ms since nemesis) of a wall-clock instant.
+    const at = (iso: string) => String(Date.parse(iso) - EPOCH_ADJUSTMENT * 1000);
+    const statements = [
+      // 2026-08-31 14:30 UTC = 2026-08-31 23:30 Asia/Tokyo: harvester share 70 to ME
+      statement(100, at('2026-08-31T14:30:00Z'), [
+        receipt('70', ME),
+        receipt('25', PEER),
+        receipt('5', SINK),
+      ]),
+      // 2026-08-31 15:30 UTC = 2026-09-01 00:30 Asia/Tokyo: beneficiary share 250 to ME
+      statement(101, at('2026-08-31T15:30:00Z'), [
+        receipt('700', PEER),
+        receipt('250', ME),
+        receipt('50', SINK),
+      ]),
+      // mid September in both zones: harvester share 7000 to ME
+      statement(102, at('2026-09-15T00:00:00Z'), [
+        receipt('7000', ME),
+        receipt('2500', PEER),
+        receipt('500', SINK),
+      ]),
+    ];
+    const flat = (b: { receipts: number; raw: bigint; harvester: { raw: bigint } }) => [
+      b.receipts,
+      b.raw.toString(),
+      b.harvester.raw.toString(),
+    ];
+
+    it('buckets by UTC month with fixed totals', () => {
+      const out = aggregateHarvestIncome(statements, opts);
+      expect(out.daily.map((d) => [d.date, ...flat(d)])).toEqual([
+        ['2026-08-31', 2, '320', '70'],
+        ['2026-09-15', 1, '7000', '7000'],
+      ]);
+      expect(out.monthly.map((m) => [m.month, ...flat(m)])).toEqual([
+        ['2026-08', 2, '320', '70'],
+        ['2026-09', 1, '7000', '7000'],
+      ]);
+      expect(out.monthly[0]?.beneficiary).toEqual({ receipts: 1, raw: 250n });
+      expect(out.monthly[0]?.unknown).toEqual({ receipts: 0, raw: 0n });
+    });
+
+    it('follows the configured zone, moving the midnight receipt into the next month', () => {
+      const out = aggregateHarvestIncome(statements, { ...opts, timeZone: 'Asia/Tokyo' });
+      expect(out.daily.map((d) => [d.date, ...flat(d)])).toEqual([
+        ['2026-08-31', 1, '70', '70'],
+        ['2026-09-01', 1, '250', '0'],
+        ['2026-09-15', 1, '7000', '7000'],
+      ]);
+      expect(out.monthly.map((m) => [m.month, ...flat(m)])).toEqual([
+        ['2026-08', 1, '70', '70'],
+        ['2026-09', 2, '7250', '7000'],
+      ]);
+      expect(out.monthly[1]?.beneficiary).toEqual({ receipts: 1, raw: 250n });
+    });
+
+    it('makes every month exactly the sum of its days, in ascending order', () => {
+      for (const timeZone of [undefined, 'Asia/Tokyo', 'America/Los_Angeles']) {
+        const out = aggregateHarvestIncome(statements, { ...opts, timeZone });
+        const months = out.monthly.map((m) => m.month);
+        expect([...months].sort()).toEqual(months);
+        for (const m of out.monthly) {
+          const days = out.daily.filter((d) => d.date.startsWith(`${m.month}-`));
+          expect(days.length).toBeGreaterThan(0);
+          const sum = (pick: (b: (typeof days)[number]) => bigint) =>
+            days.reduce((acc, d) => acc + pick(d), 0n);
+          expect(m.receipts).toBe(days.reduce((acc, d) => acc + d.receipts, 0));
+          expect(m.raw).toBe(sum((d) => d.raw));
+          expect(m.harvester.raw).toBe(sum((d) => d.harvester.raw));
+          expect(m.beneficiary.raw).toBe(sum((d) => d.beneficiary.raw));
+          expect(m.unknown.raw).toBe(sum((d) => d.unknown.raw));
+        }
+        expect(out.monthly.reduce((acc, m) => acc + m.raw, 0n)).toBe(out.totals.raw);
+      }
+    });
+
+    it('is empty when there are no rows', () => {
+      expect(aggregateHarvestIncome([], opts).monthly).toEqual([]);
+    });
+  });
+
   it('ignores other mosaics, other addresses and non-harvest receipts', () => {
     const out = aggregateHarvestIncome(
       [

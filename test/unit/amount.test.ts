@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { formatAmount } from '../../src/domain/amount.js';
+import { formatAmount, groupThousands } from '../../src/domain/amount.js';
+
+describe('groupThousands', () => {
+  it('groups the integer part only', () => {
+    expect(groupThousands('23237.845492')).toBe('23,237.845492');
+    expect(groupThousands('662.574177')).toBe('662.574177');
+    expect(groupThousands('1234567')).toBe('1,234,567');
+    expect(groupThousands('0.000000')).toBe('0.000000');
+    expect(groupThousands('-1500000.5')).toBe('-1,500,000.5');
+    expect(groupThousands('18446744073709.551615')).toBe('18,446,744,073,709.551615');
+  });
+  it('rejects anything that is not a formatted amount', () => {
+    expect(() => groupThousands('abc')).toThrow();
+    expect(() => groupThousands('1,000')).toThrow();
+  });
+});
 
 describe('formatAmount', () => {
   it('formats XYM (divisibility 6)', () => {
