@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Every `account` argument (and the `address` of `symbol_transaction_search`, the `value` of
+  `symbol_address_parse`) also accepts a namespace name such as `alice` or `alice.pay`. The name
+  is resolved through the node to the namespace's address alias before the tool runs: a 39-character
+  base32 string is an address only when its checksum verifies, otherwise a lower-case one is tried
+  as a name; a missing, expired, mosaic-aliased or alias-less namespace is an error with a hint.
+  The resolution is reported in a new nullable `accountResolution` field (`input`, `namespace`,
+  `namespaceId`, `address`) and as `alice → NCV5…` at the start of the summary; results for
+  addresses and public keys are unchanged apart from `accountResolution: null`.
+  `symbol_address_parse` gains `kind: "namespace"` (the only form that contacts the node).
+  `GET /namespaces/{id}` answers are cached per process for one `blockGenerationTargetTime`.
+
 ### Added
 
 - `symbol_delegation_diagnose`: is an account's delegated harvesting active and, if not, where
