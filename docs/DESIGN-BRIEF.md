@@ -56,6 +56,14 @@
 - `serveStdio` は既定で「2025年系（`initialize` ハンドシェイク）」と「2026-07-28 系」の両プロトコル世代を同じ factory から提供する。**既定のままにする**（ホスト側がまだ旧世代のことがある）。
 - 2026-07-28 仕様で Roots / Sampling / Logging 機能は非推奨。**ログは MCP の logging 機能ではなく stderr に書く**。`console.log` は禁止（stdout は JSON-RPC チャネルで、1行で壊れる）。
 
+### 3.1 サーバー instructions と Prompts（0.3.0 で追加）
+
+**instructions**: `new McpServer(info, { instructions })`（SDK v2 `ServerOptions.instructions`。npm 配布物に `docs/` は含まれないので `dist/*.d.mts` で確認した）で initialize 結果に載せる。本文は `src/instructions.ts` の `SERVER_INSTRUCTIONS`（英語 150 語以内。`test/unit/instructions.test.ts` が語数を検証）。書くのはツール説明では伝わらないことだけ: 読み取り専用で秘密鍵を受け取らず署名・送信しない／アカウントは 39 文字 base32 か 64 桁 hex 公開鍵／ハーベスト報酬はレシートなので `symbol_harvesting_income`（`symbol_transaction_search` やブラウザを使わない）／Voting キーの失効・更新は `symbol_voting_key_status`／数値はサーバー計算済みなのでモデルは再計算しない。クライアントは `client.getInstructions()` で読める（ツール層テストで検証）。
+
+**Prompts**: `server.registerPrompt(name, { title, description, argsSchema: z.object(...) }, cb)`。`src/prompts/` に 1 ファイル 1 プロンプト、`server.ts` の `PROMPTS` 配列の順に登録する（ツールと同じく末尾追加のみ、並べ替えない）。引数は `account`（base32 アドレス）だけ。コールバックで `isValidBase32Address` を通し、不正なら prompts/get をエラーにする。本文は `{account}` を置換するテンプレートで、**実在のアドレス・ホスト・鍵・ハッシュ・日付を書かない**（`test/tools/prompts.test.ts` が、置換前のテンプレートと、置換後の本文から渡した account を除いた残りの両方を正規表現で検査する）。
+- `voting_key_renewal_checklist`: `symbol_voting_key_status`（endEpoch・失効予定・推奨ウィンドウ・空き枠）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare` → 更新コマンドは人間が実行 → 教えられた Tx ハッシュを `symbol_transaction_status` で confirmed 確認 → `symbol_voting_key_status` を再確認（新キーが active / future、失効キーが unlink されて枠が空いた）→ 「現行キー / 新キー / 失効予定 / 未対応事項」の 4 行。
+- `monthly_health_check`: `symbol_node_status` → `symbol_network_compare` → `symbol_harvesting_status`（前回値との比較はユーザーに聞く）→ `symbol_voting_key_status`（30 日以内なら警告を先頭）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ `symbol_harvesting_income`（先月 1 日〜末日、daily）→ 要対応 / 注意 / 正常の 3 段階で 1 画面。
+
 ## 4. 設定
 
 | 環境変数 | 必須 | 内容 |
@@ -105,6 +113,11 @@
 **`symbol_transaction_get`** — `transactionHash`。
 種別名（数値コードから名前へ。§6）、署名者アドレス、宛先、モザイクと量（名前解決・divisibility 適用）、メッセージ（平文なら復号、暗号化なら「暗号化メッセージ」と明記）、手数料（XYM）、高さ、タイムスタンプ（ISO）、アグリゲートなら内包トランザクションの要約一覧。
 参照: `GET /transactions/confirmed/{transactionId}`。見つからなければ `/transactions/unconfirmed/{id}`、`/transactions/partial/{id}` も試して状態（confirmed/unconfirmed/partial/not_found）を返す。
+
+**`symbol_transaction_status`**（0.3.0 で追加。ツール配列の末尾に登録し、既存の順序を変えない）— `transactionHashes`（64 桁 hex の配列、1〜20 件。1 件でも配列で受ける。空・21 件以上・hex 不正は `run` 内で検証して `isError`＋ヒント。重複は 1 件にまとめ、順序は入力どおり）。
+答える問い: 「このハッシュのトランザクションは今どの状態か（確認済み / 未確認 / 署名待ち / 失敗）」。キー更新の link を送った直後の確認用。中身は `symbol_transaction_get`。
+出力: `statuses[]` に各ハッシュの `{ hash, group: confirmed|unconfirmed|partial|failed|not_found, code, codeMeaning, height, deadline }`、`counts`、`note`。`code` が `Success` 以外のとき `codeMeaning` に意味を付ける。対応表 `src/domain/txstatus.ts` は OpenAPI `spec/core/transaction/schemas/TransactionStatusEnum.yml` の `enum` 一覧と `description` ブロックを機械的に取り込んだもの（説明の無い `Success` / `Neutral` / `Failure` / `Failure_Hash_Already_Exists` と列挙に無いコードは `codeMeaning: null`。記憶で補わない）。`height` は confirmed のときだけ、`deadline` は `epochAdjustment` で実時刻に変換。summary では partial に「署名待ち（aggregate bonded、cosignature 不足）」と添える。応答に含まれないハッシュと、バッチ全体の 404 は `not_found` として `isError` にしない。
+参照: `POST /transactionStatus`（body `{ "hashes": [...] }`、`spec/request_bodies/schemas/transactionHashes.yml`）→ `TransactionStatusDTO[]`（`{ group, code?, hash, deadline, height? }`、group / hash / deadline が必須。`TransactionGroupEnum` = `unconfirmed | confirmed | partial | failed`）。ステータスは問い合わせたノードのものなので、アナウンスを受けたノードに聞くのが最も詳しい（OpenAPI の注記。`note` にも書く）。
 
 **`symbol_transaction_search`** — `address`、`type`（任意、名前または数値）、`pageSize`、`order`（desc既定）、`format`。
 上記と同じ形式の要約リスト＋ページング情報。
@@ -213,6 +226,8 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - `SYMBOL_NETWORK=mainnet` で `/node/info` が testnet の generationHashSeed を返したら**起動失敗**すること
 - `SYMBOL_REFERENCE_NODES` に無いホストへは一切 fetch が呼ばれないこと
 - 64桁hex（秘密鍵に見える値）を `symbol_account_get` に渡しても公開鍵として扱うだけで、ログ・出力・外部送信に含めないこと
+- initialize 結果に `instructions` が含まれること（`client.getInstructions()` が `SERVER_INSTRUCTIONS` と一致）
+- `prompts/list` が固定順で返り、`prompts/get` が `account` を埋め込んだ本文を返し、`account` 無し・不正アドレスがエラーになること。テンプレートに実在のアドレス・ホスト・鍵・ハッシュ・日付が無いこと
 
 **統合（`SYMBOL_INTEGRATION=1` のときだけ。CI既定では走らせない）**
 - testnet ノードに対して全ツールがエラーなく応答する

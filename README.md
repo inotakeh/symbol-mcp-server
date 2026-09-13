@@ -6,7 +6,7 @@
 
 [日本語版 README](README.ja.md)
 
-Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 14
+Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 15
 task-level tools. Instead of mirroring REST endpoints one-to-one, each tool answers a question a
 person actually asks:
 
@@ -128,7 +128,7 @@ Or commit a project-level `.mcp.json`:
 
 ## Tools
 
-All 14 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
+All 15 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
 identifiers only, never URLs.
 
 | Tool | Arguments | Answers |
@@ -147,6 +147,7 @@ identifiers only, never URLs.
 | `symbol_harvesting_status` | `account` (optional) | Unlocked delegated harvesters on the node, harvesting limits and beneficiary percentage, and whether the given account's linked key is unlocked here. |
 | `symbol_network_compare` | none | Height and finalization of the node versus `SYMBOL_REFERENCE_NODES`, blocks behind the best, `lagging` flags. Explains what to do when no reference nodes are configured. |
 | `symbol_harvesting_income` | `account`, `fromDate` + `toDate` or `fromHeight` + `toHeight`, `granularity`, `format` | Harvest rewards received in the period: receipt count and exact XYM total (summed on the server as integers), harvester / beneficiary / unknown split, per-day buckets in `SYMBOL_TIMEZONE` or UTC, or a list of receipts. Dates are resolved to heights from block timestamps. |
+| `symbol_transaction_status` | `transactionHashes` (array, 1 to 20) | Where each transaction stands right now: confirmed (with height), unconfirmed, partial (waiting for cosignatures), failed (with the node's code and its meaning) or not_found. One request for the whole batch. |
 
 ### Example questions
 
@@ -177,7 +178,27 @@ Resolves the dates to block heights, reads every HarvestFee receipt addressed to
 sums them as exact integers: total XYM, harvester versus beneficiary share, and one row per day.
 Nothing is left for the model to add up.
 
+**"I just announced my voting key link. Did transaction FAEEB042… go through?"**
+→ `symbol_transaction_status { "transactionHashes": ["FAEEB042…"] }`
+Answers confirmed (with the height), unconfirmed, partial (aggregate bonded waiting for
+cosignatures), failed (with the node's code such as `Failure_Core_Insufficient_Balance` and its
+meaning) or not_found. Always an array, up to 20 hashes per call.
+
 More cases, with the exact arguments expected for each, are in [`evals/cases.json`](evals/cases.json).
+
+## Prompts
+
+Two MCP prompts (`prompts/list`) bundle the tool calls a node operator repeats. Both take one
+argument, `account`: the 39-character base32 address of the voting / harvesting account. The
+prompt text contains no addresses, hosts, keys or dates of its own.
+
+| Prompt | What it walks through |
+|---|---|
+| `voting_key_renewal_checklist` | `symbol_voting_key_status` (expiry, renewal window, free slots), `symbol_node_status` (stop if not synced), `symbol_network_compare`, then, after the operator has announced the VotingKeyLink outside this server, `symbol_transaction_status` on the hash and a second `symbol_voting_key_status` to confirm the new key. Ends with a four-line summary. |
+| `monthly_health_check` | `symbol_node_status`, `symbol_network_compare`, `symbol_harvesting_status`, `symbol_voting_key_status` (warning first if a key expires within 30 days), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month. Reports on one screen as Action required / Attention / Normal. |
+
+The server also sends short `instructions` at initialize time (read-only, account formats, which
+tool answers harvest-income and voting-key questions, use the returned numbers as they are).
 
 ## Security
 

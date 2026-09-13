@@ -31,6 +31,13 @@ export const FIXTURE_BLOCK_TIME = new Date('2026-09-10T03:01:38.808Z');
 /** Hashes of the captured transaction fixtures. */
 export const TRANSFER_HASH = 'FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F';
 export const AGGREGATE_HASH = '1B39E0DDA84039ECBB33F14E1937C68493E4076366D5DDD68F63D8AD4D19D402';
+/** Synthetic hashes of transaction-status.json (H("fixture:status-hash-<group>")). */
+export const STATUS_HASH_UNCONFIRMED =
+  '7E0AF903994D1DFFB48C89067DE94C46C588D86BCA8D5B089AEB1ACC56EB2B50';
+export const STATUS_HASH_PARTIAL =
+  'D257B95DB7EE6F34F63BE235EC8B13197280305F2C8BD02C52C0E3C58C7E9F7B';
+export const STATUS_HASH_FAILED =
+  '9539AD0F4441E381D08B69C63245364C385F5F09553AAF8A2E613AF476B6DBCB';
 
 export type RouteHandler = (request: Request, url: URL) => Response | Promise<Response>;
 /**
@@ -87,6 +94,13 @@ export function mainnetRoutes(): Routes {
     // 0.2.0 fixtures (harvest receipts; identifiers synthetic, see test/fixtures/README.md)
     'GET /blocks/5764879': fixture('mainnet/block-5764879.json'),
     'GET /statements/transaction': fixture('mainnet/statement-harvest-one-block.json'),
+    // 0.3.0 fixtures: statuses of four hashes; hashes the node does not track are left out.
+    'POST /transactionStatus': async (request: Request) => {
+      const body = (await request.json()) as { hashes?: string[] };
+      const wanted = new Set((body.hashes ?? []).map((h) => h.toUpperCase()));
+      const known = fixture<Array<{ hash: string }>>('mainnet/transaction-status.json');
+      return jsonResponse(known.filter((s) => wanted.has(s.hash.toUpperCase())));
+    },
   };
 }
 

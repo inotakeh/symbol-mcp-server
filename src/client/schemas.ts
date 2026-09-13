@@ -281,6 +281,21 @@ export const TransactionStatementPageSchema = z.object({
 });
 export type TransactionStatementPage = z.infer<typeof TransactionStatementPageSchema>;
 
+/**
+ * `POST /transactionStatus` ({ hashes }) answers TransactionStatusDTO[] (symbol-openapi
+ * spec/core/transaction/schemas/TransactionStatusDTO.yml): group, hash and deadline are required,
+ * code and height optional. Hashes the node does not track are simply absent from the array.
+ */
+export const TransactionStatusSchema = z.object({
+  group: z.enum(['confirmed', 'unconfirmed', 'partial', 'failed']),
+  code: z.string().optional(),
+  hash: Hex64,
+  deadline: Uint64String,
+  height: Uint64String.optional(),
+});
+export type TransactionStatus = z.infer<typeof TransactionStatusSchema>;
+export const TransactionStatusListSchema = z.array(TransactionStatusSchema);
+
 /** `GET /node/unlockedaccount`: key is singular (test/fixtures/mainnet/unlockedaccount.json). */
 export const UnlockedAccountSchema = z.object({ unlockedAccount: z.array(Hex64) });
 export type UnlockedAccount = z.infer<typeof UnlockedAccountSchema>;

@@ -153,6 +153,17 @@
         "granularity": "daily"
       },
       "notes": "\"Last month\" becomes a fromDate/toDate pair (inclusive, in SYMBOL_TIMEZONE or UTC); the server resolves the dates to heights and sums the HarvestFee receipts itself, so the model must not add amounts. Use fromHeight/toHeight instead of dates only when the user names heights. symbol_harvesting_status says whether the account can harvest; it reports no income."
+    },
+    {
+      "id": "transaction-status-check",
+      "audience": "node-operator",
+      "question": "Did transaction FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F go through? I just announced my voting key link.",
+      "question_ja": "このハッシュのトランザクションは通った？ FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F（さっき Voting キーの link を送ったところ）",
+      "expectedTool": "symbol_transaction_status",
+      "expectedArguments": {
+        "transactionHashes": ["FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F"]
+      },
+      "notes": "\"Did it go through\" is a status question: confirmed / unconfirmed / partial (waiting for cosignatures) / failed (with the node's code and its meaning) / not_found. transactionHashes is always an array, even for one hash, and takes up to 20. symbol_transaction_get answers what is inside a transaction, not where it stands."
     }
   ]
 }

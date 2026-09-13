@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { SERVER_INSTRUCTIONS } from '../../src/instructions.js';
 import { TOOLS } from '../../src/server.js';
 import { TOOL_ANNOTATIONS } from '../../src/tools/_shared.js';
 import { startTestServer, TEST_NODE_HOST, type TestServer, TRANSFER_HASH } from './harness.js';
@@ -31,6 +32,7 @@ describe('server registration', () => {
       'symbol_harvesting_status',
       'symbol_network_compare',
       'symbol_harvesting_income',
+      'symbol_transaction_status',
     ]);
     for (const tool of tools) {
       expect(tool.name).toMatch(/^symbol_[a-z]+_[a-z_]+$/);
@@ -41,6 +43,14 @@ describe('server registration', () => {
       const props = (tool.outputSchema as { properties?: Record<string, unknown> }).properties;
       expect(Object.keys(props ?? {})[0]).toBe('summary');
     }
+  });
+
+  it('sends the server instructions in the initialize result', async () => {
+    server = await startTestServer();
+    const instructions = server.client.getInstructions();
+    expect(instructions).toBe(SERVER_INSTRUCTIONS);
+    expect(instructions).toMatch(/read-only/);
+    expect(instructions).toMatch(/symbol_harvesting_income/);
   });
 
   it('is stable across repeated listings', async () => {
@@ -67,6 +77,7 @@ describe('every tool returns structuredContent that validates against its output
     ['symbol_harvesting_status', { account: ACCOUNT }],
     ['symbol_network_compare', {}],
     ['symbol_harvesting_income', { account: ACCOUNT, fromHeight: 5_763_675, toHeight: 5_763_675 }],
+    ['symbol_transaction_status', { transactionHashes: [TRANSFER_HASH] }],
   ];
   for (const [name, args] of calls) {
     it(name, async () => {
@@ -107,6 +118,7 @@ describe('outbound requests', () => {
       fromHeight: 5_763_675,
       toHeight: 5_763_675,
     });
+    await server.callTool('symbol_transaction_status', { transactionHashes: [TRANSFER_HASH] });
     expect(server.requests.length).toBeGreaterThan(5);
     const hosts = new Set(server.requests.map((u) => u.host));
     expect([...hosts]).toEqual([TEST_NODE_HOST]);
