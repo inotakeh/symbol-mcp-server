@@ -24,6 +24,21 @@ import { votingKeyStatusTool } from './tools/symbol_voting_key_status.js';
 
 export const SERVER_NAME = 'symbol-mcp-server';
 
+type McpServerOptions = NonNullable<ConstructorParameters<typeof McpServer>[1]>;
+
+/**
+ * Cache hints for the 2026-07-28 revision (SEP-2549). The tool and prompt lists are static for
+ * the life of the process and do not depend on who asks, so shared caches may keep them for a
+ * day (the SDK client's own ceiling). Nothing else declares a hint: tool results and prompt
+ * bodies keep the SDK default (ttlMs 0, cacheScope private). 2025-era responses never carry
+ * these fields.
+ */
+export const LIST_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+export const LIST_CACHE_HINTS: NonNullable<McpServerOptions['cacheHints']> = {
+  'tools/list': { ttlMs: LIST_CACHE_TTL_MS, cacheScope: 'public' },
+  'prompts/list': { ttlMs: LIST_CACHE_TTL_MS, cacheScope: 'public' },
+};
+
 /**
  * Registration order is fixed so `tools/list` is deterministic (2026-07-28 spec SHOULD).
  * Append new tools at the end; never reorder.
@@ -59,7 +74,7 @@ export const PROMPTS: readonly PromptDefinition[] = [
 export function createServer(ctx: AppContext): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: ctx.serverVersion },
-    { instructions: SERVER_INSTRUCTIONS },
+    { instructions: SERVER_INSTRUCTIONS, cacheHints: LIST_CACHE_HINTS },
   );
   registerTools(server, ctx, TOOLS);
   registerPrompts(server, PROMPTS);
