@@ -6,7 +6,7 @@
 
 [English README](README.md)
 
-[Symbol](https://docs.symbol.dev/) の REST API を 15 個の目的別ツールとして公開する、読み取り専用の
+[Symbol](https://docs.symbol.dev/) の REST API を 16 個の目的別ツールとして公開する、読み取り専用の
 [MCP](https://modelcontextprotocol.io/) サーバーです。REST エンドポイントを 1 対 1 で写すのではなく、
 各ツールが「人が実際に尋ねる質問」に答えます。
 
@@ -124,7 +124,7 @@ claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/
 
 ## ツール
 
-15 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
+16 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
 
 | ツール | 引数 | 答えること |
 |---|---|---|
@@ -143,6 +143,7 @@ claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/
 | `symbol_network_compare` | なし | 自ノードと `SYMBOL_REFERENCE_NODES` の高さ・確定高さ、最良ノードとの差、`lagging` フラグ。参照ノード未設定時はその旨と対処を案内。 |
 | `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。 |
 | `symbol_transaction_status` | `transactionHashes`（配列、1〜20 件） | 各トランザクションの現在の状態: confirmed（高さ付き）/ unconfirmed / partial（署名待ち）/ failed（ノードのコードとその意味付き）/ not_found。バッチ全体を 1 リクエストで照会。 |
+| `symbol_finality_participation` | `account`, `epoch`（任意、既定は最新の確定エポック）, `epochs`（1〜20、既定 1）, `format` | アカウントの Voting キーが各エポックのファイナリティ proof に実際に署名したか: participated（prevote と precommit の両方）/ missed（署名しなかったステージ付き）/ no_active_key / unavailable。ステージごとの署名数と、現在のエポックをカバーする鍵が無い／現在のエポックが missed のときの警告（過去のエポックでは警告しない）。 |
 
 ### 質問の例
 
@@ -175,6 +176,12 @@ XYM 合計、harvester と beneficiary の内訳、日ごとの行を返すの�
 confirmed（高さ付き）/ unconfirmed / partial（aggregate bonded で cosignature 待ち）/ failed（`Failure_Core_Insufficient_Balance`
 のようなノードのコードとその意味付き）/ not_found を返します。1 件でも配列で渡し、1 回に 20 件まで。
 
+**「先週うちのノード（NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY）は投票できてた?」**
+→ `symbol_finality_participation { "account": "NCV5HR…", "epochs": 14 }`
+最新の確定エポックとその前 13 エポック（1 エポックは `votingSetGrouping` ブロック、mainnet で約 12 時間）の
+ファイナリティ proof を読み、エポックごとに自分の Voting キーが両ステージの署名者に含まれるか、署名者は何人か、
+現在のエポックが missed か、それをカバーする鍵が無ければ警告を返します。
+
 期待される引数まで含めた他の例は [`evals/cases.json`](evals/cases.json) にあります。
 
 ## Prompts
@@ -184,7 +191,7 @@ confirmed（高さ付き）/ unconfirmed / partial（aggregate bonded で cosign
 
 | Prompt | 手順 |
 |---|---|
-| `voting_key_renewal_checklist` | `symbol_voting_key_status`（失効予定・推奨ウィンドウ・空き枠）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare` → 運用者がこのサーバーの外で VotingKeyLink を送信 → そのハッシュを `symbol_transaction_status` で確認 → `symbol_voting_key_status` を再度呼んで新キーを確認 → 4 行で要約。 |
+| `voting_key_renewal_checklist` | `symbol_voting_key_status`（失効予定・推奨ウィンドウ・空き枠）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare` → 運用者がこのサーバーの外で VotingKeyLink を送信 → そのハッシュを `symbol_transaction_status` で確認 → `symbol_voting_key_status` を再度呼んで新キーを確認 → 新キーの startEpoch が確定した後に `symbol_finality_participation` で参加を確認 → 4 行で要約。 |
 | `monthly_health_check` | `symbol_node_status` → `symbol_network_compare` → `symbol_harvesting_status` → `symbol_voting_key_status`（30 日以内に失効するなら警告を先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income` → 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
 
 サーバーは initialize 時に短い `instructions`（読み取り専用であること、アカウントの指定形式、ハーベスト報酬と Voting キーの質問に使うツール、
@@ -232,6 +239,9 @@ confirmed（高さ付き）/ unconfirmed / partial（aggregate bonded で cosign
 - **ハーベスト報酬の集計は 1 回あたり最大 20,000 ステートメント**（100 件 × 200 ページ）。超える期間は
   `truncated` になるので `fromHeight`/`toHeight` で分割してください。HarvestFee レシートから合算するため、
   レシートを prune しているノードではチェーン上の実績より少なく出ます。
+- **ファイナリティ参加はノードが保持する proof から判定します。** `unavailable` は「そのエポックの proof をノードが
+  持っていない」（未確定、または保持期間外）ことを意味し、投票しなかったことを意味しません。登録されている投票者の
+  総数はサーバーには分からないので、`signatureCount` は nodewatch のような外部の一覧と比べてください。
 - **mainnet と testnet のみ。** トランザクションの作成・署名・送信は設計上行いません。
 - **URL は指定どおりに使います。** ポートやスキームを勝手に変えません。http の 3000 番しか開いていないノードは
   localhost 以外では使えません。

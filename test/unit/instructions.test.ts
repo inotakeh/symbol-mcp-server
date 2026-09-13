@@ -15,6 +15,7 @@ describe('server instructions', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/64-character hex public key/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_harvesting_income/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_voting_key_status/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_finality_participation/);
     expect(SERVER_INSTRUCTIONS).toMatch(/never recompute/);
   });
 

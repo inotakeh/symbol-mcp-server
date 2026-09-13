@@ -8,6 +8,7 @@ import { type AnyToolDefinition, registerTools } from './tools/_shared.js';
 import { accountGetTool } from './tools/symbol_account_get.js';
 import { addressParseTool } from './tools/symbol_address_parse.js';
 import { feeEstimateTool } from './tools/symbol_fee_estimate.js';
+import { finalityParticipationTool } from './tools/symbol_finality_participation.js';
 import { harvestingIncomeTool } from './tools/symbol_harvesting_income.js';
 import { harvestingStatusTool } from './tools/symbol_harvesting_status.js';
 import { mosaicGetTool } from './tools/symbol_mosaic_get.js';
@@ -46,6 +47,7 @@ export const TOOLS: readonly AnyToolDefinition[] = [
   harvestingIncomeTool,
   // 0.3.0
   transactionStatusTool,
+  finalityParticipationTool,
 ];
 
 /** Same rule as TOOLS: append only, never reorder, so `prompts/list` is deterministic. */

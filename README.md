@@ -6,7 +6,7 @@
 
 [日本語版 README](README.ja.md)
 
-Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 15
+Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 16
 task-level tools. Instead of mirroring REST endpoints one-to-one, each tool answers a question a
 person actually asks:
 
@@ -128,7 +128,7 @@ Or commit a project-level `.mcp.json`:
 
 ## Tools
 
-All 15 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
+All 16 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
 identifiers only, never URLs.
 
 | Tool | Arguments | Answers |
@@ -148,6 +148,7 @@ identifiers only, never URLs.
 | `symbol_network_compare` | none | Height and finalization of the node versus `SYMBOL_REFERENCE_NODES`, blocks behind the best, `lagging` flags. Explains what to do when no reference nodes are configured. |
 | `symbol_harvesting_income` | `account`, `fromDate` + `toDate` or `fromHeight` + `toHeight`, `granularity`, `format` | Harvest rewards received in the period: receipt count and exact XYM total (summed on the server as integers), harvester / beneficiary / unknown split, per-day buckets in `SYMBOL_TIMEZONE` or UTC, or a list of receipts. Dates are resolved to heights from block timestamps. |
 | `symbol_transaction_status` | `transactionHashes` (array, 1 to 20) | Where each transaction stands right now: confirmed (with height), unconfirmed, partial (waiting for cosignatures), failed (with the node's code and its meaning) or not_found. One request for the whole batch. |
+| `symbol_finality_participation` | `account`, `epoch` (optional, default latest finalized), `epochs` (1 to 20, default 1), `format` | Whether the account's voting key actually signed the finalization proof of each epoch: participated (both prevote and precommit), missed (which stage was not signed), no_active_key or unavailable, with the signature count per stage and a warning when no key covers the current epoch or the current epoch was missed (historical epochs never warn). |
 
 ### Example questions
 
@@ -184,6 +185,13 @@ Answers confirmed (with the height), unconfirmed, partial (aggregate bonded wait
 cosignatures), failed (with the node's code such as `Failure_Core_Insufficient_Balance` and its
 meaning) or not_found. Always an array, up to 20 hashes per call.
 
+**"Was my voting node NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY actually able to vote last week?"**
+→ `symbol_finality_participation { "account": "NCV5HR…", "epochs": 14 }`
+Reads the finalization proof of the latest finalized epoch and the 13 before it (an epoch is
+`votingSetGrouping` blocks, about 12 hours on mainnet) and reports per epoch whether one of the
+account's voting keys is among the signers of both stages, how many voters signed, and a warning
+if the current epoch was missed or no key covers it.
+
 More cases, with the exact arguments expected for each, are in [`evals/cases.json`](evals/cases.json).
 
 ## Prompts
@@ -194,7 +202,7 @@ prompt text contains no addresses, hosts, keys or dates of its own.
 
 | Prompt | What it walks through |
 |---|---|
-| `voting_key_renewal_checklist` | `symbol_voting_key_status` (expiry, renewal window, free slots), `symbol_node_status` (stop if not synced), `symbol_network_compare`, then, after the operator has announced the VotingKeyLink outside this server, `symbol_transaction_status` on the hash and a second `symbol_voting_key_status` to confirm the new key. Ends with a four-line summary. |
+| `voting_key_renewal_checklist` | `symbol_voting_key_status` (expiry, renewal window, free slots), `symbol_node_status` (stop if not synced), `symbol_network_compare`, then, after the operator has announced the VotingKeyLink outside this server, `symbol_transaction_status` on the hash, a second `symbol_voting_key_status` to confirm the new key, and `symbol_finality_participation` once the new key's start epoch is finalized. Ends with a four-line summary. |
 | `monthly_health_check` | `symbol_node_status`, `symbol_network_compare`, `symbol_harvesting_status`, `symbol_voting_key_status` (warning first if a key expires within 30 days), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month. Reports on one screen as Action required / Attention / Normal. |
 
 The server also sends short `instructions` at initialize time (read-only, account formats, which
@@ -246,6 +254,10 @@ https://nodewatch.symbol.tools/.
 - **Harvest income reads at most 20,000 statements per call** (200 pages of 100). A longer period
   comes back `truncated`; split it with `fromHeight`/`toHeight`. Rewards are summed from HarvestFee
   receipts, so a node that prunes receipts reports less than the chain holds.
+- **Finality participation reads the proofs the node holds.** `unavailable` means the node has no
+  proof for that epoch (not finalized yet, or outside the history it keeps), not that the account
+  did not vote. The server does not know how many voters are registered, so `signatureCount` can
+  only be compared with an external list such as nodewatch.
 - **Mainnet and testnet only.** No transaction building, signing or announcing, by design.
 - **The URL is used as given.** The server does not switch ports or schemes on its own; if a node
   only serves port 3000 over http, it cannot be used unless it is on localhost.

@@ -101,6 +101,8 @@ export function mainnetRoutes(): Routes {
       const known = fixture<Array<{ hash: string }>>('mainnet/transaction-status.json');
       return jsonResponse(known.filter((s) => wanted.has(s.hash.toUpperCase())));
     },
+    // Synthetic finalization proof for epoch 4010 (keys derived, see test/fixtures/README.md).
+    'GET /finalization/proof/epoch/4010': fixture('mainnet/finalization-proof-epoch.json'),
   };
 }
 
