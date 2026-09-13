@@ -104,12 +104,22 @@ export interface DailyBucket extends HarvestTotals {
   readonly date: string;
 }
 
+export interface MonthlyBucket extends HarvestTotals {
+  /** Calendar month (YYYY-MM) in SYMBOL_TIMEZONE or UTC. */
+  readonly month: string;
+}
+
 export interface HarvestAggregate {
   /** Every matching receipt, by height then harvester before beneficiary. */
   readonly rows: HarvestRow[];
   readonly totals: HarvestTotals;
   /** Calendar-day buckets (SYMBOL_TIMEZONE or UTC), ascending; only days with receipts. */
   readonly daily: DailyBucket[];
+  /**
+   * Calendar-month buckets, ascending; only months with receipts. Keyed by the first seven
+   * characters of the same day key as `daily`, so a month is exactly the sum of its days.
+   */
+  readonly monthly: MonthlyBucket[];
   /** Statements whose share pattern could not be recognised (their receipts are still counted). */
   readonly unknownStatements: number;
 }
@@ -142,6 +152,25 @@ function add(totals: HarvestTotals, row: HarvestRow): void {
 }
 
 const KIND_ORDER: Record<HarvestKind, number> = { harvester: 0, beneficiary: 1, unknown: 2 };
+
+/** Sums `rows` into buckets keyed by `keys[i]` (same length), returned in ascending key order. */
+function bucketBy<B extends HarvestTotals>(
+  rows: readonly HarvestRow[],
+  keys: readonly string[],
+  create: (key: string) => B,
+): B[] {
+  const buckets = new Map<string, B>();
+  rows.forEach((row, i) => {
+    const key = keys[i] ?? '';
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = create(key);
+      buckets.set(key, bucket);
+    }
+    add(bucket, row);
+  });
+  return [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, b]) => b);
+}
 
 /**
  * Sums the HarvestFee receipts of the currency mosaic addressed to `targetAddressHex` across the
@@ -177,19 +206,15 @@ export function aggregateHarvestIncome(
   rows.sort((a, b) => a.height - b.height || KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
 
   const totals = emptyTotals();
-  const buckets = new Map<string, DailyBucket>();
-  for (const row of rows) {
-    add(totals, row);
-    const date = calendarDateKey(row.time, options.timeZone);
-    let bucket = buckets.get(date);
-    if (!bucket) {
-      bucket = { date, ...emptyTotals() };
-      buckets.set(date, bucket);
-    }
-    add(bucket, row);
-  }
-  const daily = [...buckets.values()].sort((a, b) => a.date.localeCompare(b.date));
-  return { rows, totals, daily, unknownStatements };
+  for (const row of rows) add(totals, row);
+  const dayKeys = rows.map((row) => calendarDateKey(row.time, options.timeZone));
+  const daily = bucketBy(rows, dayKeys, (date) => ({ date, ...emptyTotals() }));
+  const monthly = bucketBy(
+    rows,
+    dayKeys.map((key) => key.slice(0, 7)),
+    (month) => ({ month, ...emptyTotals() }),
+  );
+  return { rows, totals, daily, monthly, unknownStatements };
 }
 
 /** Network timestamp (ms) of a block; injected so the search is testable without HTTP. */

@@ -141,11 +141,60 @@ export interface TestServerOptions {
   readonly env?: Record<string, string>;
   readonly routes?: Routes;
   readonly now?: Date;
+  /**
+   * Protocol era of the test client. legacy (default): the 2025 `initialize` handshake, requested
+   * explicitly because the SDK's `'auto'` mode negotiates the modern era against this in-process
+   * handler. modern: pinned to 2026-07-28, so the connection goes through `server/discover` and
+   * results carry the 2026 fields (`_meta`, `ttlMs` / `cacheScope` on lists).
+   */
+  readonly era?: 'legacy' | 'modern';
+}
+
+/**
+ * One representative call per registered tool, in registration order, answered by the default
+ * mainnet routes. server.test.ts (2025 era) and era_2026.test.ts (2026-07-28 era) both run it.
+ */
+export const SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+  ['symbol_network_info', {}],
+  ['symbol_node_status', {}],
+  ['symbol_account_get', { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
+  ['symbol_voting_key_status', { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
+  ['symbol_transaction_get', { transactionHash: TRANSFER_HASH }],
+  ['symbol_transaction_search', { address: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
+  ['symbol_mosaic_get', { mosaic: 'symbol.xym' }],
+  ['symbol_namespace_get', { namespace: 'symbol.xym' }],
+  ['symbol_fee_estimate', {}],
+  ['symbol_address_parse', { value: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
+  ['symbol_time_convert', { height: 5_763_675 }],
+  ['symbol_harvesting_status', { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
+  ['symbol_network_compare', {}],
+  [
+    'symbol_harvesting_income',
+    {
+      account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY',
+      fromHeight: 5_763_675,
+      toHeight: 5_763_675,
+    },
+  ],
+  ['symbol_transaction_status', { transactionHashes: [TRANSFER_HASH] }],
+  [
+    'symbol_finality_participation',
+    { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY', epoch: 4010, epochs: 2 },
+  ],
+];
+
+/** One HTTP response of the MCP handler, as the client received it (body read lazily). */
+export interface RawResponse {
+  readonly status: number;
+  readonly contentType: string | null;
+  readonly body: Promise<string>;
 }
 
 export interface TestServer {
   readonly client: Client;
   readonly requests: URL[];
+  /** Every MCP-side HTTP response, in order (the node-side fetch is `requests`). */
+  readonly rawResponses: RawResponse[];
   readonly config: Config;
   readonly ctx: AppContext;
   callTool(name: string, args?: Record<string, unknown>): Promise<ToolCallResult>;
@@ -177,18 +226,32 @@ export async function startTestServer(options: TestServerOptions = {}): Promise<
   const ctx = new AppContext(config, rest, network, '0.0.0-test', () => now);
 
   const handler = createMcpHandler(() => createServer(ctx));
+  const rawResponses: RawResponse[] = [];
   const transport = new StreamableHTTPClientTransport(new URL('http://mcp.local/mcp'), {
-    fetch: (url, init) => handler.fetch(new Request(url, init)),
+    fetch: async (url, init) => {
+      const response = await handler.fetch(new Request(url, init));
+      rawResponses.push({
+        status: response.status,
+        contentType: response.headers.get('content-type'),
+        body: response.clone().text(),
+      });
+      return response;
+    },
   });
   const client = new Client(
     { name: 'symbol-mcp-server-tests', version: '0.0.0' },
-    { versionNegotiation: { mode: 'auto' } },
+    {
+      versionNegotiation: {
+        mode: options.era === 'modern' ? { pin: '2026-07-28' } : 'legacy',
+      },
+    },
   );
   await client.connect(transport);
 
   return {
     client,
     requests: fake.requests,
+    rawResponses,
     config,
     ctx,
     async callTool(name, args = {}) {

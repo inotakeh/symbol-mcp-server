@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { SERVER_INSTRUCTIONS } from '../../src/instructions.js';
 import { TOOLS } from '../../src/server.js';
 import { TOOL_ANNOTATIONS } from '../../src/tools/_shared.js';
-import { startTestServer, TEST_NODE_HOST, type TestServer, TRANSFER_HASH } from './harness.js';
+import {
+  SMOKE_CALLS,
+  startTestServer,
+  TEST_NODE_HOST,
+  type TestServer,
+  TRANSFER_HASH,
+} from './harness.js';
 
 let server: TestServer | undefined;
 afterEach(async () => {
@@ -54,6 +60,18 @@ describe('server registration', () => {
     expect(instructions).toMatch(/symbol_harvesting_income/);
   });
 
+  it('never adds 2026-era cache fields to 2025-era list results', async () => {
+    server = await startTestServer();
+    expect(server.client.getProtocolEra()).toBe('legacy');
+    const tools = (await server.client.listTools()) as Record<string, unknown>;
+    const prompts = (await server.client.listPrompts()) as Record<string, unknown>;
+    for (const result of [tools, prompts]) {
+      expect(result.ttlMs).toBeUndefined();
+      expect(result.cacheScope).toBeUndefined();
+      expect(result._meta).toBeUndefined();
+    }
+  });
+
   it('is stable across repeated listings', async () => {
     server = await startTestServer();
     const first = (await server.client.listTools()).tools.map((t) => t.name);
@@ -63,25 +81,10 @@ describe('server registration', () => {
 });
 
 describe('every tool returns structuredContent that validates against its outputSchema', () => {
-  const calls: Array<[string, Record<string, unknown>]> = [
-    ['symbol_network_info', {}],
-    ['symbol_node_status', {}],
-    ['symbol_account_get', { account: ACCOUNT }],
-    ['symbol_voting_key_status', { account: ACCOUNT }],
-    ['symbol_transaction_get', { transactionHash: TRANSFER_HASH }],
-    ['symbol_transaction_search', { address: ACCOUNT }],
-    ['symbol_mosaic_get', { mosaic: 'symbol.xym' }],
-    ['symbol_namespace_get', { namespace: 'symbol.xym' }],
-    ['symbol_fee_estimate', {}],
-    ['symbol_address_parse', { value: ACCOUNT }],
-    ['symbol_time_convert', { height: 5_763_675 }],
-    ['symbol_harvesting_status', { account: ACCOUNT }],
-    ['symbol_network_compare', {}],
-    ['symbol_harvesting_income', { account: ACCOUNT, fromHeight: 5_763_675, toHeight: 5_763_675 }],
-    ['symbol_transaction_status', { transactionHashes: [TRANSFER_HASH] }],
-    ['symbol_finality_participation', { account: ACCOUNT, epoch: 4010, epochs: 2 }],
-  ];
-  for (const [name, args] of calls) {
+  it('covers every registered tool', () => {
+    expect(SMOKE_CALLS.map(([name]) => name)).toEqual(TOOLS.map((t) => t.name));
+  });
+  for (const [name, args] of SMOKE_CALLS) {
     it(name, async () => {
       server = await startTestServer();
       const result = await server.callTool(name, args);

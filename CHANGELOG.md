@@ -9,6 +9,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `symbol_harvesting_income`: `granularity: monthly` (one bucket per calendar month in
+  `SYMBOL_TIMEZONE` or UTC, summed in the same exact-integer pass as the daily buckets; the summary
+  keeps the period total first and adds one line per month) and `output: csv` (the text content
+  block becomes an RFC 4180 CSV with one row per day, month or receipt; `structuredContent` stays
+  JSON and repeats the CSV in a `csv` field). The daily and receipt outputs are unchanged.
+- Cache hints for the 2026-07-28 protocol revision: `tools/list` and `prompts/list` are
+  advertised with `ttlMs` of 24 hours and `cacheScope: public`; tool results keep the defaults.
+  2025-era responses are unaffected.
+- Tool-layer tests run on both protocol eras: the harness now connects with the 2025 `initialize`
+  handshake explicitly (the SDK's `auto` mode had been negotiating 2026-07-28 in-process, so the
+  2025 path was untested), and a new suite pins the client to 2026-07-28 for listings, prompts,
+  tool calls, instructions, cache hints and a smoke call of every tool.
 - `symbol_finality_participation`: whether an account's voting key actually signed the
   finalization proof of an epoch (default: the latest finalized one) and optionally the up to 20
   epochs before it, read from `GET /finalization/proof/epoch/{epoch}`. Per epoch: `participated`
