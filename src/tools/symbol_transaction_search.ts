@@ -1,12 +1,12 @@
 import * as z from 'zod/v4';
 import { TransactionPageSchema } from '../client/schemas.js';
-import { classifyAccountId, publicKeyToAddress } from '../domain/address.js';
+import { publicKeyToAddress } from '../domain/address.js';
 import { formatInstantText } from '../domain/time.js';
 import { summarizeTransaction, type TransactionSummary } from '../domain/transaction.js';
 import { parseTransactionType, transactionTypeNames } from '../domain/txtype.js';
-import { defineTool, formatInteger, maskIdentifier, nullable, ToolInputError } from './_shared.js';
+import { AccountResolutionSchema, resolveAccountInput, withResolutionPrefix } from './_accounts.js';
+import { defineTool, formatInteger, nullable, ToolInputError } from './_shared.js';
 import { buildSummarizeOptions, TransactionSummarySchema, TypeSchema } from './_transactions.js';
-import { ACCOUNT_INPUT_HINT } from './symbol_account_get.js';
 import { describeTransactionLine, UNTRUSTED_TEXT_NOTE } from './symbol_transaction_get.js';
 
 /** catapult-rest coerces pageSize below 10 to 10 and caps it at 100 (see the captured fixture). */
@@ -20,7 +20,7 @@ const inputSchema = z.object({
     .string()
     .min(1)
     .describe(
-      'Account whose transactions to list: base32 address (39 chars) or hex public key (64 chars). Matches transactions where the account is signer or recipient.',
+      'Account whose transactions to list: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Matches transactions where the account is signer or recipient.',
     ),
   type: z
     .string()
@@ -59,6 +59,7 @@ const inputSchema = z.object({
 const outputSchema = z.object({
   summary: z.string(),
   network: z.string(),
+  accountResolution: AccountResolutionSchema,
   address: z.string(),
   filter: z.object({
     type: nullable(TypeSchema, 'Applied type filter; null when listing every type.'),
@@ -96,12 +97,7 @@ export const transactionSearchTool = defineTool({
   inputSchema,
   outputSchema,
   run: async (ctx, { address, type, pageSize, pageNumber, order, format }) => {
-    const classified = classifyAccountId(address);
-    if (classified.kind === 'invalid') {
-      throw new ToolInputError(
-        `"${maskIdentifier(address.trim())}" is not a valid Symbol account identifier. ${ACCOUNT_INPUT_HINT}`,
-      );
-    }
+    const { classified, resolution } = await resolveAccountInput(ctx, address);
     const base32 =
       classified.kind === 'publicKey'
         ? publicKeyToAddress(classified.canonical, ctx.network.identifier)
@@ -154,8 +150,9 @@ export const transactionSearchTool = defineTool({
     }
 
     return {
-      summary: lines.join('\n'),
+      summary: withResolutionPrefix(lines.join('\n'), resolution),
       network: ctx.network.name,
+      accountResolution: resolution,
       address: base32,
       filter: { type: typeFilter },
       order,

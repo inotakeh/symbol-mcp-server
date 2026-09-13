@@ -84,7 +84,8 @@ describe('symbol_account_get', () => {
 
   it('rejects malformed identifiers with a hint', async () => {
     server = await startTestServer();
-    for (const bad of ['hello', 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYU', '0'.repeat(40)]) {
+    // Lower-case words are namespace names now; these fail every rule.
+    for (const bad of ['Hello!', 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYU', 'A'.repeat(40)]) {
       const result = await server.callTool('symbol_account_get', { account: bad });
       expect(result.isError).toBe(true);
       expect(result.text).toMatch(/not a valid Symbol account identifier/);

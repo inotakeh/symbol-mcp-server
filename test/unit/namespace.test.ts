@@ -48,6 +48,12 @@ describe('paths and names', () => {
     expect(isValidNamespacePath('a.b.c')).toBe(true);
     expect(isValidNamespacePath('a.b.c.d')).toBe(false);
     expect(isValidNamespacePath('a..b')).toBe(false);
+    expect(isValidNamespacePath('.a')).toBe(false);
+    expect(isValidNamespacePath('a.')).toBe(false);
     expect(isValidNamespacePath('')).toBe(false);
+    // Strict: exactly as written (callers that want leniency trim and lower-case first).
+    expect(isValidNamespacePath(' symbol')).toBe(false);
+    expect(isValidNamespacePath('Symbol.xym')).toBe(false);
+    expect(isValidNamespacePath('sym bol')).toBe(false);
   });
 });

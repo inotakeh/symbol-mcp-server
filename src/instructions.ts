@@ -6,8 +6,8 @@
  * questions models most often route wrongly.
  */
 export const SERVER_INSTRUCTIONS = [
-  'symbol-mcp-server is a read-only view of one Symbol blockchain node: no tool accepts a private key or mnemonic, and nothing is ever signed or announced.',
-  'Identify an account by its 39-character base32 address or its 64-character hex public key.',
+  'symbol-mcp-server is a read-only view of one Symbol node: no tool accepts a private key or mnemonic; nothing is signed or announced.',
+  'Identify an account by its 39-character base32 address, its 64-character hex public key, or a namespace name (alice) with an address alias.',
   'Harvest rewards are receipts, not transactions. For any question about harvesting income, rewards or earnings call symbol_harvesting_income; do not use symbol_transaction_search or a web browser for that.',
   'For monthly or yearly totals or a spreadsheet, pass granularity "monthly" or output "csv".',
   'For when a voting key expires and when to renew it, call symbol_voting_key_status; for whether that key actually signed finalization votes, call symbol_finality_participation.',

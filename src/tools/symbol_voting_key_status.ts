@@ -4,6 +4,7 @@ import { hexAddressToBase32 } from '../domain/address.js';
 import { parseHeight } from '../domain/epoch.js';
 import { formatInstantText, roundTo } from '../domain/time.js';
 import { buildVotingStatus } from '../domain/voting.js';
+import { AccountResolutionSchema, withResolutionPrefix } from './_accounts.js';
 import { defineTool, formatInteger, nullable } from './_shared.js';
 import { fetchAccount } from './symbol_account_get.js';
 
@@ -13,7 +14,9 @@ const inputSchema = z.object({
   account: z
     .string()
     .min(1)
-    .describe('Voting account to inspect: base32 address (39 chars) or hex public key (64 chars).'),
+    .describe(
+      'Voting account to inspect: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node).',
+    ),
 });
 
 const VotingKeyReportSchema = z.object({
@@ -35,6 +38,7 @@ const VotingKeyReportSchema = z.object({
 const outputSchema = z.object({
   summary: z.string(),
   network: z.string(),
+  accountResolution: AccountResolutionSchema,
   account: z.object({
     address: z.string(),
     publicKey: nullable(
@@ -84,7 +88,7 @@ export const votingKeyStatusTool = defineTool({
   inputSchema,
   outputSchema,
   run: async (ctx, { account }) => {
-    const [{ info }, chain, { properties, currency }] = await Promise.all([
+    const [{ info, resolution }, chain, { properties, currency }] = await Promise.all([
       fetchAccount(ctx, account),
       ctx.rest.get('/chain/info', ChainInfoSchema),
       ctx.getNetworkData(),
@@ -151,8 +155,9 @@ export const votingKeyStatusTool = defineTool({
     );
 
     return {
-      summary: lines.join('\n'),
+      summary: withResolutionPrefix(lines.join('\n'), resolution),
       network: ctx.network.name,
+      accountResolution: resolution,
       account: {
         address,
         publicKey: acct.publicKey.toUpperCase() === ZERO_KEY ? null : acct.publicKey.toUpperCase(),

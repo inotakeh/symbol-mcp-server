@@ -2,6 +2,11 @@ import * as z from 'zod/v4';
 import { MosaicInfoSchema, UnlockedAccountSchema } from '../client/schemas.js';
 import { hexAddressToBase32 } from '../domain/address.js';
 import { formatAmount } from '../domain/amount.js';
+import {
+  type AccountResolution,
+  AccountResolutionSchema,
+  withResolutionPrefix,
+} from './_accounts.js';
 import { defineTool, formatInteger, nullable } from './_shared.js';
 import { fetchAccount } from './symbol_account_get.js';
 
@@ -11,7 +16,7 @@ const inputSchema = z.object({
     .min(1)
     .optional()
     .describe(
-      'Optional harvester account to check: base32 address (39 chars) or hex public key (64 chars). When given, reports whether its linked (remote) key is unlocked on this node and whether its balance is within the harvesting limits.',
+      'Optional harvester account to check: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). When given, reports whether its linked (remote) key is unlocked on this node and whether its balance is within the harvesting limits.',
     ),
 });
 
@@ -35,6 +40,7 @@ const AccountReportSchema = z.object({
 const outputSchema = z.object({
   summary: z.string(),
   network: z.string(),
+  accountResolution: AccountResolutionSchema,
   node: z.object({
     host: z.string(),
     unlockedCount: z.number(),
@@ -103,8 +109,11 @@ export const harvestingStatusTool = defineTool({
     ];
 
     let report: z.output<typeof AccountReportSchema> | null = null;
+    let resolution: AccountResolution | null = null;
     if (account !== undefined && account.trim() !== '') {
-      const { info } = await fetchAccount(ctx, account);
+      const fetched = await fetchAccount(ctx, account);
+      const info = fetched.info;
+      resolution = fetched.resolution;
       const acct = info.account;
       const address = hexAddressToBase32(acct.address);
       const linked = acct.supplementalPublicKeys.linked?.publicKey.toUpperCase() ?? null;
@@ -169,8 +178,9 @@ export const harvestingStatusTool = defineTool({
     }
 
     return {
-      summary: lines.join('\n'),
+      summary: withResolutionPrefix(lines.join('\n'), resolution),
       network: ctx.network.name,
+      accountResolution: resolution,
       node: {
         host: ctx.rest.host,
         unlockedCount: unlockedKeys.length,

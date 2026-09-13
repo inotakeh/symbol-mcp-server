@@ -92,11 +92,38 @@ describe('classifyAccountId', () => {
       canonical: data.fixture.publicKey,
     });
   });
+  it('classifies namespace names as given (lower-case, up to three levels)', () => {
+    expect(classifyAccountId('alice')).toEqual({ kind: 'namespace', canonical: 'alice' });
+    expect(classifyAccountId(' alice.pay ')).toEqual({ kind: 'namespace', canonical: 'alice.pay' });
+    expect(classifyAccountId('a-b_c9.x.y')).toEqual({ kind: 'namespace', canonical: 'a-b_c9.x.y' });
+    // 'not-an-address' is a syntactically valid root namespace name.
+    expect(classifyAccountId('not-an-address').kind).toBe('namespace');
+  });
+  it('lets a lower-case 39-character string that fails the address checksum fall through to namespace', () => {
+    const lower = data.fixture.base32.toLowerCase();
+    const broken = `${lower.slice(0, -1)}${lower.endsWith('a') ? 'b' : 'a'}`;
+    expect(broken).toHaveLength(39);
+    expect(classifyAccountId(broken)).toEqual({ kind: 'namespace', canonical: broken });
+    // The same typo in upper case is neither an address nor a namespace name.
+    expect(classifyAccountId(broken.toUpperCase()).kind).toBe('invalid');
+    // A correct address wins over the namespace rule even in lower case.
+    expect(classifyAccountId(lower).kind).toBe('address');
+    // A lower-case public key is a key, not a 64-character namespace name.
+    expect(classifyAccountId(data.fixture.publicKey.toLowerCase()).kind).toBe('publicKey');
+  });
   it('rejects everything else', () => {
     expect(classifyAccountId('').kind).toBe('invalid');
-    expect(classifyAccountId('not-an-address').kind).toBe('invalid');
     expect(classifyAccountId('A'.repeat(40)).kind).toBe('invalid');
-    expect(classifyAccountId('0'.repeat(63)).kind).toBe('invalid');
+    // 63 digits is a syntactically valid namespace name (max 64), so it is not invalid.
+    expect(classifyAccountId('0'.repeat(63)).kind).toBe('namespace');
     expect(classifyAccountId('0'.repeat(65)).kind).toBe('invalid');
+    expect(classifyAccountId('ALICE').kind).toBe('invalid');
+    expect(classifyAccountId('alice pay').kind).toBe('invalid');
+    expect(classifyAccountId('a.b.c.d').kind).toBe('invalid');
+    expect(classifyAccountId('a..b').kind).toBe('invalid');
+    expect(classifyAccountId('.a').kind).toBe('invalid');
+    expect(classifyAccountId('a.').kind).toBe('invalid');
+    expect(classifyAccountId('-alice').kind).toBe('invalid');
+    expect(classifyAccountId('a'.repeat(65)).kind).toBe('invalid');
   });
 });

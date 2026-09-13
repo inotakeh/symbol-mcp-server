@@ -73,11 +73,13 @@ export function isHexNamespaceId(value: string): boolean {
   return /^[0-9A-Fa-f]{16}$/.test(value.trim());
 }
 
+/**
+ * Strict check of a dotted name exactly as written: 1 to MAX_NAMESPACE_DEPTH levels, each a
+ * valid lower-case part (no trimming, no case folding, no empty part). Callers that want to be
+ * lenient (symbol_namespace_get) lower-case and trim before calling.
+ */
 export function isValidNamespacePath(fullyQualifiedName: string): boolean {
-  try {
-    generateNamespacePath(fullyQualifiedName);
-    return true;
-  } catch {
-    return false;
-  }
+  const parts = fullyQualifiedName.split('.');
+  if (parts.length === 0 || parts.length > MAX_NAMESPACE_DEPTH) return false;
+  return parts.every(isValidNamespaceName);
 }

@@ -7,6 +7,8 @@ import {
   BlockInfoSchema,
   MosaicInfoSchema,
   MosaicNamesSchema,
+  type NamespaceInfo,
+  NamespaceInfoSchema,
   NamespaceNamesSchema,
   NetworkPropertiesRawSchema,
 } from './client/schemas.js';
@@ -36,9 +38,15 @@ export interface AverageBlockTime {
 
 export const DEFAULT_BLOCK_TIME_SAMPLE = 10_000;
 
+interface CachedNamespace {
+  readonly info: NamespaceInfo | null;
+  readonly expiresAtMs: number;
+}
+
 export class AppContext {
   private networkDataPromise: Promise<NetworkData> | undefined;
   private referenceClientList: RestClient[] | undefined;
+  private readonly namespaceCache = new Map<string, CachedNamespace>();
 
   constructor(
     readonly config: Config,
@@ -101,6 +109,27 @@ export class AppContext {
         divisibility: mosaic.mosaic.divisibility,
       },
     };
+  }
+
+  /**
+   * `GET /namespaces/{id}` (null on 404) cached per process for one blockGenerationTargetTime,
+   * the shortest interval in which an alias can change on chain. Used to resolve account
+   * arguments given as namespace names; the TTL comes from /network/properties, not a constant.
+   */
+  async getNamespaceInfo(namespaceId: string): Promise<NamespaceInfo | null> {
+    const id = namespaceId.toUpperCase();
+    const nowMs = this.now().getTime();
+    const cached = this.namespaceCache.get(id);
+    if (cached && cached.expiresAtMs > nowMs) return cached.info;
+    const [{ properties }, info] = await Promise.all([
+      this.getNetworkData(),
+      this.rest.getOrNull(`/namespaces/${id}`, NamespaceInfoSchema),
+    ]);
+    this.namespaceCache.set(id, {
+      info,
+      expiresAtMs: nowMs + properties.blockGenerationTargetTimeMs,
+    });
+    return info;
   }
 
   /** Resolves mosaic ids to their first alias name via `POST /namespaces/mosaic/names`. */

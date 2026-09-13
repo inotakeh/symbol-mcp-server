@@ -10,7 +10,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { SERVER_INSTRUCTIONS } from '../../src/instructions.js';
 import { LIST_CACHE_TTL_MS, PROMPTS, SERVER_NAME, TOOLS } from '../../src/server.js';
 import { TOOL_ANNOTATIONS } from '../../src/tools/_shared.js';
-import { SMOKE_CALLS, startTestServer, TEST_NODE_HOST, type TestServer } from './harness.js';
+import {
+  EXTRA_SMOKE_CALLS,
+  SMOKE_CALLS,
+  startTestServer,
+  TEST_NODE_HOST,
+  type TestServer,
+} from './harness.js';
 
 let server: TestServer | undefined;
 afterEach(async () => {
@@ -151,8 +157,8 @@ describe('2026-07-28 protocol era', () => {
   });
 
   describe('every tool answers on this era with text, structuredContent and a valid schema', () => {
-    for (const [name, args] of SMOKE_CALLS) {
-      it(name, async () => {
+    for (const [name, args] of [...SMOKE_CALLS, ...EXTRA_SMOKE_CALLS]) {
+      it(`${name} ${JSON.stringify(args)}`, async () => {
         server = await startTestServer({ era: 'modern' });
         const result = (await server.client.callTool({ name, arguments: args })) as Loose & {
           content: Array<{ type: string; text?: string }>;

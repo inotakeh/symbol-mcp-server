@@ -92,7 +92,7 @@ describe('symbol_harvesting_status', () => {
 
   it('rejects an invalid account with a hint', async () => {
     server = await startTestServer();
-    const result = await server.callTool('symbol_harvesting_status', { account: 'bogus' });
+    const result = await server.callTool('symbol_harvesting_status', { account: 'Bogus!' });
     expect(result.isError).toBe(true);
     expect(result.text).toMatch(/not a valid Symbol account identifier/);
   });

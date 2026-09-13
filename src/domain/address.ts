@@ -10,6 +10,7 @@
  * symbol/symbol tests/vectors/symbol/crypto/1.test-address.json.
  */
 import { createHash } from 'node:crypto';
+import { isValidNamespacePath } from './namespace.js';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const BASE32_LOOKUP = new Map<string, number>([...BASE32_ALPHABET].map((c, i) => [c, i] as const));
@@ -168,17 +169,29 @@ export function networkIdentifierOfAddress(base32: string): number {
   return first;
 }
 
-export type AccountIdKind = 'address' | 'hexAddress' | 'publicKey' | 'invalid';
+export type AccountIdKind = 'address' | 'hexAddress' | 'publicKey' | 'namespace' | 'invalid';
 
 export interface ClassifiedAccountId {
   readonly kind: AccountIdKind;
-  /** Canonical form usable in REST paths: base32 address or upper-case public key hex. */
+  /**
+   * Canonical form: base32 address or upper-case public key hex, both usable in REST paths;
+   * for a namespace the dotted name as given (lower-case by the naming rules), which still has
+   * to be resolved to an address before any REST call.
+   */
   readonly canonical: string;
 }
 
 /**
- * Classifies a user-supplied account identifier. Hex addresses are converted to base32
- * because `/accounts/{accountId}` accepts base32 addresses and public keys only.
+ * Classifies a user-supplied account identifier, in this order: 64-hex public key, 48-hex
+ * address (converted to base32, since `/accounts/{accountId}` accepts base32 and public keys
+ * only), 39-character base32 address, then a namespace name (`alice`, `alice.pay`; lower-case
+ * letters, digits, `-` and `_`, up to three dot-separated levels, see domain/namespace.ts).
+ *
+ * The order settles the overlaps: a lower-case 39-character string or a lower-case 64-hex
+ * string is also a syntactically valid namespace name, but it is an address or a public key
+ * first. A 39-character base32 string is an address only when its checksum verifies; otherwise it
+ * falls through to the namespace rule, so a genuine 39-character namespace name is never reported
+ * as a mistyped address (an upper-case typo of an address fails both rules and stays invalid).
  */
 export function classifyAccountId(value: string): ClassifiedAccountId {
   const trimmed = value.trim();
@@ -191,6 +204,9 @@ export function classifyAccountId(value: string): ClassifiedAccountId {
   }
   if (isValidBase32Address(trimmed)) {
     return { kind: 'address', canonical: normalizeAddressInput(trimmed) };
+  }
+  if (isValidNamespacePath(trimmed)) {
+    return { kind: 'namespace', canonical: trimmed };
   }
   return { kind: 'invalid', canonical: '' };
 }
