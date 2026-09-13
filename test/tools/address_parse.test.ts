@@ -32,6 +32,7 @@ describe('symbol_address_parse', () => {
       network: { name: 'mainnet', identifier: 104, matchesConfiguredNetwork: true },
       publicKey: null,
       derivedAddresses: null,
+      accountResolution: null,
       configuredNetwork: 'mainnet',
     });
     expect(server.requests.length).toBe(before);
@@ -94,7 +95,8 @@ describe('symbol_address_parse', () => {
       ['NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYVY', /checksum does not match/],
       ['NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYU', /39 characters; got 38/],
       ['ABCDEF', /Hex input must be 48 characters/],
-      ['0'.repeat(40), /got 40/],
+      ['A'.repeat(40), /got 40/],
+      ['Not A Name', /got 10/],
     ];
     for (const [value, reason] of cases) {
       const result = await server.callTool('symbol_address_parse', { value });

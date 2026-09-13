@@ -431,7 +431,7 @@ describe('symbol_finality_participation', () => {
 
   it('rejects an invalid account and an out-of-range epochs value', async () => {
     server = await startTestServer();
-    const bad = await server.callTool('symbol_finality_participation', { account: 'nope' });
+    const bad = await server.callTool('symbol_finality_participation', { account: 'Nope!' });
     expect(bad.isError).toBe(true);
     expect(bad.text).toMatch(/not a valid Symbol account identifier/);
     // Schema bounds (1..20) are enforced by the SDK before the tool runs.

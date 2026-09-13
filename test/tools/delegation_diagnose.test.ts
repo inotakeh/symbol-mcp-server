@@ -319,7 +319,7 @@ describe('symbol_delegation_diagnose', () => {
 
   it('rejects bad input with a hint', async () => {
     server = await startTestServer();
-    const invalid = await server.callTool('symbol_delegation_diagnose', { account: 'bogus' });
+    const invalid = await server.callTool('symbol_delegation_diagnose', { account: 'Bogus!' });
     expect(invalid.isError).toBe(true);
     expect(invalid.text).toMatch(/not a valid Symbol account identifier/);
     const tooLong = await server.callTool('symbol_delegation_diagnose', {

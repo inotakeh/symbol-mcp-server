@@ -581,7 +581,7 @@ describe('symbol_harvesting_income', () => {
     it('rejects an invalid account before contacting the node for statements', async () => {
       server = await startTestServer({ routes: routes(), now: NOW });
       const result = await server.callTool('symbol_harvesting_income', {
-        account: 'not-an-account',
+        account: 'Not an account',
         fromHeight: 1,
         toHeight: 2,
       });

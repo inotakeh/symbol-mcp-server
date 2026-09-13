@@ -202,6 +202,17 @@
         "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
       },
       "notes": "\"Not working\" / \"is it active\" / \"where is it stuck\" is a diagnosis: one call returns a verdict (active / not_active / cannot_verify) and every check with a hint. Pass the main (balance-holding) account. Leave recentDays at its default unless the user names a window. symbol_harvesting_status only says whether the linked key is unlocked on the node; symbol_harvesting_income only sums rewards."
+    },
+    {
+      "id": "account-by-namespace-name",
+      "audience": "general",
+      "question": "Show me alice's account.",
+      "question_ja": "alice のノード状況を見て",
+      "expectedTool": "symbol_account_get",
+      "expectedArguments": {
+        "account": "alice"
+      },
+      "notes": "Every account argument also accepts a namespace name (alice, alice.pay) that carries an address alias; the server resolves it and reports the resolution in accountResolution and at the start of the summary. Pass the name as given, do not look the address up first. A missing, expired, mosaic-aliased or alias-less namespace is an error with a hint."
     }
   ]
 }

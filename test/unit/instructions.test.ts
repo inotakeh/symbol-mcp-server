@@ -13,6 +13,7 @@ describe('server instructions', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/private key/);
     expect(SERVER_INSTRUCTIONS).toMatch(/39-character base32 address/);
     expect(SERVER_INSTRUCTIONS).toMatch(/64-character hex public key/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/namespace name/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_harvesting_income/);
     expect(SERVER_INSTRUCTIONS).toMatch(/granularity "monthly" or output "csv"/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_voting_key_status/);

@@ -123,7 +123,7 @@ describe('symbol_transaction_search', () => {
 
   it('rejects bad addresses, unknown types and out-of-range page sizes', async () => {
     server = await startTestServer();
-    const badAddress = await server.callTool('symbol_transaction_search', { address: 'nope' });
+    const badAddress = await server.callTool('symbol_transaction_search', { address: 'Nope!' });
     expect(badAddress.isError).toBe(true);
     expect(badAddress.text).toMatch(/not a valid Symbol account identifier/);
 

@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "index": 0,
+    "active": true
+  },
+  "namespace": {
+    "version": 1,
+    "registrationType": 0,
+    "depth": 1,
+    "level0": "935F70F34BFD4E33",
+    "alias": {
+      "type": 2,
+      "address": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53"
+    },
+    "parentId": "0000000000000000",
+    "ownerAddress": "68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53",
+    "startHeight": "5000000",
+    "endHeight": "6500000"
+  },
+  "id": "FDEDFE0B39927D512A92541C"
+}

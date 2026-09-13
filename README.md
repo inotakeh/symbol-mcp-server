@@ -129,20 +129,23 @@ Or commit a project-level `.mcp.json`:
 ## Tools
 
 All 17 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
-identifiers only, never URLs.
+identifiers only, never URLs. Every `account` argument (and the `address` of
+`symbol_transaction_search`) takes a base32 address, a hex public key, or a namespace name such as
+`alice` or `alice.pay` that carries an address alias; the resolution is reported in
+`accountResolution` and at the start of the summary.
 
 | Tool | Arguments | Answers |
 |---|---|---|
 | `symbol_network_info` | none | Network name/identifier and generation hash seed, current and finalized height, finalization epoch, block target time, voting set grouping, epoch adjustment, XYM mosaic id/alias/divisibility, current fee multipliers. |
 | `symbol_node_status` | none | Friendly name, host, roles (Peer/API/Voting), decoded version, health of API node and database, heights, peer count, and a sync check (latest block older than 5 minutes means `synced: false`). |
-| `symbol_account_get` | `account` (address or public key), `format` | Address in base32 and hex, public key, every mosaic balance with alias and decimals, importance, linked/VRF/node/voting keys, whether delegated harvesting is set up, multisig settings. |
+| `symbol_account_get` | `account` (address, public key or namespace name), `format` | Address in base32 and hex, public key, every mosaic balance with alias and decimals, importance, linked/VRF/node/voting keys, whether delegated harvesting is set up, multisig settings. |
 | `symbol_voting_key_status` | `account` | Every voting key with status (expired/active/future), remaining epochs/blocks/days, estimated expiry date, recommended renewal window (7 to 3 days before), slot usage including expired keys, voter eligibility versus `minVoterBalance`, warnings. |
 | `symbol_transaction_get` | `transactionHash` | Looks in confirmed, unconfirmed and partial groups and reports the status; type name, signer and recipient, mosaics with aliases, decoded plain message or "encrypted" marker, fee, height and time, inner transactions of aggregates. |
 | `symbol_transaction_search` | `address`, `type`, `pageSize`, `pageNumber`, `order`, `format` | Confirmed transactions involving an account, newest first by default, optional type filter by name (`transfer`) or code (`16724`), 10 to 100 per page. |
 | `symbol_mosaic_get` | `mosaic` (hex id or alias such as `symbol.xym`) | Supply, divisibility, flags (supply mutable, transferable, restrictable, revokable), owner, start height, duration and estimated expiry. |
 | `symbol_namespace_get` | `namespace` (name or hex id) | Owner, root or sub, level names, alias target (address or mosaic), start and end height, estimated expiry date. |
 | `symbol_fee_estimate` | `transactionSizeBytes` (optional) | Slow/average/median/fast fee tiers in XYM computed from the node's current multipliers. Nothing is signed or sent. |
-| `symbol_address_parse` | `value` (address or public key) | Offline validation: checksum, network byte, base32/hex/dashed forms, and the addresses derived from a public key. |
+| `symbol_address_parse` | `value` (address, public key or namespace name) | Offline validation: checksum, network byte, base32/hex/dashed forms, and the addresses derived from a public key. A namespace name is resolved through the node to its address alias. |
 | `symbol_time_convert` | one of `height`, `epoch`, `timestamp` | Height, finalization epoch, network timestamp and wall-clock time. Exact for the past, estimated (and flagged) for the future. |
 | `symbol_harvesting_status` | `account` (optional) | Unlocked delegated harvesters on the node, harvesting limits and beneficiary percentage, and whether the given account's linked key is unlocked here. |
 | `symbol_network_compare` | none | Height and finalization of the node versus `SYMBOL_REFERENCE_NODES`, blocks behind the best, `lagging` flags. Explains what to do when no reference nodes are configured. |
@@ -159,6 +162,12 @@ Returns each key's `startEpoch`/`endEpoch`, the expiry height `(endEpoch - 1) ×
 remaining epochs, blocks and days, an estimated expiry date based on the measured average block
 time, the renewal window, free slots (expired keys still occupy slots) and whether the balance
 meets `minVoterBalance`.
+
+**"Show me alice's account."**
+→ `symbol_account_get { "account": "alice" }`
+The namespace `alice` is resolved through the node to its address alias (a missing, expired,
+mosaic-aliased or alias-less namespace is an error with a hint); the answer starts with
+`alice → NCV5…` and carries the resolution in `accountResolution`. Works for every account argument.
 
 **"How much XYM does NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY hold?"**
 → `symbol_account_get { "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY" }`

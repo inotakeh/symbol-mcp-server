@@ -1,14 +1,25 @@
 import * as z from 'zod/v4';
 import { RestError } from '../client/rest.js';
-import { AccountInfoSchema, MosaicInfoSchema, MultisigInfoSchema } from '../client/schemas.js';
+import {
+  type AccountInfo,
+  AccountInfoSchema,
+  MosaicInfoSchema,
+  MultisigInfoSchema,
+} from '../client/schemas.js';
 import type { AppContext } from '../context.js';
-import { classifyAccountId, hexAddressToBase32 } from '../domain/address.js';
+import { hexAddressToBase32 } from '../domain/address.js';
 import { formatAmount } from '../domain/amount.js';
 import { parseHeight } from '../domain/epoch.js';
+import {
+  ACCOUNT_INPUT_HINT,
+  type AccountResolution,
+  AccountResolutionSchema,
+  resolveAccountInput,
+  withResolutionPrefix,
+} from './_accounts.js';
 import { defineTool, maskIdentifier, nullable, ToolInputError } from './_shared.js';
 
-export const ACCOUNT_INPUT_HINT =
-  'Pass a 39-character base32 address (starts with N on mainnet, T on testnet, e.g. NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY) or a 64-character hex public key. 48-character hex addresses are converted automatically.';
+export { ACCOUNT_INPUT_HINT } from './_accounts.js';
 
 const ZERO_KEY = '0'.repeat(64);
 
@@ -29,7 +40,7 @@ const inputSchema = z.object({
     .string()
     .min(1)
     .describe(
-      'Account to look up: base32 address (39 chars) or hex public key (64 chars). Hex addresses (48 chars) are also accepted.',
+      'Account to look up: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Hex addresses (48 chars) are also accepted.',
     ),
   format: z
     .enum(['concise', 'detailed'])
@@ -59,6 +70,7 @@ const VotingKeySchema = z.object({
 const outputSchema = z.object({
   summary: z.string(),
   network: z.string(),
+  accountResolution: AccountResolutionSchema,
   address: z.object({ base32: z.string(), hex: z.string() }),
   publicKey: nullable(
     z.string(),
@@ -90,19 +102,30 @@ const outputSchema = z.object({
 
 export const CONCISE_MOSAIC_LIMIT = 10;
 
-/** Shared by account tools: fetches `/accounts/{id}` with a helpful not-found message. */
-export async function fetchAccount(ctx: AppContext, account: string) {
-  const classified = classifyAccountId(account);
-  if (classified.kind === 'invalid') {
-    throw new ToolInputError(
-      `"${maskIdentifier(account.trim())}" is not a valid Symbol account identifier. ${ACCOUNT_INPUT_HINT}`,
-    );
-  }
+/**
+ * Shared by account tools: resolves the argument (address, public key or namespace name, see
+ * _accounts.ts) and fetches `/accounts/{id}` with a helpful not-found message. `resolution` is
+ * non-null only when a namespace name was resolved; tools put it in `accountResolution`.
+ */
+export async function fetchAccount(
+  ctx: AppContext,
+  account: string,
+): Promise<{
+  classified: Awaited<ReturnType<typeof resolveAccountInput>>['classified'];
+  info: AccountInfo;
+  resolution: AccountResolution | null;
+}> {
+  const { classified, resolution } = await resolveAccountInput(ctx, account);
   try {
     const info = await ctx.rest.get(`/accounts/${classified.canonical}`, AccountInfoSchema);
-    return { classified, info };
+    return { classified, info, resolution };
   } catch (err) {
     if (err instanceof RestError && err.kind === 'not_found') {
+      if (resolution) {
+        throw new ToolInputError(
+          `Namespace "${resolution.namespace}" aliases ${resolution.address}, but no account with that address exists on ${ctx.network.name} (node ${ctx.rest.host}). Accounts appear on-chain only after their first transaction; the alias may point at an unused address.`,
+        );
+      }
       const shown =
         classified.kind === 'publicKey'
           ? `public key ${maskIdentifier(classified.canonical)}`
@@ -119,11 +142,11 @@ export const accountGetTool = defineTool({
   name: 'symbol_account_get',
   title: 'Symbol account details',
   description:
-    'Get a Symbol account by address or public key: address in base32 and hex, public key, account type, all mosaic balances (with alias names and divisibility-adjusted amounts), importance, supplemental keys (linked/node/vrf/voting), whether delegated harvesting is configured, and multisig settings if the account is a multisig account.',
+    'Get a Symbol account by address, public key or namespace name (alice, alice.pay; resolved to its address alias and reported in accountResolution): address in base32 and hex, public key, account type, all mosaic balances (with alias names and divisibility-adjusted amounts), importance, supplemental keys (linked/node/vrf/voting), whether delegated harvesting is configured, and multisig settings if the account is a multisig account.',
   inputSchema,
   outputSchema,
   run: async (ctx, { account, format }) => {
-    const [{ info }, { currency }] = await Promise.all([
+    const [{ info, resolution }, { currency }] = await Promise.all([
       fetchAccount(ctx, account),
       ctx.getNetworkData(),
     ]);
@@ -172,8 +195,9 @@ export const accountGetTool = defineTool({
     ].join('\n');
 
     return {
-      summary,
+      summary: withResolutionPrefix(summary, resolution),
       network: ctx.network.name,
+      accountResolution: resolution,
       address: { base32, hex: acct.address.toUpperCase() },
       publicKey,
       accountType: {

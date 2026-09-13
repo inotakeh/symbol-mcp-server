@@ -31,6 +31,7 @@ import {
   formatInstantText,
   networkTimestampToDate,
 } from '../domain/time.js';
+import { AccountResolutionSchema, withResolutionPrefix } from './_accounts.js';
 import { defineTool, formatInteger, nullable, ToolInputError } from './_shared.js';
 import { InstantSchema } from './_transactions.js';
 import { fetchAccount } from './symbol_account_get.js';
@@ -51,7 +52,7 @@ const inputSchema = z.object({
     .string()
     .min(1)
     .describe(
-      'Account whose harvest income to total: base32 address (39 chars) or hex public key (64 chars). Hex addresses (48 chars) are also accepted.',
+      'Account whose harvest income to total: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Hex addresses (48 chars) are also accepted.',
     ),
   fromDate: z
     .string()
@@ -152,6 +153,7 @@ const ReceiptRowSchema = z.object({
 const outputSchema = z.object({
   summary: z.string(),
   network: z.string(),
+  accountResolution: AccountResolutionSchema,
   address: z.string(),
   currency: z.object({
     id: z.string(),
@@ -310,7 +312,7 @@ export const harvestingIncomeTool = defineTool({
     const timeZone = ctx.config.timeZone;
     const zoneLabel = timeZone ?? 'UTC';
 
-    const [{ info }, { properties, currency }, chain] = await Promise.all([
+    const [{ info, resolution }, { properties, currency }, chain] = await Promise.all([
       fetchAccount(ctx, input.account),
       ctx.getNetworkData(),
       ctx.rest.get('/chain/info', ChainInfoSchema),
@@ -525,8 +527,9 @@ export const harvestingIncomeTool = defineTool({
     );
 
     return {
-      summary: lines.join('\n'),
+      summary: withResolutionPrefix(lines.join('\n'), resolution),
       network: ctx.network.name,
+      accountResolution: resolution,
       address: base32,
       currency: { id: currency.mosaicId, alias: currency.alias, divisibility: div },
       period: {

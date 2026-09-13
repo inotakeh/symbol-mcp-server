@@ -10,7 +10,7 @@ import {
   UnlockedAccountSchema,
 } from '../client/schemas.js';
 import type { AppContext } from '../context.js';
-import { classifyAccountId, hexAddressToBase32, publicKeyToAddress } from '../domain/address.js';
+import { hexAddressToBase32, publicKeyToAddress } from '../domain/address.js';
 import { formatAmount } from '../domain/amount.js';
 import {
   blocksUntilImportanceRecalculation,
@@ -27,9 +27,10 @@ import { isPersistentDelegationMessage } from '../domain/message.js';
 import { receiptTypeCode } from '../domain/receipttype.js';
 import { formatInstantText, type Instant, networkTimestampToDate } from '../domain/time.js';
 import { parseTransactionType } from '../domain/txtype.js';
-import { defineTool, formatInteger, maskIdentifier, nullable, ToolInputError } from './_shared.js';
+import { AccountResolutionSchema, resolveAccountInput, withResolutionPrefix } from './_accounts.js';
+import { defineTool, formatInteger, maskIdentifier, nullable } from './_shared.js';
 import { InstantSchema } from './_transactions.js';
-import { ACCOUNT_INPUT_HINT, ACCOUNT_TYPES } from './symbol_account_get.js';
+import { ACCOUNT_TYPES } from './symbol_account_get.js';
 
 export const MIN_RECENT_DAYS = 1;
 export const MAX_RECENT_DAYS = 30;
@@ -50,7 +51,7 @@ const inputSchema = z.object({
     .string()
     .min(1)
     .describe(
-      'Account whose delegated harvesting to diagnose: base32 address (39 chars) or hex public key (64 chars). Hex addresses (48 chars) are also accepted. Pass the main (balance-holding) account, not the remote key.',
+      'Account whose delegated harvesting to diagnose: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Hex addresses (48 chars) are also accepted. Pass the main (balance-holding) account, not the remote key.',
     ),
   recentDays: z
     .number()
@@ -79,6 +80,7 @@ const CheckSchema = z.object({
 const outputSchema = z.object({
   summary: z.string(),
   network: z.string(),
+  accountResolution: AccountResolutionSchema,
   address: z.string(),
   verdict: z.enum(['active', 'not_active', 'cannot_verify']),
   checks: z.array(CheckSchema),
@@ -309,12 +311,7 @@ export const delegationDiagnoseTool = defineTool({
   inputSchema,
   outputSchema,
   run: async (ctx, { account, recentDays, format }) => {
-    const classified = classifyAccountId(account);
-    if (classified.kind === 'invalid') {
-      throw new ToolInputError(
-        `"${maskIdentifier(account.trim())}" is not a valid Symbol account identifier. ${ACCOUNT_INPUT_HINT}`,
-      );
-    }
+    const { classified, resolution } = await resolveAccountInput(ctx, account);
 
     const [accountInfo, { properties, currency }, chain, nodeInfo, unlockedKeys] =
       await Promise.all([
@@ -368,8 +365,9 @@ export const delegationDiagnoseTool = defineTool({
       ];
       const verdict = deriveVerdict(checks);
       return {
-        summary: buildSummary(address, verdict, checks, null),
+        summary: withResolutionPrefix(buildSummary(address, verdict, checks, null), resolution),
         network: ctx.network.name,
+        accountResolution: resolution,
         address,
         verdict,
         checks,
@@ -726,8 +724,12 @@ export const delegationDiagnoseTool = defineTool({
         : checks.map((c) => (c.status === 'ok' ? { ...c, hint: null } : c));
 
     return {
-      summary: buildSummary(address, verdict, checks, recentHarvest),
+      summary: withResolutionPrefix(
+        buildSummary(address, verdict, checks, recentHarvest),
+        resolution,
+      ),
       network: ctx.network.name,
+      accountResolution: resolution,
       address,
       verdict,
       checks: shownChecks,

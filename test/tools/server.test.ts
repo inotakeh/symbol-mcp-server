@@ -3,6 +3,7 @@ import { SERVER_INSTRUCTIONS } from '../../src/instructions.js';
 import { TOOLS } from '../../src/server.js';
 import { TOOL_ANNOTATIONS } from '../../src/tools/_shared.js';
 import {
+  EXTRA_SMOKE_CALLS,
   SMOKE_CALLS,
   startTestServer,
   TEST_NODE_HOST,
@@ -85,8 +86,8 @@ describe('every tool returns structuredContent that validates against its output
   it('covers every registered tool', () => {
     expect(SMOKE_CALLS.map(([name]) => name)).toEqual(TOOLS.map((t) => t.name));
   });
-  for (const [name, args] of SMOKE_CALLS) {
-    it(name, async () => {
+  for (const [name, args] of [...SMOKE_CALLS, ...EXTRA_SMOKE_CALLS]) {
+    it(`${name} ${JSON.stringify(args)}`, async () => {
       server = await startTestServer();
       const result = await server.callTool(name, args);
       expect(result.isError).toBe(false);

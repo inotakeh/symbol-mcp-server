@@ -38,6 +38,9 @@ export const STATUS_HASH_PARTIAL =
   'D257B95DB7EE6F34F63BE235EC8B13197280305F2C8BD02C52C0E3C58C7E9F7B';
 export const STATUS_HASH_FAILED =
   '9539AD0F4441E381D08B69C63245364C385F5F09553AAF8A2E613AF476B6DBCB';
+/** Namespace name whose address alias is the fixture main account (see test/fixtures/README.md). */
+export const ALIAS_NAMESPACE_NAME = 'fixture-alias';
+export const ALIAS_NAMESPACE_ID = '935F70F34BFD4E33';
 
 export type RouteHandler = (request: Request, url: URL) => Response | Promise<Response>;
 /**
@@ -89,6 +92,8 @@ export function mainnetRoutes(): Routes {
     'GET /transactions/confirmed': fixture('mainnet/transactions-search.json'),
     'GET /namespaces/E74B99BA41F4AFEE': fixture('mainnet/namespace-symbol-xym.json'),
     'GET /namespaces/A95F1F8A96159516': fixture('mainnet/namespace-symbol.json'),
+    // Synthetic root namespace "fixture-alias" with an address alias to the main account.
+    [`GET /namespaces/${ALIAS_NAMESPACE_ID}`]: fixture('mainnet/namespace-alias-account.json'),
     'POST /namespaces/names': fixture('mainnet/namespace-names.json'),
     'GET /node/unlockedaccount': fixture('mainnet/unlockedaccount.json'),
     // 0.2.0 fixtures (harvest receipts; identifiers synthetic, see test/fixtures/README.md)
@@ -182,6 +187,15 @@ export const SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown
     { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY', epoch: 4010, epochs: 2 },
   ],
   ['symbol_delegation_diagnose', { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
+];
+
+/**
+ * Extra smoke calls that do not map 1:1 to a tool (SMOKE_CALLS must): the same tools with the
+ * account given as a namespace name, resolved through the fixture namespace.
+ */
+export const EXTRA_SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+  ['symbol_account_get', { account: ALIAS_NAMESPACE_NAME }],
+  ['symbol_address_parse', { value: ALIAS_NAMESPACE_NAME }],
 ];
 
 /** One HTTP response of the MCP handler, as the client received it (body read lazily). */
