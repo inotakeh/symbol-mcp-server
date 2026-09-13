@@ -9,6 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `symbol_transaction_status`: where 1 to 20 transactions stand right now, from one
+  `POST /transactionStatus` call: confirmed (with height), unconfirmed, partial (waiting for
+  cosignatures), failed (with the node's code and its meaning from the OpenAPI
+  `TransactionStatusEnum`, imported mechanically into `src/domain/txstatus.ts`) or not_found.
+  Meant for "did my key link go through?" right after announcing. Registered after the existing
+  tools.
+- Server `instructions` in the initialize result: read-only contract, account formats, which tool
+  answers harvest-income and voting-key questions, and "use the numbers as returned".
+- MCP prompts `voting_key_renewal_checklist` and `monthly_health_check` (argument `account`, a
+  base32 address): operator checklists that call the tools in a fixed order. Prompt bodies contain
+  no real identifiers.
 - `symbol_harvesting_income`: totals the harvest rewards (HarvestFee receipts of the network
   currency) an account received in a date range (`fromDate`/`toDate`, resolved to heights by a
   binary search over block timestamps) or a height range. Sums are exact integers (BigInt) and are

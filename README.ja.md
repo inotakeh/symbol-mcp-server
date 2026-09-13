@@ -6,7 +6,7 @@
 
 [English README](README.md)
 
-[Symbol](https://docs.symbol.dev/) の REST API を 14 個の目的別ツールとして公開する、読み取り専用の
+[Symbol](https://docs.symbol.dev/) の REST API を 15 個の目的別ツールとして公開する、読み取り専用の
 [MCP](https://modelcontextprotocol.io/) サーバーです。REST エンドポイントを 1 対 1 で写すのではなく、
 各ツールが「人が実際に尋ねる質問」に答えます。
 
@@ -124,7 +124,7 @@ claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/
 
 ## ツール
 
-14 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
+15 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
 
 | ツール | 引数 | 答えること |
 |---|---|---|
@@ -142,6 +142,7 @@ claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/
 | `symbol_harvesting_status` | `account`（任意） | ノードで解錠中の委任ハーベスター、ハーベスティングの残高制限と受益者割合、指定アカウントの linked キーがこのノードで解錠されているか。 |
 | `symbol_network_compare` | なし | 自ノードと `SYMBOL_REFERENCE_NODES` の高さ・確定高さ、最良ノードとの差、`lagging` フラグ。参照ノード未設定時はその旨と対処を案内。 |
 | `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。 |
+| `symbol_transaction_status` | `transactionHashes`（配列、1〜20 件） | 各トランザクションの現在の状態: confirmed（高さ付き）/ unconfirmed / partial（署名待ち）/ failed（ノードのコードとその意味付き）/ not_found。バッチ全体を 1 リクエストで照会。 |
 
 ### 質問の例
 
@@ -169,7 +170,25 @@ claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/
 日付をブロック高さに解決し、そのアカウント宛の HarvestFee レシートを全件読んで整数のまま合算します。
 XYM 合計、harvester と beneficiary の内訳、日ごとの行を返すので、モデルが足し算をする余地はありません。
 
+**「さっき Voting キーの link を送った。トランザクション FAEEB042… は通った?」**
+→ `symbol_transaction_status { "transactionHashes": ["FAEEB042…"] }`
+confirmed（高さ付き）/ unconfirmed / partial（aggregate bonded で cosignature 待ち）/ failed（`Failure_Core_Insufficient_Balance`
+のようなノードのコードとその意味付き）/ not_found を返します。1 件でも配列で渡し、1 回に 20 件まで。
+
 期待される引数まで含めた他の例は [`evals/cases.json`](evals/cases.json) にあります。
+
+## Prompts
+
+ノード運用者が繰り返すツール呼び出しの手順を、MCP の prompt（`prompts/list`）として 2 本同梱しています。引数はどちらも
+`account`（Voting / ハーベスティングアカウントの 39 文字 base32 アドレス）だけで、本文自体にはアドレス・ホスト・鍵・日付を書いていません。
+
+| Prompt | 手順 |
+|---|---|
+| `voting_key_renewal_checklist` | `symbol_voting_key_status`（失効予定・推奨ウィンドウ・空き枠）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare` → 運用者がこのサーバーの外で VotingKeyLink を送信 → そのハッシュを `symbol_transaction_status` で確認 → `symbol_voting_key_status` を再度呼んで新キーを確認 → 4 行で要約。 |
+| `monthly_health_check` | `symbol_node_status` → `symbol_network_compare` → `symbol_harvesting_status` → `symbol_voting_key_status`（30 日以内に失効するなら警告を先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income` → 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
+
+サーバーは initialize 時に短い `instructions`（読み取り専用であること、アカウントの指定形式、ハーベスト報酬と Voting キーの質問に使うツール、
+返された数値をそのまま使うこと）も送ります。
 
 ## セキュリティ
 
