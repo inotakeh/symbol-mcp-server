@@ -17,6 +17,7 @@ describe('server instructions', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/granularity "monthly" or output "csv"/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_voting_key_status/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_finality_participation/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_delegation_diagnose/);
     expect(SERVER_INSTRUCTIONS).toMatch(/never recompute/);
   });
 

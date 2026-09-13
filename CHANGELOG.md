@@ -9,6 +9,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `symbol_delegation_diagnose`: is an account's delegated harvesting active and, if not, where
+  does it stop. Eleven checks in a fixed order, each ok / warn / fail / unknown with a hint:
+  account exists, balance within `minHarvesterBalance` / `maxHarvesterBalance` (counted in
+  `chain.harvestingMosaicId`), importance above zero (or blocks until the next
+  `importanceGrouping` recalculation), linked / VRF / node keys, node key equal to the configured
+  node's `nodePublicKey`, remote key in `/node/unlockedaccount`, account type, harvested blocks in
+  the last `recentDays` (harvester receipts only), and the newest persistent delegation request
+  transfer to the node (marker and recipient rule taken from the SDK and catapult sources). Verdict
+  `active`, `not_active` (any fail) or `cannot_verify` (a node-side check could not be made, e.g.
+  the account delegates to another node; no other host is contacted). The server instructions
+  route "is my delegated harvesting working" to it. Registered after
+  `symbol_finality_participation`.
 - `symbol_harvesting_income`: `granularity: monthly` (one bucket per calendar month in
   `SYMBOL_TIMEZONE` or UTC, summed in the same exact-integer pass as the daily buckets; the summary
   keeps the period total first and adds one line per month) and `output: csv` (the text content

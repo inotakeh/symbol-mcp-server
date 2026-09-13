@@ -28,6 +28,33 @@ export interface DecodedMessage {
 
 export const MAX_MESSAGE_TEXT_LENGTH = 1024;
 
+/**
+ * First 8 bytes of a persistent harvesting delegation request message.
+ *
+ * Sources (fetched 2026-09-13):
+ * - symbol/symbol sdk/javascript/src/symbol/MessageEncoder.js:
+ *   `DELEGATION_MARKER = Uint8Array.from(Buffer.from('FE2A8061577301E2', 'hex'))`, prepended by
+ *   `encodePersistentHarvestingDelegation(nodePublicKey, remoteKeyPair, vrfKeyPair)`.
+ * - catapult plugins/txes/transfer/src/plugins/TransferPlugin.cpp registers
+ *   `CreateTransferMessageObserver(0xE201735761802AFE, recipient, ...)`; the observer
+ *   (observers/TransferMessageObserver.cpp) reads the first 8 message bytes as a little-endian
+ *   uint64 (0xE201735761802AFE == bytes FE 2A 80 61 57 73 01 E2) and requires
+ *   `MessageSize > Marker_Size`. `recipient` is `PublicKeyToAddress(encryptionPublicKey)`, the
+ *   node's transport key (node.key.pem), which catapult-rest exposes as `nodePublicKey`.
+ */
+export const PERSISTENT_DELEGATION_MARKER = 'FE2A8061577301E2';
+
+/** True when a hex message is a persistent delegation request (marker plus a non-empty payload). */
+export function isPersistentDelegationMessage(hex: string | undefined): boolean {
+  const clean = (hex ?? '').trim().toUpperCase();
+  return (
+    clean.length > PERSISTENT_DELEGATION_MARKER.length &&
+    clean.length % 2 === 0 &&
+    /^[0-9A-F]+$/.test(clean) &&
+    clean.startsWith(PERSISTENT_DELEGATION_MARKER)
+  );
+}
+
 export function decodeMessage(hex: string | undefined): DecodedMessage {
   const clean = (hex ?? '').trim();
   if (clean.length === 0) return { kind: 'empty', sizeBytes: 0 };

@@ -40,6 +40,7 @@ describe('server registration', () => {
       'symbol_harvesting_income',
       'symbol_transaction_status',
       'symbol_finality_participation',
+      'symbol_delegation_diagnose',
     ]);
     for (const tool of tools) {
       expect(tool.name).toMatch(/^symbol_[a-z]+_[a-z_]+$/);
@@ -125,6 +126,7 @@ describe('outbound requests', () => {
     });
     await server.callTool('symbol_transaction_status', { transactionHashes: [TRANSFER_HASH] });
     await server.callTool('symbol_finality_participation', { account: ACCOUNT, epoch: 4010 });
+    await server.callTool('symbol_delegation_diagnose', { account: ACCOUNT });
     expect(server.requests.length).toBeGreaterThan(5);
     const hosts = new Set(server.requests.map((u) => u.host));
     expect([...hosts]).toEqual([TEST_NODE_HOST]);

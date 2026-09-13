@@ -179,6 +179,24 @@ friendlyName、host、ロール（ビットフラグを Peer/API/Voting に展�
 - フィクスチャ: 実 proof の全 `parentPublicKey`・`signature`・`hashes`・`hash` を `H("fixture:…")` 由来の合成値に置換した `test/fixtures/mainnet/finalization-proof-epoch.json`（規則は `test/fixtures/README.md`）。自アカウントの root 鍵は既存の合成 voting 鍵 `H("fixture:voting-key-2")`（epoch 3700〜4059、4010 を含む）。epoch / point / height / stage / 署名数 17 / hashes 21 件は実値のまま。生ファイルの値はリポジトリに書かない。
 - 参照: `GET /finalization/proof/epoch/{epoch}` → `FinalizationProofDTO`（`MessageGroup` → `BmTreeSignature` → `ParentPublicKeySignaturePair`、OpenAPI v1.0.4 で確認）、`GET /accounts/{id}`、`GET /chain/info`。
 
+**`symbol_delegation_diagnose`**（0.4.0 で追加。ツール配列の末尾に登録し、既存の順序を変えない）— `account`（アドレスまたは公開鍵。メインアカウントを渡す）、`recentDays`（1〜30、既定 7。直近のハーベスト実績を探す日数）、`format`（concise は ok のチェックの `hint` を null、detailed は全チェックに `hint`）。
+答える問い: 「このアカウントの委任ハーベストは有効か。無効ならどこで止まっているか」。委任者が自分のアカウントを、ノード運用者が委任者のアカウントを診断する（Harvest Checker / XEMBook の委任状況確認に相当）。`symbol_harvesting_status` は「ノードの解錠一覧に含まれるか」だけ、`symbol_harvesting_income` は報酬の集計だけ。
+- **検証範囲の原則**: 通信できるのは `SYMBOL_NODE_URL` だけなので、ノード側の状態（解錠・委任要求）は**設定済みノードに委任している場合だけ**確認できる。アカウントの node 鍵が `/node/info` の `nodePublicKey` と違えば、ノード側チェックは `unknown` にして「委任先ノードが設定済みノードと異なるため確認できない」と書く。他ノードには問い合わせない。
+- 閾値はすべて `/network/properties` から取る: `minHarvesterBalance` / `maxHarvesterBalance`（**`chain.harvestingMosaicId` の残高で比較**。OpenAPI `ChainPropertiesDTO` に「Mosaic id used to provide harvesting ability」として存在。mainnet / testnet では `currencyMosaicId` と同じ値だがハーベスト要件は harvestingMosaicId で定義されている。パーサは必須扱いなので、空値のときだけ currencyMosaicId にフォールバック）、`importanceGrouping`、`harvestBeneficiaryPercentage` / `harvestNetworkPercentage`（レシート分類）。
+- チェック（`checks[]` 固定順、各 `{ id, status: ok|warn|fail|unknown, detail, hint }`）:
+  1. `account_exists` — `/accounts/{id}` が 404 なら fail。以降は全部 unknown、`recentHarvest: null`、`isError` にはしない。
+  2. `balance_in_range` — 未満 fail、超過 fail（maxHarvesterBalance を超えるとハーベストできない）。
+  3. `importance_positive` — `importance > 0` で ok。0 かつ残高 ok → warn（次の再計算高さ `(floor(h / G) + 1) × G` と残りブロック数を hint に。`src/domain/delegation.ts`）。0 かつ残高 fail → fail。
+  4. `linked_key` / 5. `vrf_key` / 6. `node_key` — `supplementalPublicKeys` の有無。無ければ fail（AccountKeyLink / VrfKeyLink / NodeKeyLink を案内）。
+  7. `node_key_matches_configured_node` — `/node/info` の `nodePublicKey`（OpenAPI `NodeInfoDTO` では optional）と一致 ok、不一致 warn、node 鍵なし／`nodePublicKey` 無しは unknown。
+  8. `unlocked_on_node` — 7 が ok のときだけ判定。`/node/unlockedaccount`（`unlockedAccount`、単数）に linked 鍵があれば ok、無ければ fail（未受理・再起動後の再送・解錠枠満杯。運用者に確認）。7 が warn/unknown、または `/node/unlockedaccount` が失敗（5xx でも他のチェックは返す）なら unknown。
+  9. `account_type` — `accountType` が 1（OpenAPI `AccountTypeEnum`: balance-holding account linked to a remote harvester = Main）なら ok。2 / 3（Remote 系）は warn「メインアカウントを指定」、0 も warn。
+  10. `recent_harvest` — 直近 `recentDays` 日の HarvestFee（8515）レシート。期間→高さは実測平均ブロック時間（`getAverageBlockTime`）からの推定（`notes` に明記。二分探索を使わないのはリクエスト数のため）。`/statements/transaction?...&order=desc` を 100 件ページで最大 20 ページ。`classifyHarvestReceipts` で分類し **harvester と unknown だけ数える**（beneficiary は他人がハーベストした証拠なので除外）。1 件以上 ok、0 件で fail が無ければ warn（「有効だが直近 N 日は当たっていない。importance が小さいと間隔が空く」）、0 件で fail があれば unknown。`recentHarvest { days, receipts, lastHeight, lastTime }`。
+  11. `delegation_request_found` — 委任要求トランザクションの有無。出典を確認したうえで実装（推測で書かない）: catapult `plugins/txes/transfer/src/plugins/TransferPlugin.cpp` は `CreateTransferMessageObserver(0xE201735761802AFE, recipient, …)` を登録し、`recipient = PublicKeyToAddress(encryptionPublicKey)`（node.key.pem = REST の `nodePublicKey`）。`observers/TransferMessageObserver.cpp` は先頭 8 バイトを LE uint64 として比較し `MessageSize > 8` を要求する。SDK `sdk/javascript/src/symbol/MessageEncoder.js` の `DELEGATION_MARKER = 'FE2A8061577301E2'` と同じ。定数は `src/domain/message.ts` の `PERSISTENT_DELEGATION_MARKER`（出典コメント付き）。処理: `GET /transactions/confirmed?signerPublicKey=<pk>&recipientAddress=<publicKeyToAddress(nodePublicKey)>&type=16724&pageSize=100&order=desc&pageNumber=1`（`embedded` は既定 false なので内包 Tx は対象外）から `message` がマーカーで始まる最新 1 件。見つかれば ok（高さ・日時）、無ければ warn（情報のみ。verdict には影響しない）。7 が warn/unknown、公開鍵ゼロ、`nodePublicKey` 無しは unknown。
+- verdict: いずれかの fail → `not_active`。fail なしで unknown を含む → `cannot_verify`。それ以外 → `active`（`recent_harvest` / `delegation_request_found` が warn でも active）。
+- 出力: `summary`（1 行目 `delegated harvesting: active | not active | cannot verify (<address>).`、以降に fail / warn の要点と、cannot_verify なら確認できなかった項目）、`network`、`address`、`verdict`、`checks[]`、`account { balanceXym, rawBalance, importance, importanceHeight, accountType { code, name }, keys { linked, vrf, node } }`（鍵は hex または null）、`node { configuredNodePublicKey, unlockedCount }`（取れなければ null）、`recentHarvest | null`、`notes[]`（unlockedaccount は自己申告でチェーンで裏付けられない／他ノードへの委任は確認できない／importance は importanceGrouping ごとに更新／期間の高さは推定）。
+- 参照: `GET /accounts/{id}`、`GET /chain/info`、`GET /node/info`（`nodePublicKey`）、`GET /node/unlockedaccount`、`GET /statements/transaction`、`GET /transactions/confirmed`（`signerPublicKey` / `recipientAddress` / `type` / `order` / `pageSize` / `pageNumber` は OpenAPI で確認）、`GET /blocks/{h}`（平均ブロック時間）。
+
 ## 6. ドメイン知識と落とし穴
 
 **アドレス**: 24バイト。base32エンコードして末尾の `=` を除いた **39文字**。先頭文字が `N`=mainnet、`T`=testnet。API のJSONはアドレスを **hex（48文字）** で返すので base32 へ変換して表示する。`/accounts/{id}` は base32アドレスでも公開鍵でも引ける。公開鍵→アドレスの導出は SHA3-256 → RIPEMD-160 → ネットワークバイト付加 → チェックサム（SHA3-256先頭3バイト）。実装は `symbol-sdk`（npm）の `SymbolFacade.network.publicKeyToAddress` を参照するか、そのテストベクタで検証する。
@@ -229,6 +247,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - トランザクション種別の名前解決
 - メッセージ復号（平文 / 暗号化 / 空 / 制御文字除去）
 - ファイナリティ参加判定（両ステージ一致 / prevote のみ / 不一致 / 鍵未登録 / 期間外の鍵のみ / proof なし）とエポック範囲の展開（`epochs=3` で e, e-1, e-2。1 未満は切り詰め）
+- 委任診断の規則（`src/domain/delegation.ts`）: verdict（fail 優先 / unknown → cannot_verify / warn のみ → active）、importance 再計算までの残りブロック（ちょうど倍数のときは G）、鍵有無、委任要求マーカー判定（マーカーのみ / 先頭 0xFE だが不一致 / 平文）
 
 **ツール層（CIで必ず実行。SDK公式のインプロセス方式）**
 `createMcpHandler(createServer)` を作り、`@modelcontextprotocol/client` の `Client` を `StreamableHTTPClientTransport(url, { fetch: (u, i) => handler.fetch(new Request(u, i)) })` で接続して `client.callTool()` を呼ぶ。ノードへの `fetch` は `vi.stubGlobal('fetch', ...)` で差し替え、固定レスポンスを返す。
@@ -238,6 +257,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - `SYMBOL_NETWORK=mainnet` で `/node/info` が testnet の generationHashSeed を返したら**起動失敗**すること
 - `SYMBOL_REFERENCE_NODES` に無いホストへは一切 fetch が呼ばれないこと
 - 64桁hex（秘密鍵に見える値）を `symbol_account_get` に渡しても公開鍵として扱うだけで、ログ・出力・外部送信に含めないこと
+- `symbol_delegation_diagnose`（既存フィクスチャを in-test で変異させる）: 全部 ok → active / linked 鍵なし → not_active / node 鍵が別ノード → cannot_verify で `unlocked_on_node` と `delegation_request_found` が unknown、`/transactions/confirmed` を呼ばない / 残高不足・超過 → not_active / 404 → not_active で `account_exists` のみ fail / `/node/unlockedaccount` が 5xx でも他のチェックは返る / 委任要求 Tx を返すルートで `delegation_request_found: ok` / `SYMBOL_NODE_URL` 以外に fetch しない / outputSchema
 - initialize 結果に `instructions` が含まれること（`client.getInstructions()` が `SERVER_INSTRUCTIONS` と一致）
 - `prompts/list` が固定順で返り、`prompts/get` が `account` を埋め込んだ本文を返し、`account` 無し・不正アドレスがエラーになること。テンプレートに実在のアドレス・ホスト・鍵・ハッシュ・日付が無いこと
 - **2026-07-28 世代**（`test/tools/era_2026.test.ts`）: Client を `versionNegotiation: { mode: { pin: '2026-07-28' } }` で同じ `createMcpHandler.fetch` に接続し、`getProtocolEra() === 'modern'`、`tools/list` が全ツールを既定順で annotations / outputSchema 付きで返し `ttlMs` / `cacheScope` が宣言どおり載ること（生 JSON でも確認）、`prompts/list` / `prompts/get`、`tools/call` が `content[0].text` と `structuredContent` の両方を返すこと（csv 出力では text が CSV）、`getInstructions()` と discover 結果の `instructions`、`_meta` のサーバー identity、全ツールのスモーク呼び出し（`SMOKE_CALLS`、outputSchema 検証付き）。2025 世代のテストはそのまま残し、そちらでは cache フィールドが付かないことを確認する。**注意**: SDK Client の `mode: 'auto'` はインプロセスの `createMcpHandler` に対して modern に解決する（2026-09-13 に確認）ので、ハーネスの既定は明示的に `mode: 'legacy'` にしてある。auto のままだと 2025 世代の回帰テストは存在しない

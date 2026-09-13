@@ -7,6 +7,7 @@ import { votingKeyRenewalChecklistPrompt } from './prompts/voting_key_renewal_ch
 import { type AnyToolDefinition, registerTools } from './tools/_shared.js';
 import { accountGetTool } from './tools/symbol_account_get.js';
 import { addressParseTool } from './tools/symbol_address_parse.js';
+import { delegationDiagnoseTool } from './tools/symbol_delegation_diagnose.js';
 import { feeEstimateTool } from './tools/symbol_fee_estimate.js';
 import { finalityParticipationTool } from './tools/symbol_finality_participation.js';
 import { harvestingIncomeTool } from './tools/symbol_harvesting_income.js';
@@ -63,6 +64,8 @@ export const TOOLS: readonly AnyToolDefinition[] = [
   // 0.3.0
   transactionStatusTool,
   finalityParticipationTool,
+  // 0.4.0
+  delegationDiagnoseTool,
 ];
 
 /** Same rule as TOOLS: append only, never reorder, so `prompts/list` is deterministic. */

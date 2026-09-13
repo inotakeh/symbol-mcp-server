@@ -30,7 +30,7 @@
       "expectedArguments": {
         "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
       },
-      "notes": "account is optional; passing it makes the tool check whether the account's linked key is in the node's unlocked list."
+      "notes": "Node-operator view: the unlocked list of the configured node first, then whether this account's linked key is in it. account is optional. For \"is my delegation working and if not why\" use symbol_delegation_diagnose, which also checks keys, balance, importance, node key and recent harvests."
     },
     {
       "id": "node-lagging-reference",
@@ -191,6 +191,17 @@
         "output": "csv"
       },
       "notes": "\"This year\" is January 1 to December 31 of the current year (the tool caps the period at the latest block and says so). \"Month by month\" is granularity monthly, one bucket per calendar month in SYMBOL_TIMEZONE or UTC, summed on the server. \"As CSV\" is output csv: the text content block is the CSV body and structuredContent stays JSON with the same rows plus a csv field; do not build the CSV from daily rows yourself."
+    },
+    {
+      "id": "delegated-harvesting-diagnose",
+      "audience": "general",
+      "question": "I think my delegated harvesting is not working. Have a look at NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY.",
+      "question_ja": "自分の委任ハーベストが動いてない気がする。見て。NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY",
+      "expectedTool": "symbol_delegation_diagnose",
+      "expectedArguments": {
+        "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
+      },
+      "notes": "\"Not working\" / \"is it active\" / \"where is it stuck\" is a diagnosis: one call returns a verdict (active / not_active / cannot_verify) and every check with a hint. Pass the main (balance-holding) account. Leave recentDays at its default unless the user names a window. symbol_harvesting_status only says whether the linked key is unlocked on the node; symbol_harvesting_income only sums rewards."
     }
   ]
 }

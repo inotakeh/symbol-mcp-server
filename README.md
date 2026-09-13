@@ -6,7 +6,7 @@
 
 [日本語版 README](README.ja.md)
 
-Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 16
+Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 17
 task-level tools. Instead of mirroring REST endpoints one-to-one, each tool answers a question a
 person actually asks:
 
@@ -128,7 +128,7 @@ Or commit a project-level `.mcp.json`:
 
 ## Tools
 
-All 16 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
+All 17 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
 identifiers only, never URLs.
 
 | Tool | Arguments | Answers |
@@ -149,6 +149,7 @@ identifiers only, never URLs.
 | `symbol_harvesting_income` | `account`, `fromDate` + `toDate` or `fromHeight` + `toHeight`, `granularity`, `format` | Harvest rewards received in the period: receipt count and exact XYM total (summed on the server as integers), harvester / beneficiary / unknown split, per-day buckets in `SYMBOL_TIMEZONE` or UTC, or a list of receipts. Dates are resolved to heights from block timestamps. `granularity: monthly` gives one row per calendar month (yearly questions); `output: csv` returns the rows as CSV text for a spreadsheet while the JSON stays available. |
 | `symbol_transaction_status` | `transactionHashes` (array, 1 to 20) | Where each transaction stands right now: confirmed (with height), unconfirmed, partial (waiting for cosignatures), failed (with the node's code and its meaning) or not_found. One request for the whole batch. |
 | `symbol_finality_participation` | `account`, `epoch` (optional, default latest finalized), `epochs` (1 to 20, default 1), `format` | Whether the account's voting key actually signed the finalization proof of each epoch: participated (both prevote and precommit), missed (which stage was not signed), no_active_key or unavailable, with the signature count per stage and a warning when no key covers the current epoch or the current epoch was missed (historical epochs never warn). |
+| `symbol_delegation_diagnose` | `account`, `recentDays` (1 to 30, default 7), `format` | Is delegated harvesting active, and if not, where does it stop: account exists, balance within the harvesting limits, importance above zero (or blocks until the next recalculation), linked/VRF/node keys, node key equal to the configured node's `nodePublicKey`, remote key unlocked on that node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Verdict `active`, `not_active` or `cannot_verify` (delegation to another node cannot be checked from here). |
 
 ### Example questions
 
@@ -191,6 +192,14 @@ Reads the finalization proof of the latest finalized epoch and the 13 before it 
 `votingSetGrouping` blocks, about 12 hours on mainnet) and reports per epoch whether one of the
 account's voting keys is among the signers of both stages, how many voters signed, and a warning
 if the current epoch was missed or no key covers it.
+
+**"I think my delegated harvesting is not working. Have a look at NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY."**
+→ `symbol_delegation_diagnose { "account": "NCV5HR…" }`
+Runs eleven checks in a fixed order (existence, balance limits, importance, the three key links, node
+key versus the configured node, unlocked on that node, account type, recent harvested blocks, the
+delegation request transfer) and answers `active`, `not_active` (with the failing step and a hint) or
+`cannot_verify` (the account delegates to a node other than `SYMBOL_NODE_URL`, so the node side cannot
+be checked).
 
 More cases, with the exact arguments expected for each, are in [`evals/cases.json`](evals/cases.json).
 
