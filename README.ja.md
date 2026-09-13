@@ -6,7 +6,7 @@
 
 [English README](README.md)
 
-[Symbol](https://docs.symbol.dev/) の REST API を 16 個の目的別ツールとして公開する、読み取り専用の
+[Symbol](https://docs.symbol.dev/) の REST API を 17 個の目的別ツールとして公開する、読み取り専用の
 [MCP](https://modelcontextprotocol.io/) サーバーです。REST エンドポイントを 1 対 1 で写すのではなく、
 各ツールが「人が実際に尋ねる質問」に答えます。
 
@@ -124,7 +124,7 @@ claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/
 
 ## ツール
 
-16 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
+17 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
 
 | ツール | 引数 | 答えること |
 |---|---|---|
@@ -144,6 +144,7 @@ claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/
 | `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。`granularity: monthly` で暦月ごと（年次の質問向け）、`output: csv` で表計算向けの CSV テキスト（JSON も併せて返す）。 |
 | `symbol_transaction_status` | `transactionHashes`（配列、1〜20 件） | 各トランザクションの現在の状態: confirmed（高さ付き）/ unconfirmed / partial（署名待ち）/ failed（ノードのコードとその意味付き）/ not_found。バッチ全体を 1 リクエストで照会。 |
 | `symbol_finality_participation` | `account`, `epoch`（任意、既定は最新の確定エポック）, `epochs`（1〜20、既定 1）, `format` | アカウントの Voting キーが各エポックのファイナリティ proof に実際に署名したか: participated（prevote と precommit の両方）/ missed（署名しなかったステージ付き）/ no_active_key / unavailable。ステージごとの署名数と、現在のエポックをカバーする鍵が無い／現在のエポックが missed のときの警告（過去のエポックでは警告しない）。 |
+| `symbol_delegation_diagnose` | `account`, `recentDays`（1〜30、既定 7）, `format` | 委任ハーベストが有効か、無効ならどこで止まっているか: アカウントの存在、ハーベスト残高制限、importance（0 なら次の再計算までのブロック数）、linked / VRF / node の各鍵、node 鍵と設定ノードの `nodePublicKey` の一致、そのノードでの解錠、accountType、直近 N 日のハーベスト実績、ノード宛の委任要求トランザクション。判定は `active` / `not_active` / `cannot_verify`（別ノードへの委任はここからは確認できない）。 |
 
 ### 質問の例
 
@@ -181,6 +182,13 @@ confirmed（高さ付き）/ unconfirmed / partial（aggregate bonded で cosign
 最新の確定エポックとその前 13 エポック（1 エポックは `votingSetGrouping` ブロック、mainnet で約 12 時間）の
 ファイナリティ proof を読み、エポックごとに自分の Voting キーが両ステージの署名者に含まれるか、署名者は何人か、
 現在のエポックが missed か、それをカバーする鍵が無ければ警告を返します。
+
+**「自分の委任ハーベストが動いてない気がする。見て。NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY」**
+→ `symbol_delegation_diagnose { "account": "NCV5HR…" }`
+11 項目のチェック（存在、残高制限、importance、3 つの鍵、node 鍵と設定ノードの一致、そのノードでの解錠、
+accountType、直近のハーベスト実績、委任要求トランザクション）を固定順に実行し、`active` / `not_active`
+（止まっている項目とヒント付き）/ `cannot_verify`（`SYMBOL_NODE_URL` 以外のノードに委任しているため
+ノード側を確認できない）を返します。
 
 期待される引数まで含めた他の例は [`evals/cases.json`](evals/cases.json) にあります。
 
