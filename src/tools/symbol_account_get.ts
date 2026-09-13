@@ -12,7 +12,12 @@ export const ACCOUNT_INPUT_HINT =
 
 const ZERO_KEY = '0'.repeat(64);
 
-const ACCOUNT_TYPES: Record<number, string> = {
+/**
+ * symbol-openapi AccountTypeEnum: 0 unlinked, 1 balance-holding account linked to a remote
+ * harvester, 2 remote harvester linked to a balance-holding account, 3 remote-harvester-eligible
+ * account that is unlinked.
+ */
+export const ACCOUNT_TYPES: Record<number, string> = {
   0: 'Unlinked',
   1: 'Main',
   2: 'Remote',

@@ -181,6 +181,7 @@ export const SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown
     'symbol_finality_participation',
     { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY', epoch: 4010, epochs: 2 },
   ],
+  ['symbol_delegation_diagnose', { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
 ];
 
 /** One HTTP response of the MCP handler, as the client received it (body read lazily). */
