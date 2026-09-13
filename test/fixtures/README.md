@@ -29,6 +29,7 @@ remains. The response **shape** is untouched; only values were replaced:
 | `transactions-search.json` | hashes, signatures, signer / cosigner / linked public keys, heights, timestamps, epochs, document ids |
 | `statements-harvest-page1.json`, `statement-harvest-one-block.json` | every receipt `targetAddress` (the account, the other delegated harvesters, the network sink), document ids. Heights, timestamps and amounts are verbatim |
 | `block-5764879.json` | signer public key, beneficiary address, block and generation hash, signature, VRF proof, previous / transactions / receipts / state hashes, sub-cache merkle roots, document id. Height, timestamp, difficulty and size are verbatim |
+| `transaction-status.json` | Written by hand in the `POST /transactionStatus` response shape. The confirmed row is the captured transfer (hash, height and deadline verbatim); the unconfirmed, partial and failed rows use synthetic hashes, height `0` and round deadlines near the fixture block time |
 
 Every synthetic value is derived deterministically, so the fixtures can be regenerated without
 the original data. `H(label)` is SHA3-256 of the UTF-8 label, upper-case hex:
@@ -49,6 +50,7 @@ the original data. `H(label)` is SHA3-256 of the UTF-8 label, upper-case hex:
 | other mosaic id | first 8 bytes of `H("fixture:mosaic-other")` with the top bit cleared |
 | harvest receipt targets other than the main account | `H("fixture:harvest-peer-n")` (n = 1…3, in order of receipt frequency) taken as a public key, then `publicKeyToAddress(…, 104)` in hex |
 | statement document `id`, row *n* | first 12 bytes of `H("fixture:doc-id-statement-n")` |
+| transaction status hashes (unconfirmed / partial / failed rows) | `H("fixture:status-hash-unconfirmed")`, `H("fixture:status-hash-partial")`, `H("fixture:status-hash-failed")` |
 | block 5764879 | `signerPublicKey` = the linked key above, `beneficiaryAddress` = the main address; `meta.hash` `H("fixture:block-hash-5764879")`, `generationHash` `H("fixture:block-generation-hash")`, signature `H("fixture:block-sig:a") + H("fixture:block-sig:b")`, `proofGamma` `H("fixture:block-proof-gamma")`, `proofVerificationHash` first 16 bytes of `H("fixture:block-proof-verification-hash")`, `proofScalar` `H("fixture:block-proof-scalar")`, `previousBlockHash` / `transactionsHash` / `receiptsHash` / `stateHash` `H("fixture:block-<previous|transactions|receipts|state>-hash")`, `stateHashSubCacheMerkleRoots[i]` `H("fixture:block-subcache-root-i")` (1-based), document id first 12 bytes of `H("fixture:doc-id-block-5764879")` |
 | node host / friendlyName | `mainnet-node.example` / `fixture-node` |
 

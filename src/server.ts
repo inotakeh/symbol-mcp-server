@@ -1,5 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import type { AppContext } from './context.js';
+import { SERVER_INSTRUCTIONS } from './instructions.js';
+import { type PromptDefinition, registerPrompts } from './prompts/_shared.js';
+import { monthlyHealthCheckPrompt } from './prompts/monthly_health_check.js';
+import { votingKeyRenewalChecklistPrompt } from './prompts/voting_key_renewal_checklist.js';
 import { type AnyToolDefinition, registerTools } from './tools/_shared.js';
 import { accountGetTool } from './tools/symbol_account_get.js';
 import { addressParseTool } from './tools/symbol_address_parse.js';
@@ -14,6 +18,7 @@ import { nodeStatusTool } from './tools/symbol_node_status.js';
 import { timeConvertTool } from './tools/symbol_time_convert.js';
 import { transactionGetTool } from './tools/symbol_transaction_get.js';
 import { transactionSearchTool } from './tools/symbol_transaction_search.js';
+import { transactionStatusTool } from './tools/symbol_transaction_status.js';
 import { votingKeyStatusTool } from './tools/symbol_voting_key_status.js';
 
 export const SERVER_NAME = 'symbol-mcp-server';
@@ -39,10 +44,22 @@ export const TOOLS: readonly AnyToolDefinition[] = [
   networkCompareTool,
   // 0.2.0
   harvestingIncomeTool,
+  // 0.3.0
+  transactionStatusTool,
+];
+
+/** Same rule as TOOLS: append only, never reorder, so `prompts/list` is deterministic. */
+export const PROMPTS: readonly PromptDefinition[] = [
+  votingKeyRenewalChecklistPrompt,
+  monthlyHealthCheckPrompt,
 ];
 
 export function createServer(ctx: AppContext): McpServer {
-  const server = new McpServer({ name: SERVER_NAME, version: ctx.serverVersion });
+  const server = new McpServer(
+    { name: SERVER_NAME, version: ctx.serverVersion },
+    { instructions: SERVER_INSTRUCTIONS },
+  );
   registerTools(server, ctx, TOOLS);
+  registerPrompts(server, PROMPTS);
   return server;
 }

@@ -1,0 +1,30 @@
+[
+  {
+    "group": "confirmed",
+    "code": "Success",
+    "hash": "FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F",
+    "deadline": "173168162072",
+    "height": "5763959"
+  },
+  {
+    "group": "unconfirmed",
+    "code": "Success",
+    "hash": "7E0AF903994D1DFFB48C89067DE94C46C588D86BCA8D5B089AEB1ACC56EB2B50",
+    "deadline": "173163313808",
+    "height": "0"
+  },
+  {
+    "group": "partial",
+    "code": "Success",
+    "hash": "D257B95DB7EE6F34F63BE235EC8B13197280305F2C8BD02C52C0E3C58C7E9F7B",
+    "deadline": "173199313808",
+    "height": "0"
+  },
+  {
+    "group": "failed",
+    "code": "Failure_Core_Insufficient_Balance",
+    "hash": "9539AD0F4441E381D08B69C63245364C385F5F09553AAF8A2E613AF476B6DBCB",
+    "deadline": "173156000000",
+    "height": "0"
+  }
+]
