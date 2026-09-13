@@ -68,6 +68,7 @@ describe('prompts', () => {
       'symbol_node_status',
       'symbol_network_compare',
       'symbol_transaction_status',
+      'symbol_finality_participation',
       'Current key / New key / Expiry / Open items',
     ];
     const positions = order.map((needle) => text.indexOf(needle));
@@ -76,6 +77,8 @@ describe('prompts', () => {
     expect(text).toMatch(/never signs or announces/);
     expect(text).toMatch(/slotsFree is 0/);
     expect(text).toMatch(/not synced, stop/);
+    expect(text).toMatch(/startEpoch has been finalized/);
+    expect(text).toMatch(/"participated"/);
   });
 
   it('renders the monthly health check with last month and the three-level report', async () => {

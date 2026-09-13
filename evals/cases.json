@@ -164,6 +164,18 @@
         "transactionHashes": ["FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F"]
       },
       "notes": "\"Did it go through\" is a status question: confirmed / unconfirmed / partial (waiting for cosignatures) / failed (with the node's code and its meaning) / not_found. transactionHashes is always an array, even for one hash, and takes up to 20. symbol_transaction_get answers what is inside a transaction, not where it stands."
+    },
+    {
+      "id": "finality-participation-last-week",
+      "audience": "node-operator",
+      "question": "Was my voting node NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY actually able to vote last week?",
+      "question_ja": "先週うちのノード（NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY）は投票できてた？",
+      "expectedTool": "symbol_finality_participation",
+      "expectedArguments": {
+        "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY",
+        "epochs": 14
+      },
+      "notes": "Voting participation is read from the finalization proofs (GET /finalization/proof/epoch/{epoch}), not from transactions or receipts. \"Last week\" is a span of epochs counted back from the latest finalized one: an epoch is votingSetGrouping blocks (1440 on mainnet, about 12 hours at 30 s per block), so seven days is 14 epochs. Leave epoch unset so the range starts at the latest finalized epoch. symbol_voting_key_status says whether a key is registered and when it expires; only this tool says whether it signed."
     }
   ]
 }

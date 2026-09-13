@@ -296,6 +296,38 @@ export const TransactionStatusSchema = z.object({
 export type TransactionStatus = z.infer<typeof TransactionStatusSchema>;
 export const TransactionStatusListSchema = z.array(TransactionStatusSchema);
 
+/**
+ * `GET /finalization/proof/epoch/{epoch}` (symbol-openapi FinalizationProofDTO -> MessageGroup ->
+ * BmTreeSignature -> ParentPublicKeySignaturePair). `stage` is StageEnum (0 prevote, 1 precommit,
+ * 2 count); `root.parentPublicKey` is the voter's registered voting key.
+ */
+const ParentPublicKeySignaturePairSchema = z.object({
+  parentPublicKey: Hex64,
+  signature: HexString,
+});
+
+export const FinalizationProofSchema = z.object({
+  version: z.number().int().optional(),
+  finalizationEpoch: z.number().int().nonnegative(),
+  finalizationPoint: z.number().int().nonnegative(),
+  height: Uint64String,
+  hash: Hex64,
+  messageGroups: z.array(
+    z.object({
+      stage: z.number().int().nonnegative(),
+      height: Uint64String,
+      hashes: z.array(Hex64),
+      signatures: z.array(
+        z.object({
+          root: ParentPublicKeySignaturePairSchema,
+          bottom: ParentPublicKeySignaturePairSchema,
+        }),
+      ),
+    }),
+  ),
+});
+export type FinalizationProof = z.infer<typeof FinalizationProofSchema>;
+
 /** `GET /node/unlockedaccount`: key is singular (test/fixtures/mainnet/unlockedaccount.json). */
 export const UnlockedAccountSchema = z.object({ unlockedAccount: z.array(Hex64) });
 export type UnlockedAccount = z.infer<typeof UnlockedAccountSchema>;

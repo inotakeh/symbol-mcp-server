@@ -101,6 +101,19 @@ describe.skipIf(!enabled)('live node', () => {
     },
   );
 
+  it.skipIf(!INTEGRATION_ACCOUNT)(
+    'symbol_finality_participation judges the latest finalized epoch for SYMBOL_INTEGRATION_ACCOUNT',
+    async () => {
+      const result = await call('symbol_finality_participation', { account: INTEGRATION_ACCOUNT });
+      const epochs = result.epochs as Array<{ epoch: number; status: string }>;
+      expect(epochs).toHaveLength(1);
+      expect(epochs[0]?.epoch).toBe(
+        (result.current as { finalizationEpoch: number }).finalizationEpoch,
+      );
+      expect(['participated', 'missed']).toContain(epochs[0]?.status);
+    },
+  );
+
   it('symbol_transaction_search then symbol_transaction_get round-trip a confirmed transaction', async () => {
     const account = await nodeAccount();
     const page = await call('symbol_transaction_search', { address: account, pageSize: 10 });
