@@ -9,6 +9,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `symbol_finality_participation`: whether an account's voting key actually signed the
+  finalization proof of an epoch (default: the latest finalized one) and optionally the up to 20
+  epochs before it, read from `GET /finalization/proof/epoch/{epoch}`. Per epoch: `participated`
+  (a registered key is among the root signers of both prevote and precommit), `missed` (with the
+  stage that was not signed), `no_active_key` or `unavailable` (the node holds no proof; not an
+  error unless every requested epoch is missing), the signature count per stage, and a warning
+  when the most recent epoch was missed. Other voters' keys are never reported. The renewal
+  prompt and the server instructions point to it. Registered after `symbol_transaction_status`.
 - `symbol_transaction_status`: where 1 to 20 transactions stand right now, from one
   `POST /transactionStatus` call: confirmed (with height), unconfirmed, partial (waiting for
   cosignatures), failed (with the node's code and its meaning from the OpenAPI

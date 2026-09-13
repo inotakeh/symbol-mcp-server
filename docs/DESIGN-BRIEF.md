@@ -168,6 +168,15 @@ friendlyName、host、ロール（ビットフラグを Peer/API/Voting に展�
 - 出力: `summary`、`period`（種別・日付・使用タイムゾーン）、`range`（fromHeight/toHeight と両端ブロックの日時）、`totals` と `daily[]`（`SYMBOL_TIMEZONE` の日付境界でバケット）または `receipts[]`、各行に harvester / beneficiary / unknown の内訳（`xym*` と `raw*`）、`truncated`、`notes`（「ハーベストは確率的で日ごとの変動が大きい」「為替換算は含まない」）。
 - 参照: `GET /statements/transaction`（TransactionStatementPage → `statement.receipts[]` の BalanceChangeReceiptDTO `{ type, mosaicId, amount, targetAddress }`、`meta.timestamp` はブロックのネットワークタイムスタンプ）、`GET /blocks/{height}`、`GET /chain/info`、`GET /accounts/{id}`。レシート種別の名前表は catbuffer `receipt_type.cats` から取り込む（`src/domain/receipttype.ts`）。
 
+**`symbol_finality_participation`**（0.3.0 で追加。ツール配列の末尾に登録し、既存の順序を変えない）— `account`（アドレスまたは公開鍵）、`epoch`（任意。未指定なら `/chain/info` の `latestFinalizedBlock.finalizationEpoch`）、`epochs`（1〜20、既定 1。`epoch` から過去に向かって連続 N エポック。取得は並行で、同時リクエストは RestClient の上限 4 に収まる）、`format`（concise は `participated` のエポックで `stages` を省略、detailed は全エポックに含める）。
+答える問い: 「このアカウントの投票鍵は、指定エポックのファイナリティ投票に実際に参加したか」。キー更新後の検証（新キーで投票できているか）と、月次の Voting ノード健全性確認に使う。`symbol_voting_key_status` は「いつ失効するか」、このツールは「実際に使われているか」。
+- 確認済み事項（2026-09-13、mainnet epoch 4010 の実 proof を人間が確認）: `GET /finalization/proof/epoch/{epoch}` の応答は `{ version, finalizationEpoch, finalizationPoint, height, hash, messageGroups: [{ stage, height, hashes[], signatures: [{ root: {parentPublicKey, signature}, bottom: {parentPublicKey, signature} }] }] }`。messageGroups は 2 件（stage 1 = precommit、stage 0 = prevote）、各 17 署名。**アカウントに登録された voting 公開鍵は `signatures[].root.parentPublicKey` と完全一致し、`bottom.parentPublicKey`（中間鍵）には現れない**。したがって参加判定は「root 鍵の集合に登録鍵が含まれるか」。stage の意味は OpenAPI v1.0.4 の `StageEnum`（0 = Prevote、1 = Precommit、2 = Count）で確認済み。署名数 17 に対し nodewatch 上の Voting ノードは 18 だったので、この差分（不参加ノード）の検出が目的の 1 つ。
+- 処理: `/accounts/{id}` の voting 鍵一覧と `/chain/info` を並行取得 → 対象エポックごとに proof を `getOrNull` で取得（404 は `status: 'unavailable'` にして `isError` にしない。全エポックが 404 のときだけ `isError`＋ヒント。要求エポックが最新確定エポックより大きいときはヒントに「proof は確定済みエポックにしか無い」と書く。proof の `finalizationEpoch` が要求と違えば `invalid_response`）→ messageGroups ごとに root 鍵集合を作り登録鍵と照合 → そのエポックで有効であるべき鍵（startEpoch ≤ e ≤ endEpoch）の有無を別途判定。判定は `src/domain/finality.ts` の純粋関数。
+- 判定: 全ステージで一致 → `participated`（proof の署名は現在の鍵一覧より優先。既に unlink した鍵の署名でも participated）。一致しないステージがあり有効鍵あり → `missed`（summary に「signed prevote only, not precommit」のように書く）。有効鍵なし → `no_active_key`。proof なし → `unavailable`。
+- 出力: `summary`、`account: { address, publicKey, votingKeys[{ publicKey, startEpoch, endEpoch, activeForEpoch }] }`、`current`、`requested`、`epochs[{ epoch, status, finalizationPoint, height, proofHash, stages[{ stage, stageName, height, signatureCount, participated, matchedPublicKey }], participatedAllStages }]`（新しいエポックが先頭）、`totals { checked, participated, missed, noActiveKey, unavailable }`、`warning`（先頭エポックが有効鍵ありで missed → 警告、有効鍵なし → 別文言、それ以外 null）、`notes`（`signatureCount` は署名した投票者数で、登録ノード総数はこのサーバーからは分からない／`unavailable` は投票の有無を意味しない）。**他ノードの公開鍵は出力しない**。
+- フィクスチャ: 実 proof の全 `parentPublicKey`・`signature`・`hashes`・`hash` を `H("fixture:…")` 由来の合成値に置換した `test/fixtures/mainnet/finalization-proof-epoch.json`（規則は `test/fixtures/README.md`）。自アカウントの root 鍵は既存の合成 voting 鍵 `H("fixture:voting-key-2")`（epoch 3700〜4059、4010 を含む）。epoch / point / height / stage / 署名数 17 / hashes 21 件は実値のまま。生ファイルの値はリポジトリに書かない。
+- 参照: `GET /finalization/proof/epoch/{epoch}` → `FinalizationProofDTO`（`MessageGroup` → `BmTreeSignature` → `ParentPublicKeySignaturePair`、OpenAPI v1.0.4 で確認）、`GET /accounts/{id}`、`GET /chain/info`。
+
 ## 6. ドメイン知識と落とし穴
 
 **アドレス**: 24バイト。base32エンコードして末尾の `=` を除いた **39文字**。先頭文字が `N`=mainnet、`T`=testnet。API のJSONはアドレスを **hex（48文字）** で返すので base32 へ変換して表示する。`/accounts/{id}` は base32アドレスでも公開鍵でも引ける。公開鍵→アドレスの導出は SHA3-256 → RIPEMD-160 → ネットワークバイト付加 → チェックサム（SHA3-256先頭3バイト）。実装は `symbol-sdk`（npm）の `SymbolFacade.network.publicKeyToAddress` を参照するか、そのテストベクタで検証する。
@@ -217,6 +226,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - 金額整形（divisibility 6 / 0 / 3）
 - トランザクション種別の名前解決
 - メッセージ復号（平文 / 暗号化 / 空 / 制御文字除去）
+- ファイナリティ参加判定（両ステージ一致 / prevote のみ / 不一致 / 鍵未登録 / 期間外の鍵のみ / proof なし）とエポック範囲の展開（`epochs=3` で e, e-1, e-2。1 未満は切り詰め）
 
 **ツール層（CIで必ず実行。SDK公式のインプロセス方式）**
 `createMcpHandler(createServer)` を作り、`@modelcontextprotocol/client` の `Client` を `StreamableHTTPClientTransport(url, { fetch: (u, i) => handler.fetch(new Request(u, i)) })` で接続して `client.callTool()` を呼ぶ。ノードへの `fetch` は `vi.stubGlobal('fetch', ...)` で差し替え、固定レスポンスを返す。
@@ -233,6 +243,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - testnet ノードに対して全ツールがエラーなく応答する
 - `/chain/info` の `latestFinalizedBlock.height` から式で計算したエポックが `finalizationEpoch` と一致する
 - `SYMBOL_INTEGRATION_ACCOUNT` で指定した Voting アカウントに対し、`symbol_voting_key_status` が Voting キーを1本以上返す（内容は時間で変わるので件数と形だけ検証。未設定ならこのテストは skip）
+- 同アカウントに対し、`symbol_finality_participation` が最新確定エポックで `participated` か `missed` のいずれかを返す（`unavailable` でない。未設定なら skip）
 
 **手動確認**: `npx @modelcontextprotocol/inspector node dist/index.js` で全ツールを一度は叩く。
 
