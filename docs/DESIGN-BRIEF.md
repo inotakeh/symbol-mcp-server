@@ -34,6 +34,7 @@
 6. **エラーは `isError: true` の結果で返し、本文に復旧のヒントを書く**（例: 「アドレスは39文字のbase32。hexを渡した場合は symbol_address_parse で変換」）。スタックトレースやHTTP生レスポンスをそのまま返さない。
 7. **外部通信は `SYMBOL_NODE_URL` と `SYMBOL_REFERENCE_NODES` のみ**。テレメトリ禁止。
 8. **チェーン上の文字列は信頼しない**。転送メッセージ・ノードの friendlyName・ネームスペース名は第三者が書ける。出力では `untrusted` であることが分かるフィールド名（例: `messageText`）に入れ、制御文字を除去する。
+9. **ローカル状態ファイル**（0.3.0 で追加）。ディスクに書くのは `symbol_harvester_watch` だけで、書く場所は `SYMBOL_STATE_DIR`（任意。絶対パス）配下の `harvesters-<nodePublicKey 先頭 16 hex>.json` のみ。内容は解錠中ハーベスターの公開鍵・高さ・時刻だけで秘密情報を含まない。削除しても動作に影響しない（次回が baseline になる）。未設定なら何も書かず「比較不可」として現在の一覧だけ返す。fs を import するのは `src/state/snapshotfile.ts` の 1 ファイルだけ（`grep -l node:fs src/` で監査できる）。同日に複数回呼べばその回数だけ積み、新しい 60 件で有界。`readOnlyHint: true` は据え置く（モデルはパスも内容も選べず、書けるのは「今日の一覧を追記する」ことだけ）。
 
 ## 3. 技術スタック（確認済みの現行規約）
 
@@ -62,7 +63,7 @@
 
 **Prompts**: `server.registerPrompt(name, { title, description, argsSchema: z.object(...) }, cb)`。`src/prompts/` に 1 ファイル 1 プロンプト、`server.ts` の `PROMPTS` 配列の順に登録する（ツールと同じく末尾追加のみ、並べ替えない）。引数は `account`（base32 アドレス）だけ。コールバックで `isValidBase32Address` を通し、不正なら prompts/get をエラーにする。本文は `{account}` を置換するテンプレートで、**実在のアドレス・ホスト・鍵・ハッシュ・日付を書かない**（`test/tools/prompts.test.ts` が、置換前のテンプレートと、置換後の本文から渡した account を除いた残りの両方を正規表現で検査する）。
 - `voting_key_renewal_checklist`: `symbol_voting_key_status`（endEpoch・失効予定・推奨ウィンドウ・空き枠）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare` → 更新コマンドは人間が実行 → 教えられた Tx ハッシュを `symbol_transaction_status` で confirmed 確認 → `symbol_voting_key_status` を再確認（新キーが active / future、失効キーが unlink されて枠が空いた）→ 「現行キー / 新キー / 失効予定 / 未対応事項」の 4 行。
-- `monthly_health_check`: `symbol_node_status` → `symbol_node_health`（verdict と warn 以上の項目。unhealthy なら先頭）→ `symbol_version_drift`（verdict・自ノード版・majorityVersion。behind 以上なら先頭）→ `symbol_network_compare` → `symbol_harvesting_status`（前回値との比較はユーザーに聞く）→ `symbol_voting_key_status`（30 日以内なら警告を先頭）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ `symbol_harvesting_income`（先月 1 日〜末日、daily）→ 要対応 / 注意 / 正常の 3 段階で 1 画面。
+- `monthly_health_check`: `symbol_node_status` → `symbol_node_health`（verdict と warn 以上の項目。unhealthy なら先頭）→ `symbol_version_drift`（verdict・自ノード版・majorityVersion。behind 以上なら先頭）→ `symbol_network_compare` → `symbol_harvester_watch`（mode `compare_and_save`。`current.count` と `comparison` の previousCount / previousTakenAt / 追加・削除件数 / deltaCount。負なら注意。`comparison` が null で notes が `SYMBOL_STATE_DIR` 未設定を言うなら前回値をユーザーに聞き、初回なら baseline 保存を報告。`symbol_harvesting_status` は制限値や鍵一覧を求められたときだけ）→ `symbol_voting_key_status`（30 日以内なら警告を先頭）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ `symbol_harvesting_income`（先月 1 日〜末日、daily）→ 要対応 / 注意 / 正常の 3 段階で 1 画面。
 
 ## 4. 設定
 
@@ -73,6 +74,7 @@
 | `SYMBOL_TIMEZONE` | 任意 | IANA名（例 `Asia/Tokyo`）。日時出力にローカル時刻を併記 |
 | `SYMBOL_REFERENCE_NODES` | 任意 | カンマ区切りURL。`symbol_network_compare` の比較対象。**ここに無いURLへは通信しない** |
 | `SYMBOL_REQUEST_TIMEOUT_MS` | 任意 | 既定 10000 |
+| `SYMBOL_STATE_DIR` | 任意 | `symbol_harvester_watch` のスナップショット置き場（絶対パス必須。相対は `ConfigError`。起動時に作成も書込確認もしない）。§2-9 |
 
 既知のネットワーク識別情報（起動時照合用。ハードコードしてよい唯一の定数）:
 
@@ -228,6 +230,15 @@ friendlyName、host、ロール（ビットフラグを Peer/API/Voting に展�
 - 出力（先頭 summary）: `summary` / `network` / `verdict` / `node { version, versionRaw, restVersion: nullable }` / `sample { size, source: 'peers' | 'peers+reference', peers, referenceNodes, ignored }` / `distribution [{ version, count, share }]` / `majorityVersion: nullable` / `newerShare: nullable` / `farBehindShare` / `notes[]`（サンプルは自ノードが知っているピアの一部で全体像は nodewatch／ピアの host・friendlyName・publicKey は untrusted で**出力しない**（version と数だけ）／除外規則）。
 - 参照: `GET /node/info`、`GET /node/server`、`GET /node/peers`、参照ノードの `GET /node/info`。
 
+**`symbol_harvester_watch`**（0.3.0 で追加。ツール配列の末尾に登録し、既存の順序を変えない）— `mode`（`compare` = 読むだけ / `compare_and_save` = 既定、比較して今回分を追記 / `save_only` = 比較せず追記）、`format`（detailed は `current.keys` と `history.entries` を出す）。
+答える問い: 「設定済みノードで解錠されている委任ハーベスターは、前回と比べて増えたか減ったか」。OS 移行後に「委任者が戻ったか」を確認する用途と、月次の churn 監視。`symbol_harvesting_status` は現在の一覧だけ。
+- ローカル状態ファイル（§2-9）: `SYMBOL_STATE_DIR` 配下の `harvesters-<nodePublicKey 先頭 16 hex>.json`。`{ version: 1, nodePublicKey, snapshots: [{ takenAt: ISO(UTC), height, keys: string[] }] }`。`keys` は `/node/unlockedaccount` のリモート公開鍵を大文字 hex・重複除去・昇順。`snapshots` は新しい順、保存時に 60 件（`MAX_SNAPSHOTS`）に切り詰め。純粋ロジック（`SnapshotSchema` / `HarvesterStateSchema` / `normalizeKeys` / `diffKeys` / `historyStats` / `trimSnapshots` / `stateFileName` / `assertInsideDir` / `resolveStateFile`）は `src/domain/harvesterwatch.ts`、fs I/O（`readSnapshotFile` / `writeSnapshotFileAtomic` / `StateFileError`）は `src/state/snapshotfile.ts`。
+- 書き込み規則: `path.resolve` で正規化し `assertInsideDir` でディレクトリ外（`..`、別絶対パス、`/a/b` vs `/a/bb`）を拒否。ディレクトリが無ければ `mkdir -p` mode 0o700（既存の mode は変えない）。同ディレクトリの一時ファイル（`<file>.tmp-<pid>-<random>`、`wx`、mode 0o600）に書いて `rename`（POSIX ではアトミック。既存の symlink はエントリごと置換されるので symlink 越しに書かない）。読み込みは `lstat` で通常ファイル以外（symlink・dir）を corrupt 扱い。読み込みは throw しない。
+- 処理: `GET /node/info`（`nodePublicKey` 無し → isError＋ヒント。何も読まず書かない）、`GET /node/unlockedaccount`、`GET /chain/info` を並行取得 → `SYMBOL_STATE_DIR` 未設定なら current だけ（`comparison` / `history` / `stateFile` は null、`saved: false`、notes に設定方法）→ ファイルを読む（無し = baseline。壊れている・通常ファイルでない・別ノード鍵は notes に理由を書いて baseline 扱い、保存モードなら上書き）→ compare / compare_and_save では直前スナップショットとの差分（`added` / `removed` 昇順、`unchangedCount`、`deltaCount`）と、**保存前の**スナップショットに対する 30 日窓の統計（compare と compare_and_save が同じ数字を返す。save_only は null）→ 保存モードなら先頭に今回分を足して切り詰め、書く。書込失敗は compare_and_save では `saved: false`＋note（比較結果が答え）、save_only では isError（`describeError` の `StateFileError` 分岐）。
+- 出力（先頭 summary）: `summary` / `network` / `mode` / `node { host, publicKey }` / `current { count, takenAt: Instant, height, keys: nullable }` / `comparison: nullable({ previousTakenAt, previousHeight, previousCount, added[], removed[], unchangedCount, deltaCount })` / `history: nullable({ snapshots, oldestTakenAt, min, max, average, entries: nullable })` / `saved` / `stateFile: nullable(絶対パス)` / `notes[]`（`/node/unlockedaccount` は自己申告でチェーンの裏付けなし／鍵はリモート鍵で委任者本体は特定できない／再起動直後は一時的に 0 になりうる／状況別）。summary 例: `18 unlocked harvesters on <host> (was 15 on <instant>): +4 -1. Snapshot saved (7 stored).`／`… No previous snapshot; baseline saved (1 stored).`／`… SYMBOL_STATE_DIR is not set, so no comparison.`／`… Previous snapshot unusable; baseline saved (1 stored).`／`… baseline NOT saved (EACCES).`
+- ノード鍵（node.key.pem）が移行で変わるとファイル名も変わり新しい baseline になる。委任者は新鍵に再リンクするので「戻ったか」はその baseline の伸びで見る（README Limitations に明記）。
+- 参照: `GET /node/info`（`nodePublicKey`）、`GET /node/unlockedaccount`（`UnlockedAccountDTO`）、`GET /chain/info`。
+
 ## 6. ドメイン知識と落とし穴
 
 **アドレス**: 24バイト。base32エンコードして末尾の `=` を除いた **39文字**。先頭文字が `N`=mainnet、`T`=testnet。API のJSONはアドレスを **hex（48文字）** で返すので base32 へ変換して表示する。`/accounts/{id}` は base32アドレスでも公開鍵でも引ける。公開鍵→アドレスの導出は SHA3-256 → RIPEMD-160 → ネットワークバイト付加 → チェックサム（SHA3-256先頭3バイト）。実装は `symbol-sdk`（npm）の `SymbolFacade.network.publicKeyToAddress` を参照するか、そのテストベクタで検証する。
@@ -280,6 +291,8 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - ファイナリティ参加判定（両ステージ一致 / prevote のみ / 不一致 / 鍵未登録 / 期間外の鍵のみ / proof なし）とエポック範囲の展開（`epochs=3` で e, e-1, e-2。1 未満は切り詰め）
 - ノード健全性の閾値（`src/domain/nodehealth.ts`）: 1 分相当ブロック数（30 s → 2、15 s → 4、60 s → 1）、時計ずれの計算と判定（14999 ok / 15000 warn / 30000 fail、負値も）、ファイナリティ遅延（19 ブロック → ok / 720 warn / 1440 fail、負は 0）、verdict（unknown → degraded）
 - バージョン比較（`src/domain/version.ts`）: `compareVersions`（`1.0.3.10 > 1.0.3.9`、欠け成分は 0）、分布の順序と同数タイブレーク、`newerShare`、verdict（own が最頻値 40% でも newerShare 0.6 → behind、0.7499 → behind、0.75 → far_behind、空 → unknown）
+- ハーベスター監視の規則（`src/domain/harvesterwatch.ts`）: `normalizeKeys`、`diffKeys`（added / removed / unchanged、昇順、同一・空・全追加）、`historyStats`（窓内・境界・未来日付・空 → null）、`trimSnapshots`（61 → 60、新しい側を残す）、`stateFileName` / `assertInsideDir`（`..`、別絶対パス、dir 自身、`/a/bb` の罠）/ `resolveStateFile`（`..` の正規化）、スキーマの否定例
+- 状態ファイル I/O（`src/state/snapshotfile.ts`、一時ディレクトリ）: 無し / 不正 JSON / 形不一致 / ディレクトリ / symlink（win32 skip）→ corrupt、dir 0o700・file 0o600 の作成、既存 dir の mode 不変、一時ファイルが残らない、上書き、symlink 置換で外側ファイル不変、読み取り専用 dir で `StateFileError`（win32・root skip）、ディレクトリ外は fs に触れる前に拒否
 - `RestClient.get` の `acceptStatuses`（503 受理で本文が返る / 未指定は http / 他ステータスは http / 受理しても非 JSON は invalid_response / 404 は列挙時のみ）
 - 委任診断の規則（`src/domain/delegation.ts`）: verdict（fail 優先 / unknown → cannot_verify / warn のみ → active）、importance 再計算までの残りブロック（ちょうど倍数のときは G）、鍵有無、委任要求マーカー判定（マーカーのみ / 先頭 0xFE だが不一致 / 平文）
 
@@ -294,6 +307,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - `symbol_delegation_diagnose`（既存フィクスチャを in-test で変異させる）: 全部 ok → active / linked 鍵なし → not_active / node 鍵が別ノード → cannot_verify で `unlocked_on_node` と `delegation_request_found` が unknown、`/transactions/confirmed` を呼ばない / 残高不足・超過 → not_active / 404 → not_active で `account_exists` のみ fail / `/node/unlockedaccount` が 5xx でも他のチェックは返る / 委任要求 Tx を返すルートで `delegation_request_found: ok` / `SYMBOL_NODE_URL` 以外に fetch しない / outputSchema
 - `symbol_node_health`: 既定フィクスチャで healthy（skew −1 s、lag 19 ブロック）/ storage −3・now +20 s・finalized −800 で degraded / `/node/health` が 503 本文 `db: down` → unhealthy（本文で判定）/ `/node/health` が例外・500 → `api_node` と `db` が fail で他のチェックは計算される / `/node/time` 503 とタイムスタンプ欠落 → `clock_skew` unknown・`nodeTime` null・degraded / `/node/storage` `/chain/info` `/node/info` 失敗 → 該当チェック unknown と null フィールド / now +31 s → clock_skew fail / concise・detailed / 参照ノード設定時も `SYMBOL_NODE_URL` 以外に通信しない / outputSchema
 - `symbol_version_drift`: 既定フィクスチャ（6 ピア: 1.0.3.9 ×4 / 1.0.3.8 / 1.0.4.0）で ok と分布 / 自ノード 1.0.3.8 と 7 ピア（1.0.4.0 ×3、1.0.3.8 ×2、1.0.3.7 ×2）→ behind（newerShare 0.43 でも多数派より古い）/ 全ピア 1.0.4.0 → far_behind / 同数タイブレーク → 新しい版が多数派 / ピア 0 件と `/node/peers` 503 → unknown（hint に SYMBOL_REFERENCE_NODES）/ 参照ノード A が新版・B が失敗 → `peers+reference`、host 集合 = node + A + B、参照側のパスは `/node/info` のみ / 参照ノードが testnet seed → 除外 / 自ノード鍵・別 seed・壊れた要素 → `ignored` 3 / `/node/server` 503 → `restVersion` null / 出力テキストにピアの host・friendlyName・publicKey が無い / outputSchema
+- `symbol_harvester_watch`（一時ディレクトリを `SYMBOL_STATE_DIR` に）: 未設定 → comparison null・ファイル無し / baseline → 2 回目で差分（鍵を 1 つ除き 2 つ足して `+2 -1`、history 1 件）/ save_only → 追記のみ / compare を 2 回で履歴が増えない（バイト一致）/ compare はディレクトリを作らない / 壊れたファイル（compare は不変、compare_and_save は上書き）/ 別ノード鍵 / 60 件切り詰めと 30 日窓（detailed の entries）/ `SYMBOL_STATE_DIR=<dir>/a/../b` → `<dir>/b` にだけ書く / `nodePublicKey` 無し・不正 → isError で何も書かない / 読み取り専用 dir → compare_and_save は note、save_only は isError（win32・root skip）/ `SYMBOL_NODE_URL` 以外に fetch しない / outputSchema / 両世代スモークは mode compare（既定ハーネスに `SYMBOL_STATE_DIR` が無いのでディスクに触れない）
 - initialize 結果に `instructions` が含まれること（`client.getInstructions()` が `SERVER_INSTRUCTIONS` と一致）
 - `prompts/list` が固定順で返り、`prompts/get` が `account` を埋め込んだ本文を返し、`account` 無し・不正アドレスがエラーになること。テンプレートに実在のアドレス・ホスト・鍵・ハッシュ・日付が無いこと
 - **2026-07-28 世代**（`test/tools/era_2026.test.ts`）: Client を `versionNegotiation: { mode: { pin: '2026-07-28' } }` で同じ `createMcpHandler.fetch` に接続し、`getProtocolEra() === 'modern'`、`tools/list` が全ツールを既定順で annotations / outputSchema 付きで返し `ttlMs` / `cacheScope` が宣言どおり載ること（生 JSON でも確認）、`prompts/list` / `prompts/get`、`tools/call` が `content[0].text` と `structuredContent` の両方を返すこと（csv 出力では text が CSV）、`getInstructions()` と discover 結果の `instructions`、`_meta` のサーバー identity、全ツールのスモーク呼び出し（`SMOKE_CALLS`、outputSchema 検証付き）。2025 世代のテストはそのまま残し、そちらでは cache フィールドが付かないことを確認する。**注意**: SDK Client の `mode: 'auto'` はインプロセスの `createMcpHandler` に対して modern に解決する（2026-09-13 に確認）ので、ハーネスの既定は明示的に `mode: 'legacy'` にしてある。auto のままだと 2025 世代の回帰テストは存在しない
@@ -316,6 +330,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 │   ├── config.ts           # env 読込・URL検証・ネットワーク照合
 │   ├── client/rest.ts      # fetch ラッパ（timeout, UA, サイズ上限, スキーマ検証）
 │   ├── domain/             # address.ts, amount.ts, epoch.ts, version.ts, txtype.ts, message.ts, properties.ts
+│   ├── state/              # snapshotfile.ts: src で唯一 node:fs を使う（symbol_harvester_watch の状態ファイル、§2-9）
 │   └── tools/              # 1ファイル1ツール（symbol_*.ts）、各ファイルで input/output zod を定義
 ├── test/                   # unit/, tools/, integration/
 ├── evals/                  # 実際の質問文と期待するツール呼び出しの例（Phase 3）

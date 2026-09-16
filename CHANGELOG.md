@@ -9,6 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `symbol_harvester_watch`: did the delegated harvesters unlocked on the configured node increase
+  or decrease since the last call. Added and removed remote keys, count delta, and min / max /
+  average over the snapshots of the last 30 days. Snapshots (public keys, heights and times only)
+  are kept in one file per node under the new optional `SYMBOL_STATE_DIR` (absolute path; created
+  on first save with mode 0700, file 0600, written through a temporary file and a rename, never
+  through a symlink or outside the directory); the newest 60 are kept. Without the variable the
+  tool reports the current list and says no comparison is possible. Modes `compare` (read only),
+  `compare_and_save` (default) and `save_only`. A corrupt file or one written for another node
+  key becomes a baseline with a note; a write failure is a note in `compare_and_save` and an error
+  in `save_only`. Registered after `symbol_version_drift`.
+- `SYMBOL_STATE_DIR` environment variable (optional, documented by `--help`).
 - `symbol_node_health`: is the configured node running healthily right now. Six checks in a
   fixed order, each ok / warn / fail / unknown with a hint: API node and database status from
   `/node/health` (a 503 answer carries the same body and is read, not treated as a failure), node
@@ -32,11 +43,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The `monthly_health_check` prompt compares the unlocked harvesters with the previous snapshot
+  through `symbol_harvester_watch` instead of asking the operator for last month's number;
+  `symbol_harvesting_status` is called only on request. The server instructions route "did
+  delegators increase or decrease" to the new tool.
 - The `monthly_health_check` prompt calls `symbol_node_health` and `symbol_version_drift` right
   after `symbol_node_status` and puts an unhealthy or behind verdict at the top of the report; the
   server instructions route "is the node healthy" and "is its version behind" to the new tools.
 - The `peers.json` test fixture is now fully synthetic (six peers with derived keys and a version
   mix); the version comments in the tool registration list name the release that shipped each tool.
+
+### Fixed
+
+- `symbol_node_status` reads the body of a 503 `/node/health` answer (a service is down) instead of
+  failing the whole call with an HTTP error.
+- DESIGN-BRIEF release labels: the features it marked "0.3.0 / 0.4.0 で追加" shipped in 0.2.0.
 
 ## [0.2.0] - 2026-09-16
 

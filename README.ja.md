@@ -8,7 +8,7 @@
 
 [English README](README.md)
 
-[Symbol](https://docs.symbol.dev/) の REST API を 19 個の目的別ツールとして公開する、読み取り専用の
+[Symbol](https://docs.symbol.dev/) の REST API を 20 個の目的別ツールとして公開する、読み取り専用の
 [MCP](https://modelcontextprotocol.io/) サーバーです。REST エンドポイントを 1 対 1 で写すのではなく、
 各ツールが「人が実際に尋ねる質問」に答えます。
 
@@ -125,10 +125,11 @@ claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- nod
 | `SYMBOL_TIMEZONE` | 任意 | `Asia/Tokyo` などの IANA 名。UTC の日時の隣にローカル時刻を併記します。 |
 | `SYMBOL_REFERENCE_NODES` | 任意 | `symbol_network_compare` と `symbol_version_drift` の比較対象となる `https://` ノード URL のカンマ区切り。ここに無いホストへは一切通信しません。 |
 | `SYMBOL_REQUEST_TIMEOUT_MS` | 任意 | リクエストごとのタイムアウト（100〜600000）。既定 `10000`。 |
+| `SYMBOL_STATE_DIR` | 任意 | `symbol_harvester_watch` がノードごとのスナップショット（解錠中ハーベスターの公開鍵・高さ・時刻のみ。秘密情報なし）を置く絶対パスのディレクトリ。初回保存時に 0700 で作成。未設定なら比較なしで現在の一覧だけ返します。 |
 
 ## ツール
 
-19 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
+20 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
 `account` 引数（と `symbol_transaction_search` の `address`）は、base32 アドレス・hex 公開鍵のほかに、アドレスエイリアスを持つ
 ネームスペース名（`alice`、`alice.pay`）も受け付けます。解決結果は `accountResolution` と summary の先頭に出ます。
 
@@ -153,6 +154,7 @@ claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- nod
 | `symbol_delegation_diagnose` | `account`, `recentDays`（1〜30、既定 7）, `format` | 委任ハーベストが有効か、無効ならどこで止まっているか: アカウントの存在、ハーベスト残高制限、importance（0 なら次の再計算までのブロック数）、linked / VRF / node の各鍵、node 鍵と設定ノードの `nodePublicKey` の一致、そのノードでの解錠、accountType、直近 N 日のハーベスト実績、ノード宛の委任要求トランザクション。判定は `active` / `not_active` / `cannot_verify`（別ノードへの委任はここからは確認できない）。 |
 | `symbol_node_health` | `format` | 設定ノードが今、健全に動いているか: API ノードと DB の状態（`/node/health` の 503 応答も本文を読んで判定）、DB のブロック数とチェーン高さの差、ノード時計とこの端末の時計のずれ、ファイナリティ遅延（ブロック数と分）、ロール。固定順の 6 チェックが ok / warn / fail / unknown とヒントを持ち、判定は `healthy` / `degraded`（warn、または確認できなかった項目あり）/ `unhealthy`。閾値は `/network/properties` から導出。`symbol_node_status` を補完。 |
 | `symbol_version_drift` | `format` | 設定ノードのバージョンがネットワークの多数派から取り残されていないか: ノードが知るピアと参照ノードのバージョン分布、多数派の版、自ノードより新しい版の割合。判定は `ok` / `behind`（多数派より古い、または新しい版が半数以上）/ `far_behind`（75% 以上が新しい。接続を拒否され始める可能性）/ `unknown`（ピアなし）。ピアの host や鍵は出力しません。 |
+| `symbol_harvester_watch` | `mode`（`compare` / `compare_and_save` / `save_only`）, `format` | 設定ノードで解錠中の委任ハーベスターが前回より増えたか減ったか: 追加・削除されたリモート鍵、件数の差分、直近 30 日のスナップショットの最小・最大・平均。スナップショットは `SYMBOL_STATE_DIR` 配下にノードごと 1 ファイル。未設定なら現在の一覧だけを返し「比較不可」と明記。`compare` は読むだけ、`compare_and_save`（既定）は今回分も保存、`save_only` は比較せず保存。 |
 
 ### 質問の例
 
@@ -210,6 +212,11 @@ healthy / degraded / unhealthy と問題のあるチェックを返します。
 → `symbol_version_drift {}` がノードのバージョンをピアと参照ノードと比べ、ok / behind / far_behind を返します。
 どちらもノードの OS 移行後に最初に見る項目です。
 
+**「移行後、委任者は戻ってきた？」**
+→ `symbol_harvester_watch {}` が、いま解錠されているハーベスターを前回保存したスナップショットと比較し（追加・削除された鍵、
+件数差分、30 日の最小・最大・平均）、次回のために今日の一覧を保存します。`SYMBOL_STATE_DIR` が必要で、未設定なら現在の件数と
+「比較不可」を返します。
+
 期待される引数まで含めた他の例は [`evals/cases.json`](evals/cases.json) にあります。
 
 ## Prompts
@@ -220,7 +227,7 @@ healthy / degraded / unhealthy と問題のあるチェックを返します。
 | Prompt | 手順 |
 |---|---|
 | `voting_key_renewal_checklist` | `symbol_voting_key_status`（失効予定・推奨ウィンドウ・空き枠）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare` → 運用者がこのサーバーの外で VotingKeyLink を送信 → そのハッシュを `symbol_transaction_status` で確認 → `symbol_voting_key_status` を再度呼んで新キーを確認 → 新キーの startEpoch が確定した後に `symbol_finality_participation` で参加を確認 → 4 行で要約。 |
-| `monthly_health_check` | `symbol_node_status` → `symbol_node_health`（unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare` → `symbol_harvesting_status` → `symbol_voting_key_status`（30 日以内に失効するなら警告を先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income` → 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
+| `monthly_health_check` | `symbol_node_status` → `symbol_node_health`（unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare` → `symbol_harvester_watch`（前回スナップショットとの差分。`symbol_harvesting_status` は求められたときだけ） → `symbol_voting_key_status`（30 日以内に失効するなら警告を先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income` → 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
 
 サーバーは initialize 時に短い `instructions`（読み取り専用であること、アカウントの指定形式、ハーベスト報酬と Voting キーの質問に使うツール、
 返された数値をそのまま使うこと）も送ります。
@@ -228,7 +235,8 @@ healthy / degraded / unhealthy と問題のあるチェックを返します。
 ## セキュリティ
 
 - **読み取り専用。** トランザクションの作成・署名・アナウンスは行いません。秘密鍵・ニーモニック・トークンを
-  受け取る引数はなく、呼び出し間で何も保存しません。
+  受け取る引数はありません。呼び出し間で何も保存しません。例外は `symbol_harvester_watch` で、`SYMBOL_STATE_DIR` を設定した
+  ときだけ、解錠中ハーベスターの公開鍵・高さ・時刻のスナップショットをノードごとに保存します（秘密情報なし。ファイルを消せば初期化）。
 - **通信先は固定。** 通信するのは `SYMBOL_NODE_URL` と、`symbol_network_compare` / `symbol_version_drift` に限り
   `SYMBOL_REFERENCE_NODES` のホストだけです。ツール引数で URL を受け取らないため、モデルがリクエストを別ホストへ向けることはできません。
   テレメトリはありません。
@@ -264,6 +272,9 @@ healthy / degraded / unhealthy と問題のあるチェックを返します。
 - **検索は確定トランザクションのみ。** 未確定・partial のトランザクションはハッシュ指定の
   `symbol_transaction_get` で参照できます。
 - **ハーベスティング状況は設定ノードの範囲**（`/node/unlockedaccount`）で、ネットワーク全体ではありません。
+- **ハーベスターの履歴はローカルです。** `symbol_harvester_watch` は自分が `SYMBOL_STATE_DIR` に書いたスナップショットとだけ比較します。
+  別のマシン、ファイルの削除、ノード鍵の変更（移行で node.key.pem が変わった場合）は新しい baseline になります。同じ日に何度呼んでも
+  その回数だけ積まれ、新しい 60 件だけが残ります。
 - **ハーベスト報酬の集計は 1 回あたり最大 20,000 ステートメント**（100 件 × 200 ページ）。超える期間は
   `truncated` になるので `fromHeight`/`toHeight` で分割してください。HarvestFee レシートから合算するため、
   レシートを prune しているノードではチェーン上の実績より少なく出ます。
