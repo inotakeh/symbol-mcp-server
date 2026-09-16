@@ -85,16 +85,20 @@ describe('prompts', () => {
     server = await startTestServer();
     const text = await getText('monthly_health_check', ADDRESS);
     expect(text).toContain(`account "${ADDRESS}"`);
-    for (const tool of [
+    const order = [
       'symbol_node_status',
+      'symbol_node_health',
+      'symbol_version_drift',
       'symbol_network_compare',
       'symbol_harvesting_status',
       'symbol_voting_key_status',
       'symbol_account_get',
       'symbol_harvesting_income',
-    ]) {
-      expect(text).toContain(tool);
-    }
+    ];
+    const positions = order.map((needle) => text.indexOf(needle));
+    expect(positions.every((p) => p >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    expect(text).toMatch(/behind or far_behind/);
     expect(text).toMatch(/previous calendar month/);
     expect(text).toMatch(/granularity "daily"/);
     expect(text).toMatch(/within 30 days/);

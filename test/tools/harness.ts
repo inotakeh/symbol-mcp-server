@@ -62,6 +62,10 @@ export function mainnetRoutes(): Routes {
     'GET /node/info': fixture('mainnet/node-info.json'),
     'GET /node/health': fixture('mainnet/node-health.json'),
     'GET /node/peers': fixture('mainnet/peers.json'),
+    // 0.3.0 fixtures (synthetic, see test/fixtures/README.md); node-time is TEST_NOW minus 1 s.
+    'GET /node/storage': fixture('mainnet/node-storage.json'),
+    'GET /node/time': fixture('mainnet/node-time.json'),
+    'GET /node/server': fixture('mainnet/node-server.json'),
     'GET /chain/info': fixture('mainnet/chain-info.json'),
     'GET /network/properties': fixture('mainnet/network-properties.json'),
     'GET /network/fees/transaction': fixture('mainnet/fees.json'),
@@ -187,6 +191,8 @@ export const SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown
     { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY', epoch: 4010, epochs: 2 },
   ],
   ['symbol_delegation_diagnose', { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
+  ['symbol_node_health', {}],
+  ['symbol_version_drift', {}],
 ];
 
 /**

@@ -1,32 +1,62 @@
 [
   {
     "version": 16777993,
-    "publicKey": "0D90FF9DBF4F3A0F0696B99E802672A287123C9C377E694142792C46334F85E1",
+    "publicKey": "219EF49E3CC979AAC20C4D0C1B1511C9BF89788AA552A69FBC57DF3B73198681",
     "networkGenerationHashSeed": "57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6",
     "roles": 3,
     "port": 7900,
     "networkIdentifier": 104,
-    "host": "xym.symbol-network.com",
-    "friendlyName": "xym.symbol-network.com"
+    "host": "peer-01.example",
+    "friendlyName": "peer 01"
   },
   {
     "version": 16777993,
-    "publicKey": "1D90FF9DBF4F3A0F0696B99E802672A287123C9C377E694142792C46334F85E2",
+    "publicKey": "68106A4909637FD4F4B2EFAF03D16EC31C5A9D15F5B14B8CD2DC901641655324",
     "networkGenerationHashSeed": "57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6",
     "roles": 1,
     "port": 7900,
     "networkIdentifier": 104,
-    "host": "peer-one.example",
-    "friendlyName": "peer one"
+    "host": "peer-02.example",
+    "friendlyName": "peer\u000702\u202E"
   },
   {
     "version": 16777993,
-    "publicKey": "2D90FF9DBF4F3A0F0696B99E802672A287123C9C377E694142792C46334F85E3",
+    "publicKey": "B2F2EB3A5AA69A132AC1600F057850E84AD2CABEE4A702BBA80FA509E0D87A2A",
     "networkGenerationHashSeed": "57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6",
     "roles": 7,
     "port": 7900,
     "networkIdentifier": 104,
-    "host": "peer-two.example",
-    "friendlyName": "peer\u0007two\u202E"
+    "host": "peer-03.example",
+    "friendlyName": "peer 03"
+  },
+  {
+    "version": 16777993,
+    "publicKey": "1D0119FE9A11F16A0282927577792EADDB3393A66D2FF5DEA084734F9608FA64",
+    "networkGenerationHashSeed": "57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6",
+    "roles": 5,
+    "port": 7900,
+    "networkIdentifier": 104,
+    "host": "peer-04.example",
+    "friendlyName": "peer 04"
+  },
+  {
+    "version": 16777992,
+    "publicKey": "7C43A2B8EE32952679D4B45ACBF6BF3B0E1B1A3599149590A59CAC7406D73CA1",
+    "networkGenerationHashSeed": "57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6",
+    "roles": 1,
+    "port": 7900,
+    "networkIdentifier": 104,
+    "host": "peer-05.example",
+    "friendlyName": "peer 05"
+  },
+  {
+    "version": 16778240,
+    "publicKey": "22584E10C03264ABF76340BFB49907CEB1D2C4EACF296DF72322E15FFB4E3D70",
+    "networkGenerationHashSeed": "57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6",
+    "roles": 3,
+    "port": 7900,
+    "networkIdentifier": 104,
+    "host": "peer-06.example",
+    "friendlyName": "peer 06"
   }
 ]

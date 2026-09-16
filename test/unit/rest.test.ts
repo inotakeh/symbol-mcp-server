@@ -93,6 +93,43 @@ describe('RestClient', () => {
     ).toBe('timeout');
   });
 
+  it('parses the body of an accepted non-2xx status, and only that status', async () => {
+    // /node/health answers 503 with the same DTO when a service is down.
+    await expect(
+      client((async () => jsonResponse({ ok: false }, 503)) as typeof fetch).get('/x', Schema, {
+        acceptStatuses: [503],
+      }),
+    ).resolves.toEqual({ ok: false });
+    expect(
+      await kindOf(
+        client((async () => jsonResponse({ ok: false }, 503)) as typeof fetch).get('/x', Schema),
+      ),
+    ).toBe('http');
+    expect(
+      await kindOf(
+        client((async () => jsonResponse({ ok: false }, 500)) as typeof fetch).get('/x', Schema, {
+          acceptStatuses: [503],
+        }),
+      ),
+    ).toBe('http');
+    expect(
+      await kindOf(
+        client((async () => new Response('<html>', { status: 503 })) as typeof fetch).get(
+          '/x',
+          Schema,
+          { acceptStatuses: [503] },
+        ),
+      ),
+    ).toBe('invalid_response');
+    expect(
+      await kindOf(
+        client((async () => jsonResponse({}, 404)) as typeof fetch).get('/x', Schema, {
+          acceptStatuses: [503],
+        }),
+      ),
+    ).toBe('not_found');
+  });
+
   it('getOrNull maps 404 to null but rethrows other errors', async () => {
     await expect(
       client((async () => jsonResponse({}, 404)) as typeof fetch).getOrNull('/x', Schema),

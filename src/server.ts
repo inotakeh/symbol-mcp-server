@@ -16,11 +16,13 @@ import { mosaicGetTool } from './tools/symbol_mosaic_get.js';
 import { namespaceGetTool } from './tools/symbol_namespace_get.js';
 import { networkCompareTool } from './tools/symbol_network_compare.js';
 import { networkInfoTool } from './tools/symbol_network_info.js';
+import { nodeHealthTool } from './tools/symbol_node_health.js';
 import { nodeStatusTool } from './tools/symbol_node_status.js';
 import { timeConvertTool } from './tools/symbol_time_convert.js';
 import { transactionGetTool } from './tools/symbol_transaction_get.js';
 import { transactionSearchTool } from './tools/symbol_transaction_search.js';
 import { transactionStatusTool } from './tools/symbol_transaction_status.js';
+import { versionDriftTool } from './tools/symbol_version_drift.js';
 import { votingKeyStatusTool } from './tools/symbol_voting_key_status.js';
 
 export const SERVER_NAME = 'symbol-mcp-server';
@@ -59,13 +61,14 @@ export const TOOLS: readonly AnyToolDefinition[] = [
   timeConvertTool,
   harvestingStatusTool,
   networkCompareTool,
-  // 0.2.0
+  // 0.2.0 (version comments name the CHANGELOG release that first shipped the tool)
   harvestingIncomeTool,
-  // 0.3.0
   transactionStatusTool,
   finalityParticipationTool,
-  // 0.4.0
   delegationDiagnoseTool,
+  // 0.3.0
+  nodeHealthTool,
+  versionDriftTool,
 ];
 
 /** Same rule as TOOLS: append only, never reorder, so `prompts/list` is deterministic. */

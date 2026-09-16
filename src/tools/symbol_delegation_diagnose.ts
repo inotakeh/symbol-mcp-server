@@ -28,6 +28,7 @@ import { receiptTypeCode } from '../domain/receipttype.js';
 import { formatInstantText, type Instant, networkTimestampToDate } from '../domain/time.js';
 import { parseTransactionType } from '../domain/txtype.js';
 import { AccountResolutionSchema, resolveAccountInput, withResolutionPrefix } from './_accounts.js';
+import { CheckSchema, check, stripOkHints, unknownChecks } from './_checks.js';
 import { defineTool, formatInteger, maskIdentifier, nullable } from './_shared.js';
 import { InstantSchema } from './_transactions.js';
 import { ACCOUNT_TYPES } from './symbol_account_get.js';
@@ -68,13 +69,6 @@ const inputSchema = z.object({
     .describe(
       'concise (default): hints only on checks that are not ok. detailed: a hint on every check, including what was compared for the ok ones.',
     ),
-});
-
-const CheckSchema = z.object({
-  id: z.string(),
-  status: z.enum(['ok', 'warn', 'fail', 'unknown']),
-  detail: z.string(),
-  hint: nullable(z.string(), 'What to do about this check; null when nothing is needed.'),
 });
 
 const outputSchema = z.object({
@@ -119,22 +113,6 @@ const outputSchema = z.object({
 });
 
 type Output = z.output<typeof outputSchema>;
-
-interface CheckInput {
-  readonly id: string;
-  readonly status: CheckStatus;
-  readonly detail: string;
-  readonly hint?: string;
-}
-
-function check(input: CheckInput): DiagnoseCheck {
-  return { id: input.id, status: input.status, detail: input.detail, hint: input.hint ?? null };
-}
-
-/** Everything after a missing account is unknown: there is nothing to inspect. */
-function unknownChecks(ids: readonly string[], detail: string): DiagnoseCheck[] {
-  return ids.map((id) => check({ id, status: 'unknown', detail }));
-}
 
 const CHECK_IDS = [
   'account_exists',
@@ -718,10 +696,7 @@ export const delegationDiagnoseTool = defineTool({
     }
 
     const verdict = deriveVerdict(checks);
-    const shownChecks =
-      format === 'detailed'
-        ? checks
-        : checks.map((c) => (c.status === 'ok' ? { ...c, hint: null } : c));
+    const shownChecks = stripOkHints(checks, format);
 
     return {
       summary: withResolutionPrefix(
