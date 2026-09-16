@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.inotakeh/symbol",
+  "description": "Read-only MCP server for the Symbol blockchain (XYM): node health, harvesting income, delegated-harvesting diagnosis, voting-key expiry and finality participation. Talks only to the node you configure.",
+  "repository": {
+    "url": "https://github.com/inotakeh/symbol-mcp-server",
+    "source": "github"
+  },
+  "version": "0.2.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "symbol-mcp-server",
+      "version": "0.2.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SYMBOL_NODE_URL",
+          "description": "Base URL of the Symbol REST node to query, e.g. https://your-node.example:3001",
+          "isRequired": true,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "SYMBOL_TIMEZONE",
+          "description": "IANA time zone for local date/time output, e.g. Asia/Tokyo (default UTC)",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "SYMBOL_REFERENCE_NODES",
+          "description": "Comma-separated REST URLs of reference nodes for symbol_network_compare (optional)",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
