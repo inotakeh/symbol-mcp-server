@@ -41,7 +41,18 @@ describe('loadConfig', () => {
       timeZone: undefined,
       referenceNodes: [],
       requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+      stateDir: undefined,
     });
+  });
+  it('parses SYMBOL_STATE_DIR as a resolved absolute directory', () => {
+    const base = { SYMBOL_NODE_URL: 'https://example.test:3001' };
+    expect(loadConfig({ ...base, SYMBOL_STATE_DIR: ' /var/lib/symbol-mcp/ ' }).stateDir).toBe(
+      '/var/lib/symbol-mcp',
+    );
+    expect(loadConfig({ ...base, SYMBOL_STATE_DIR: '/tmp/x/../y' }).stateDir).toBe('/tmp/y');
+    expect(loadConfig({ ...base, SYMBOL_STATE_DIR: '  ' }).stateDir).toBeUndefined();
+    expect(() => loadConfig({ ...base, SYMBOL_STATE_DIR: 'state' })).toThrow(/absolute/);
+    expect(() => loadConfig({ ...base, SYMBOL_STATE_DIR: './state' })).toThrow(ConfigError);
   });
   it('parses every option', () => {
     const c = loadConfig({

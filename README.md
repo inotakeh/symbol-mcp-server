@@ -8,7 +8,7 @@
 
 [日本語版 README](README.ja.md)
 
-Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 19
+Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 20
 task-level tools. Instead of mirroring REST endpoints one-to-one, each tool answers a question a
 person actually asks:
 
@@ -129,10 +129,11 @@ Or commit a project-level `.mcp.json`:
 | `SYMBOL_TIMEZONE` | no | IANA zone such as `Asia/Tokyo`. Adds a local time next to every UTC timestamp. |
 | `SYMBOL_REFERENCE_NODES` | no | Comma-separated `https://` node URLs that `symbol_network_compare` and `symbol_version_drift` check against. No other host is ever contacted. |
 | `SYMBOL_REQUEST_TIMEOUT_MS` | no | Per-request timeout, 100 to 600000. Default `10000`. |
+| `SYMBOL_STATE_DIR` | no | Absolute directory where `symbol_harvester_watch` keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets). Created on first save with mode 0700. Unset: the tool reports the current list without a comparison. |
 
 ## Tools
 
-All 19 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
+All 20 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
 identifiers only, never URLs. Every `account` argument (and the `address` of
 `symbol_transaction_search`) takes a base32 address, a hex public key, or a namespace name such as
 `alice` or `alice.pay` that carries an address alias; the resolution is reported in
@@ -159,6 +160,7 @@ identifiers only, never URLs. Every `account` argument (and the `address` of
 | `symbol_delegation_diagnose` | `account`, `recentDays` (1 to 30, default 7), `format` | Is delegated harvesting active, and if not, where does it stop: account exists, balance within the harvesting limits, importance above zero (or blocks until the next recalculation), linked/VRF/node keys, node key equal to the configured node's `nodePublicKey`, remote key unlocked on that node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Verdict `active`, `not_active` or `cannot_verify` (delegation to another node cannot be checked from here). |
 | `symbol_node_health` | `format` | Is the configured node running healthily right now: API node and database status (a 503 `/node/health` answer is read, not treated as a failure), database block count versus chain height, node clock versus this machine's clock, finalization lag in blocks and minutes, and roles. Six checks in a fixed order, each ok/warn/fail/unknown with a hint; verdict `healthy`, `degraded` (a warning or a check that could not be made) or `unhealthy`. Thresholds derive from the network properties. Complements `symbol_node_status`. |
 | `symbol_version_drift` | `format` | Is the node's software version behind the network majority: versions of the peers the node knows plus the reference nodes, as a distribution with the majority version and the share running something newer. Verdict `ok`, `behind` (older than the majority, or newer versions hold at least half the sample), `far_behind` (75% or more newer: peers may refuse connections) or `unknown` (no peers). Peer hosts and keys are never reported. |
+| `symbol_harvester_watch` | `mode` (`compare`, `compare_and_save`, `save_only`), `format` | Did the delegated harvesters unlocked on the node increase or decrease since the last call: added and removed remote keys, count delta, and min / max / average over the snapshots of the last 30 days. Snapshots are kept in one file per node under `SYMBOL_STATE_DIR`; without it the current list is reported and no comparison is possible. `compare` reads only, `compare_and_save` (default) also stores the current list, `save_only` stores without comparing. |
 
 ### Example questions
 
@@ -222,6 +224,12 @@ configured node and answers healthy / degraded / unhealthy with the failing chec
 → `symbol_version_drift {}` compares the node version with its peers and the reference nodes and
 answers ok / behind / far_behind. Both are the first things to look at after a node OS migration.
 
+**"Have my delegators come back after the migration?"**
+→ `symbol_harvester_watch {}` compares the harvesters unlocked on the node right now with the last
+stored snapshot (added and removed keys, count delta, 30-day min / max / average) and stores today's
+list for the next check. Needs `SYMBOL_STATE_DIR`; without it the tool reports the current count and
+says no comparison is possible.
+
 More cases, with the exact arguments expected for each, are in [`evals/cases.json`](evals/cases.json).
 
 ## Prompts
@@ -233,7 +241,7 @@ prompt text contains no addresses, hosts, keys or dates of its own.
 | Prompt | What it walks through |
 |---|---|
 | `voting_key_renewal_checklist` | `symbol_voting_key_status` (expiry, renewal window, free slots), `symbol_node_status` (stop if not synced), `symbol_network_compare`, then, after the operator has announced the VotingKeyLink outside this server, `symbol_transaction_status` on the hash, a second `symbol_voting_key_status` to confirm the new key, and `symbol_finality_participation` once the new key's start epoch is finalized. Ends with a four-line summary. |
-| `monthly_health_check` | `symbol_node_status`, `symbol_node_health` (unhealthy goes first), `symbol_version_drift` (behind or far_behind goes first), `symbol_network_compare`, `symbol_harvesting_status`, `symbol_voting_key_status` (warning first if a key expires within 30 days), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month. Reports on one screen as Action required / Attention / Normal. |
+| `monthly_health_check` | `symbol_node_status`, `symbol_node_health` (unhealthy goes first), `symbol_version_drift` (behind or far_behind goes first), `symbol_network_compare`, `symbol_harvester_watch` (delta against the previous snapshot; `symbol_harvesting_status` only on request), `symbol_voting_key_status` (warning first if a key expires within 30 days), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month. Reports on one screen as Action required / Attention / Normal. |
 
 The server also sends short `instructions` at initialize time (read-only, account formats, which
 tool answers harvest-income and voting-key questions, use the returned numbers as they are).
@@ -241,7 +249,9 @@ tool answers harvest-income and voting-key questions, use the returned numbers a
 ## Security
 
 - **Read-only.** No tool signs, builds or announces transactions. No argument accepts a private key,
-  mnemonic or token, and nothing is stored between calls.
+  mnemonic or token. Nothing is stored between calls, except that `symbol_harvester_watch` keeps its
+  per-node snapshot of unlocked harvester public keys, heights and times under `SYMBOL_STATE_DIR` when
+  that variable is set (no secrets; delete the file to start over).
 - **Fixed destinations.** The server contacts only `SYMBOL_NODE_URL` and, for
   `symbol_network_compare` and `symbol_version_drift`, the hosts listed in `SYMBOL_REFERENCE_NODES`. Tools never take a URL as
   an argument, so a model cannot redirect requests. There is no telemetry.
@@ -281,6 +291,10 @@ https://nodewatch.symbol.tools/.
 - **Confirmed transactions only** in search. Unconfirmed and partial transactions are visible
   through `symbol_transaction_get` by hash.
 - **Harvesting status covers the configured node** (`/node/unlockedaccount`), not the whole network.
+- **Harvester history is local.** `symbol_harvester_watch` compares against snapshots it wrote itself
+  under `SYMBOL_STATE_DIR`; another machine, a deleted file or a changed node key (a new node.key.pem
+  after a migration) starts a new baseline. Repeated calls on the same day add repeated snapshots;
+  only the newest 60 are kept.
 - **Harvest income reads at most 20,000 statements per call** (200 pages of 100). A longer period
   comes back `truncated`; split it with `fromHeight`/`toHeight`. Rewards are summed from HarvestFee
   receipts, so a node that prunes receipts reports less than the chain holds.

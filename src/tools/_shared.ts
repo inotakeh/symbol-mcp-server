@@ -13,6 +13,7 @@ import * as z from 'zod/v4';
 import { RestError } from '../client/rest.js';
 import type { AppContext } from '../context.js';
 import { PropertyParseError } from '../domain/properties.js';
+import { StateFileError } from '../state/snapshotfile.js';
 
 export const TOOL_ANNOTATIONS: ToolAnnotations = {
   readOnlyHint: true,
@@ -108,6 +109,9 @@ export function describeError(err: unknown, ctx: AppContext): string {
   }
   if (err instanceof PropertyParseError) {
     return `The node's /network/properties could not be parsed (${err.message}). The node may run an incompatible catapult-rest version.`;
+  }
+  if (err instanceof StateFileError) {
+    return `Could not ${err.operation === 'read' ? 'read' : 'write'} the harvester snapshot file ${err.path} (${err.code}). Check that SYMBOL_STATE_DIR exists or can be created and is writable by the server process, or unset SYMBOL_STATE_DIR to run without comparisons.`;
   }
   // Internal failures: details go to stderr (never to the model), the reply stays generic.
   const name = err instanceof Error ? err.name : 'Error';

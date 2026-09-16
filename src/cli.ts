@@ -62,6 +62,12 @@ export const ENV_VARS: readonly EnvVarDoc[] = [
     required: false,
     description: `Per-request timeout in milliseconds, 100 to 600000. Default ${DEFAULT_REQUEST_TIMEOUT_MS}.`,
   },
+  {
+    name: 'SYMBOL_STATE_DIR',
+    required: false,
+    description:
+      'Absolute directory where symbol_harvester_watch keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets). Created on first save. Unset: the tool reports the current list without a comparison.',
+  },
 ];
 
 const PUBLIC_NODES = [

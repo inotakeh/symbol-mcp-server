@@ -44,6 +44,7 @@ describe('server registration', () => {
       'symbol_delegation_diagnose',
       'symbol_node_health',
       'symbol_version_drift',
+      'symbol_harvester_watch',
     ]);
     for (const tool of tools) {
       expect(tool.name).toMatch(/^symbol_[a-z]+_[a-z_]+$/);
@@ -131,6 +132,7 @@ describe('outbound requests', () => {
     await server.callTool('symbol_finality_participation', { account: ACCOUNT, epoch: 4010 });
     await server.callTool('symbol_delegation_diagnose', { account: ACCOUNT });
     await server.callTool('symbol_node_health');
+    await server.callTool('symbol_harvester_watch', { mode: 'compare' });
     // symbol_version_drift is left out on purpose: like symbol_network_compare it queries the
     // reference nodes (and only them), which test/tools/version_drift.test.ts verifies.
     expect(server.requests.length).toBeGreaterThan(5);

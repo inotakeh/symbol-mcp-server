@@ -21,6 +21,7 @@ describe('server instructions', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_delegation_diagnose/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_node_health/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_version_drift/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_harvester_watch/);
     expect(SERVER_INSTRUCTIONS).toMatch(/never recompute/);
   });
 

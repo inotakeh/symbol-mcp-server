@@ -43,6 +43,7 @@ describe('helpText', () => {
       SYMBOL_TIMEZONE: 'Asia/Tokyo',
       SYMBOL_REFERENCE_NODES: 'https://ref.test:3001',
       SYMBOL_REQUEST_TIMEOUT_MS: '5000',
+      SYMBOL_STATE_DIR: '/var/lib/symbol-mcp-server',
     };
     expect(Object.keys(env).sort()).toEqual(ENV_VARS.map((v) => v.name).sort());
     expect(() => loadConfig(env)).not.toThrow();

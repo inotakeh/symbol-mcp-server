@@ -4,6 +4,7 @@
  * The node URL comes ONLY from the environment (never from tool arguments) so the model can
  * never point the server at an arbitrary host. See DESIGN-BRIEF §2-3 and §4.
  */
+import { isAbsolute, resolve } from 'node:path';
 import type { RestClient } from './client/rest.js';
 import { NodeInfoSchema } from './client/schemas.js';
 import { findNetworkBySeed, isNetworkName, type NetworkName } from './domain/network.js';
@@ -29,6 +30,12 @@ export interface Config {
   readonly timeZone: string | undefined;
   readonly referenceNodes: readonly string[];
   readonly requestTimeoutMs: number;
+  /**
+   * Resolved absolute directory for the per-node snapshot files of symbol_harvester_watch, or
+   * undefined when SYMBOL_STATE_DIR is unset (the tool then reports without comparing). Neither
+   * created nor checked for writability at startup; the first save creates it.
+   */
+  readonly stateDir: string | undefined;
 }
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
@@ -105,7 +112,20 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
     requestTimeoutMs = n;
   }
 
-  return { nodeUrl, expectedNetwork, timeZone, referenceNodes, requestTimeoutMs };
+  let stateDir: string | undefined;
+  const rawStateDir = env.SYMBOL_STATE_DIR?.trim();
+  if (rawStateDir) {
+    // MCP hosts start the server with an unpredictable working directory, so a relative path
+    // would land somewhere surprising; the containment check also needs a fixed anchor.
+    if (!isAbsolute(rawStateDir)) {
+      throw new ConfigError(
+        `SYMBOL_STATE_DIR must be an absolute directory path, e.g. /var/lib/symbol-mcp-server (got ${JSON.stringify(rawStateDir)})`,
+      );
+    }
+    stateDir = resolve(rawStateDir);
+  }
+
+  return { nodeUrl, expectedNetwork, timeZone, referenceNodes, requestTimeoutMs, stateDir };
 }
 
 export interface ResolvedNetwork {
