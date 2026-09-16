@@ -7,6 +7,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `symbol_node_health`: is the configured node running healthily right now. Six checks in a
+  fixed order, each ok / warn / fail / unknown with a hint: API node and database status from
+  `/node/health` (a 503 answer carries the same body and is read, not treated as a failure), node
+  database block count versus chain height (tolerance: one minute of blocks), node clock versus
+  the local clock (warn at half a block time, fail at a whole one), finalization lag in blocks and
+  minutes (warn at half an epoch, fail at a whole one) and the node roles. Verdict `healthy`,
+  `degraded` (a warning, or a check that could not be made because an endpoint failed) or
+  `unhealthy`. Every threshold is derived from `/network/properties`. Registered after
+  `symbol_delegation_diagnose`.
+- `symbol_version_drift`: is the node's software version behind the network majority. The
+  versions of the peers the node knows (`/node/peers`, validated entry by entry) and of the
+  reference nodes in `SYMBOL_REFERENCE_NODES` (same network only) are counted into a
+  distribution; versions are compared component-wise, ties go to the newer version. Verdict `ok`
+  (same as or newer than the majority), `behind` (older than the majority, or newer versions hold
+  at least half the sample), `far_behind` (newer versions hold 75% or more: peers may start
+  refusing connections) or `unknown` (no peers). The REST version from `/node/server` is reported
+  alongside. Peer hosts, names and public keys are never part of the output. Registered after
+  `symbol_node_health`.
+- `RestClient.get` takes an `acceptStatuses` option so a documented non-2xx answer (the 503 of
+  `/node/health`) is parsed instead of becoming an error.
+
+### Changed
+
+- The `monthly_health_check` prompt calls `symbol_node_health` and `symbol_version_drift` right
+  after `symbol_node_status` and puts an unhealthy or behind verdict at the top of the report; the
+  server instructions route "is the node healthy" and "is its version behind" to the new tools.
+- The `peers.json` test fixture is now fully synthetic (six peers with derived keys and a version
+  mix); the version comments in the tool registration list name the release that shipped each tool.
+
 ## [0.2.0] - 2026-09-16
 
 ### Changed

@@ -8,7 +8,7 @@
 
 [日本語版 README](README.ja.md)
 
-Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 17
+Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 19
 task-level tools. Instead of mirroring REST endpoints one-to-one, each tool answers a question a
 person actually asks:
 
@@ -127,12 +127,12 @@ Or commit a project-level `.mcp.json`:
 | `SYMBOL_NODE_URL` | yes | REST URL of the node to query, e.g. `https://<node-host>:3001`. `https://` is required (`http://` only for `localhost` / `127.0.0.1`). The port is used exactly as given. |
 | `SYMBOL_NETWORK` | no | `mainnet` or `testnet`. When set, start-up fails if the node reports a different network. |
 | `SYMBOL_TIMEZONE` | no | IANA zone such as `Asia/Tokyo`. Adds a local time next to every UTC timestamp. |
-| `SYMBOL_REFERENCE_NODES` | no | Comma-separated `https://` node URLs that `symbol_network_compare` checks against. No other host is ever contacted. |
+| `SYMBOL_REFERENCE_NODES` | no | Comma-separated `https://` node URLs that `symbol_network_compare` and `symbol_version_drift` check against. No other host is ever contacted. |
 | `SYMBOL_REQUEST_TIMEOUT_MS` | no | Per-request timeout, 100 to 600000. Default `10000`. |
 
 ## Tools
 
-All 17 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
+All 19 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
 identifiers only, never URLs. Every `account` argument (and the `address` of
 `symbol_transaction_search`) takes a base32 address, a hex public key, or a namespace name such as
 `alice` or `alice.pay` that carries an address alias; the resolution is reported in
@@ -157,6 +157,8 @@ identifiers only, never URLs. Every `account` argument (and the `address` of
 | `symbol_transaction_status` | `transactionHashes` (array, 1 to 20) | Where each transaction stands right now: confirmed (with height), unconfirmed, partial (waiting for cosignatures), failed (with the node's code and its meaning) or not_found. One request for the whole batch. |
 | `symbol_finality_participation` | `account`, `epoch` (optional, default latest finalized), `epochs` (1 to 20, default 1), `format` | Whether the account's voting key actually signed the finalization proof of each epoch: participated (both prevote and precommit), missed (which stage was not signed), no_active_key or unavailable, with the signature count per stage and a warning when no key covers the current epoch or the current epoch was missed (historical epochs never warn). |
 | `symbol_delegation_diagnose` | `account`, `recentDays` (1 to 30, default 7), `format` | Is delegated harvesting active, and if not, where does it stop: account exists, balance within the harvesting limits, importance above zero (or blocks until the next recalculation), linked/VRF/node keys, node key equal to the configured node's `nodePublicKey`, remote key unlocked on that node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Verdict `active`, `not_active` or `cannot_verify` (delegation to another node cannot be checked from here). |
+| `symbol_node_health` | `format` | Is the configured node running healthily right now: API node and database status (a 503 `/node/health` answer is read, not treated as a failure), database block count versus chain height, node clock versus this machine's clock, finalization lag in blocks and minutes, and roles. Six checks in a fixed order, each ok/warn/fail/unknown with a hint; verdict `healthy`, `degraded` (a warning or a check that could not be made) or `unhealthy`. Thresholds derive from the network properties. Complements `symbol_node_status`. |
+| `symbol_version_drift` | `format` | Is the node's software version behind the network majority: versions of the peers the node knows plus the reference nodes, as a distribution with the majority version and the share running something newer. Verdict `ok`, `behind` (older than the majority, or newer versions hold at least half the sample), `far_behind` (75% or more newer: peers may refuse connections) or `unknown` (no peers). Peer hosts and keys are never reported. |
 
 ### Example questions
 
@@ -214,6 +216,12 @@ delegation request transfer) and answers `active`, `not_active` (with the failin
 `cannot_verify` (the account delegates to a node other than `SYMBOL_NODE_URL`, so the node side cannot
 be checked).
 
+**"Is my node healthy, and is its version behind?"**
+→ `symbol_node_health {}` checks the API node, database, storage, clock and finalization lag of the
+configured node and answers healthy / degraded / unhealthy with the failing checks;
+→ `symbol_version_drift {}` compares the node version with its peers and the reference nodes and
+answers ok / behind / far_behind. Both are the first things to look at after a node OS migration.
+
 More cases, with the exact arguments expected for each, are in [`evals/cases.json`](evals/cases.json).
 
 ## Prompts
@@ -225,7 +233,7 @@ prompt text contains no addresses, hosts, keys or dates of its own.
 | Prompt | What it walks through |
 |---|---|
 | `voting_key_renewal_checklist` | `symbol_voting_key_status` (expiry, renewal window, free slots), `symbol_node_status` (stop if not synced), `symbol_network_compare`, then, after the operator has announced the VotingKeyLink outside this server, `symbol_transaction_status` on the hash, a second `symbol_voting_key_status` to confirm the new key, and `symbol_finality_participation` once the new key's start epoch is finalized. Ends with a four-line summary. |
-| `monthly_health_check` | `symbol_node_status`, `symbol_network_compare`, `symbol_harvesting_status`, `symbol_voting_key_status` (warning first if a key expires within 30 days), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month. Reports on one screen as Action required / Attention / Normal. |
+| `monthly_health_check` | `symbol_node_status`, `symbol_node_health` (unhealthy goes first), `symbol_version_drift` (behind or far_behind goes first), `symbol_network_compare`, `symbol_harvesting_status`, `symbol_voting_key_status` (warning first if a key expires within 30 days), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month. Reports on one screen as Action required / Attention / Normal. |
 
 The server also sends short `instructions` at initialize time (read-only, account formats, which
 tool answers harvest-income and voting-key questions, use the returned numbers as they are).
@@ -235,7 +243,7 @@ tool answers harvest-income and voting-key questions, use the returned numbers a
 - **Read-only.** No tool signs, builds or announces transactions. No argument accepts a private key,
   mnemonic or token, and nothing is stored between calls.
 - **Fixed destinations.** The server contacts only `SYMBOL_NODE_URL` and, for
-  `symbol_network_compare`, the hosts listed in `SYMBOL_REFERENCE_NODES`. Tools never take a URL as
+  `symbol_network_compare` and `symbol_version_drift`, the hosts listed in `SYMBOL_REFERENCE_NODES`. Tools never take a URL as
   an argument, so a model cannot redirect requests. There is no telemetry.
 - **Untrusted chain data.** Transfer messages, node friendly names, host names and alias names are
   written by third parties. They are exposed under names that make this obvious (`messageText`),
@@ -280,6 +288,10 @@ https://nodewatch.symbol.tools/.
   proof for that epoch (not finalized yet, or outside the history it keeps), not that the account
   did not vote. The server does not know how many voters are registered, so `signatureCount` can
   only be compared with an external list such as nodewatch.
+- **Version drift is sampled, not surveyed.** `symbol_version_drift` sees the peers the configured
+  node currently knows plus the reference nodes, not the whole network; the full picture is on
+  nodewatch. Clock skew in `symbol_node_health` is measured against the clock of the machine running
+  this server, which may itself be off.
 - **Mainnet and testnet only.** No transaction building, signing or announcing, by design.
 - **The URL is used as given.** The server does not switch ports or schemes on its own; if a node
   only serves port 3000 over http, it cannot be used unless it is on localhost.

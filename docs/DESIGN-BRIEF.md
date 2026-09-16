@@ -62,7 +62,7 @@
 
 **Prompts**: `server.registerPrompt(name, { title, description, argsSchema: z.object(...) }, cb)`。`src/prompts/` に 1 ファイル 1 プロンプト、`server.ts` の `PROMPTS` 配列の順に登録する（ツールと同じく末尾追加のみ、並べ替えない）。引数は `account`（base32 アドレス）だけ。コールバックで `isValidBase32Address` を通し、不正なら prompts/get をエラーにする。本文は `{account}` を置換するテンプレートで、**実在のアドレス・ホスト・鍵・ハッシュ・日付を書かない**（`test/tools/prompts.test.ts` が、置換前のテンプレートと、置換後の本文から渡した account を除いた残りの両方を正規表現で検査する）。
 - `voting_key_renewal_checklist`: `symbol_voting_key_status`（endEpoch・失効予定・推奨ウィンドウ・空き枠）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare` → 更新コマンドは人間が実行 → 教えられた Tx ハッシュを `symbol_transaction_status` で confirmed 確認 → `symbol_voting_key_status` を再確認（新キーが active / future、失効キーが unlink されて枠が空いた）→ 「現行キー / 新キー / 失効予定 / 未対応事項」の 4 行。
-- `monthly_health_check`: `symbol_node_status` → `symbol_network_compare` → `symbol_harvesting_status`（前回値との比較はユーザーに聞く）→ `symbol_voting_key_status`（30 日以内なら警告を先頭）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ `symbol_harvesting_income`（先月 1 日〜末日、daily）→ 要対応 / 注意 / 正常の 3 段階で 1 画面。
+- `monthly_health_check`: `symbol_node_status` → `symbol_node_health`（verdict と warn 以上の項目。unhealthy なら先頭）→ `symbol_version_drift`（verdict・自ノード版・majorityVersion。behind 以上なら先頭）→ `symbol_network_compare` → `symbol_harvesting_status`（前回値との比較はユーザーに聞く）→ `symbol_voting_key_status`（30 日以内なら警告を先頭）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ `symbol_harvesting_income`（先月 1 日〜末日、daily）→ 要対応 / 注意 / 正常の 3 段階で 1 画面。
 
 ## 4. 設定
 
@@ -204,6 +204,30 @@ friendlyName、host、ロール（ビットフラグを Peer/API/Voting に展�
 - 出力: `summary`（1 行目 `delegated harvesting: active | not active | cannot verify (<address>).`、以降に fail / warn の要点と、cannot_verify なら確認できなかった項目）、`network`、`address`、`verdict`、`checks[]`、`account { balanceXym, rawBalance, importance, importanceHeight, accountType { code, name }, keys { linked, vrf, node } }`（鍵は hex または null）、`node { configuredNodePublicKey, unlockedCount }`（取れなければ null）、`recentHarvest | null`、`notes[]`（unlockedaccount は自己申告でチェーンで裏付けられない／他ノードへの委任は確認できない／importance は importanceGrouping ごとに更新／期間の高さは推定）。
 - 参照: `GET /accounts/{id}`、`GET /chain/info`、`GET /node/info`（`nodePublicKey`）、`GET /node/unlockedaccount`、`GET /statements/transaction`、`GET /transactions/confirmed`（`signerPublicKey` / `recipientAddress` / `type` / `order` / `pageSize` / `pageNumber` は OpenAPI で確認）、`GET /blocks/{h}`（平均ブロック時間）。
 
+**`symbol_node_health`**（0.3.0 で追加。ツール配列の末尾に登録し、既存の順序を変えない）— `format` のみ。account 引数なし。
+答える問い: 「設定済みノードは今、健全に動いているか（DB / API ノード / ストレージ / 時刻 / ファイナリティ遅延）」。`symbol_node_status`（バージョン・同期・ピア数）を置き換えず補完する。OS 移行の前後で最初に見るツール。
+- 取得（並行。RestClient のセマフォ 4 で直列化）: `GET /node/health`、`GET /node/storage`、`GET /node/time`、`GET /chain/info`、`GET /node/info`、`ctx.getNetworkData()`。DTO は OpenAPI v1.0.4（`spec/core/node/schemas/`）で確認済み: `NodeHealthInfoDTO { status: { apiNode, db } }`（`NodeStatusEnum` = `up` / `down`。**どちらかが down のとき HTTP 503 で同じ body を返す**ので `RestClient.get(path, schema, { acceptStatuses: [503] })` で本文を読む）／`StorageInfoDTO { numBlocks, numTransactions, numAccounts }`（integer、required）／`NodeTimeDTO { communicationTimestamps: { sendTimestamp?, receiveTimestamp? } }`（`Timestamp` は nemesis 起点 ms の**文字列**、両方 optional。send 優先）。スキーマは `src/client/schemas.ts` の `NodeStorageSchema` / `NodeTimeSchema`。
+- 各エンドポイントは `settle` で個別に失敗を受け、取れた分だけで答える（`ctx.getNetworkData()` だけ致命。閾値の元）。`/node/health` 自体が失敗（timeout / unreachable / 503 以外の http / invalid）なら `api_node` と `db` を fail にする。
+- チェック（固定順、各 `{ id, status: ok|warn|fail|unknown, detail, hint }`。`src/tools/_checks.ts` の共通 `CheckSchema` / `check()` / `stripOkHints()`）:
+  1. `api_node` — `status.apiNode === 'up'` で ok、それ以外 fail
+  2. `db` — `status.db === 'up'` で ok、それ以外 fail
+  3. `storage_consistent` — `|numBlocks − height|` が `max(1, ceil(60000 / blockGenerationTargetTime))` ブロック以内（「1 分相当」。mainnet 30 s → 2）なら ok、超えれば warn。`/node/storage` か `/chain/info` が取れなければ unknown
+  4. `clock_skew` — `/node/time` の send タイムスタンプを `epochAdjustment` で UTC にして `ctx.now()` と比較。|skew| < blockTime/2 → ok、< blockTime → warn、それ以上 → fail（hint: 時計ずれはハーベスト失敗・Tx deadline 不正の原因、NTP を確認、端末側がずれている可能性）。取れない・タイムスタンプ欠落は unknown
+  5. `finalization_lag` — `height − latestFinalizedBlock.height`（ブロック数と、blockTime 換算の分）。`< votingSetGrouping / 2` → ok、`< votingSetGrouping` → warn、それ以上 → fail
+  6. `roles` — `decodeRoles` で名前解決し、Voting 役割の有無を detail に（判定は ok 固定）。`/node/info` が取れなければ unknown
+- verdict（`src/domain/nodehealth.ts` の `deriveHealthVerdict`）: fail あり → `unhealthy`、**warn または unknown あり → `degraded`**（取れなかった項目を健全とみなさない）、全部 ok → `healthy`。
+- 出力（先頭 summary）: `summary`（1 行目 `node health: healthy | degraded | unhealthy (<host>, <network>).`、以降 ok 以外を 1 行ずつ）/ `network` / `verdict` / `checks[]` / `node: nullable({ version, roles[], publicKey })` / `storage: nullable({ numBlocks, numTransactions, numAccounts })` / `chain: nullable({ height, finalizedHeight, finalizationEpoch })` / `time { nodeTime: nullable(Instant), localTime: Instant, skewMs: nullable }` / `notes[]`（clock_skew はこのサーバーを動かしている端末の時計との比較でリクエスト遅延を含む、端末側がずれている可能性／storage の数値はノード DB 由来でチェーンで裏付けられない／閾値の導出元）。
+- 閾値の純粋関数は `src/domain/nodehealth.ts`（`storageToleranceBlocks` / `assessStorage` / `computeClockSkewMs` / `skewThresholds` / `assessClockSkew` / `assessFinalizationLag` / `deriveHealthVerdict`）。定数を焼かない。
+- 参照: `GET /node/health`、`GET /node/storage`、`GET /node/time`、`GET /chain/info`、`GET /node/info`。
+
+**`symbol_version_drift`**（0.3.0 で追加。ツール配列の末尾に登録し、既存の順序を変えない）— `format` のみ。
+答える問い: 「設定済みノードのバージョンは、ネットワークの多数派から取り残されていないか」。多数派から遅れると他ノードから接続を拒否されるので、OS 移行後の最重要確認項目。
+- 取得: `GET /node/info`（自ノード。`decodeVersion`。失敗は致命）、`GET /node/server`（`ServerInfoDTO { serverInfo: { restVersion, sdkVersion, deployment } }`。v1.0.4 は `sdkVersion` を required にしながら property 定義が無く、古い catapult-rest には `deployment` が無いので `restVersion` 以外は optional + loose。失敗は `restVersion: null`）、`GET /node/peers`（`NodeInfoDTO[]`。`NodePeersRawSchema` で配列として受け、要素ごとに `NodePeerSchema.safeParse`。壊れた要素・別 `networkGenerationHashSeed`・自ノードの `publicKey` は `ignored` に数えて除外。失敗はピア 0 件＋note）、`SYMBOL_REFERENCE_NODES` があれば `ctx.referenceClients()` 各 `/node/info`（`symbol_network_compare` の `probe` と同じ try/catch。到達不能と別ネットワークは除外して note）。
+- 集計（`src/domain/version.ts`）: `compareVersions` は成分ごとの数値比較（欠けは 0。`1.0.3.10 > 1.0.3.9`、`2.10.0 > 2.4.4`。文字列比較しない）。`versionDistribution` は count 降順 → version 降順（**同数のときは新しい版を多数派とする**: 移行期には新しい方に収束するので warn 側に倒す）。`newerShare` = 自ノードより新しい版の割合。
+- verdict（`deriveVersionDriftVerdict`）: size 0 → `unknown`（hint: ピア接続自体の問題。`symbol_node_health` / `symbol_node_status` を見る、または `SYMBOL_REFERENCE_NODES`）／`newerShare ≥ 0.75`（`FAR_BEHIND_SHARE`）→ `far_behind`（「接続を拒否され始める可能性」）／`own < majority` **または** `newerShare ≥ 0.5`（`BEHIND_SHARE`。自ノードが最頻値でも新しい版の合計が過半なら取り残されつつある）→ `behind`／それ以外 `ok`（多数派より新しい場合も ok）。閾値はポリシー定数で、ネットワーク定数ではない。
+- 出力（先頭 summary）: `summary` / `network` / `verdict` / `node { version, versionRaw, restVersion: nullable }` / `sample { size, source: 'peers' | 'peers+reference', peers, referenceNodes, ignored }` / `distribution [{ version, count, share }]` / `majorityVersion: nullable` / `newerShare: nullable` / `farBehindShare` / `notes[]`（サンプルは自ノードが知っているピアの一部で全体像は nodewatch／ピアの host・friendlyName・publicKey は untrusted で**出力しない**（version と数だけ）／除外規則）。
+- 参照: `GET /node/info`、`GET /node/server`、`GET /node/peers`、参照ノードの `GET /node/info`。
+
 ## 6. ドメイン知識と落とし穴
 
 **アドレス**: 24バイト。base32エンコードして末尾の `=` を除いた **39文字**。先頭文字が `N`=mainnet、`T`=testnet。API のJSONはアドレスを **hex（48文字）** で返すので base32 へ変換して表示する。`/accounts/{id}` は base32アドレスでも公開鍵でも引ける。公開鍵→アドレスの導出は SHA3-256 → RIPEMD-160 → ネットワークバイト付加 → チェックサム（SHA3-256先頭3バイト）。実装は `symbol-sdk`（npm）の `SymbolFacade.network.publicKeyToAddress` を参照するか、そのテストベクタで検証する。
@@ -254,6 +278,9 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - トランザクション種別の名前解決
 - メッセージ復号（平文 / 暗号化 / 空 / 制御文字除去）
 - ファイナリティ参加判定（両ステージ一致 / prevote のみ / 不一致 / 鍵未登録 / 期間外の鍵のみ / proof なし）とエポック範囲の展開（`epochs=3` で e, e-1, e-2。1 未満は切り詰め）
+- ノード健全性の閾値（`src/domain/nodehealth.ts`）: 1 分相当ブロック数（30 s → 2、15 s → 4、60 s → 1）、時計ずれの計算と判定（14999 ok / 15000 warn / 30000 fail、負値も）、ファイナリティ遅延（19 ブロック → ok / 720 warn / 1440 fail、負は 0）、verdict（unknown → degraded）
+- バージョン比較（`src/domain/version.ts`）: `compareVersions`（`1.0.3.10 > 1.0.3.9`、欠け成分は 0）、分布の順序と同数タイブレーク、`newerShare`、verdict（own が最頻値 40% でも newerShare 0.6 → behind、0.7499 → behind、0.75 → far_behind、空 → unknown）
+- `RestClient.get` の `acceptStatuses`（503 受理で本文が返る / 未指定は http / 他ステータスは http / 受理しても非 JSON は invalid_response / 404 は列挙時のみ）
 - 委任診断の規則（`src/domain/delegation.ts`）: verdict（fail 優先 / unknown → cannot_verify / warn のみ → active）、importance 再計算までの残りブロック（ちょうど倍数のときは G）、鍵有無、委任要求マーカー判定（マーカーのみ / 先頭 0xFE だが不一致 / 平文）
 
 **ツール層（CIで必ず実行。SDK公式のインプロセス方式）**
@@ -265,6 +292,8 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - `SYMBOL_REFERENCE_NODES` に無いホストへは一切 fetch が呼ばれないこと
 - 64桁hex（秘密鍵に見える値）を `symbol_account_get` に渡しても公開鍵として扱うだけで、ログ・出力・外部送信に含めないこと
 - `symbol_delegation_diagnose`（既存フィクスチャを in-test で変異させる）: 全部 ok → active / linked 鍵なし → not_active / node 鍵が別ノード → cannot_verify で `unlocked_on_node` と `delegation_request_found` が unknown、`/transactions/confirmed` を呼ばない / 残高不足・超過 → not_active / 404 → not_active で `account_exists` のみ fail / `/node/unlockedaccount` が 5xx でも他のチェックは返る / 委任要求 Tx を返すルートで `delegation_request_found: ok` / `SYMBOL_NODE_URL` 以外に fetch しない / outputSchema
+- `symbol_node_health`: 既定フィクスチャで healthy（skew −1 s、lag 19 ブロック）/ storage −3・now +20 s・finalized −800 で degraded / `/node/health` が 503 本文 `db: down` → unhealthy（本文で判定）/ `/node/health` が例外・500 → `api_node` と `db` が fail で他のチェックは計算される / `/node/time` 503 とタイムスタンプ欠落 → `clock_skew` unknown・`nodeTime` null・degraded / `/node/storage` `/chain/info` `/node/info` 失敗 → 該当チェック unknown と null フィールド / now +31 s → clock_skew fail / concise・detailed / 参照ノード設定時も `SYMBOL_NODE_URL` 以外に通信しない / outputSchema
+- `symbol_version_drift`: 既定フィクスチャ（6 ピア: 1.0.3.9 ×4 / 1.0.3.8 / 1.0.4.0）で ok と分布 / 自ノード 1.0.3.8 と 7 ピア（1.0.4.0 ×3、1.0.3.8 ×2、1.0.3.7 ×2）→ behind（newerShare 0.43 でも多数派より古い）/ 全ピア 1.0.4.0 → far_behind / 同数タイブレーク → 新しい版が多数派 / ピア 0 件と `/node/peers` 503 → unknown（hint に SYMBOL_REFERENCE_NODES）/ 参照ノード A が新版・B が失敗 → `peers+reference`、host 集合 = node + A + B、参照側のパスは `/node/info` のみ / 参照ノードが testnet seed → 除外 / 自ノード鍵・別 seed・壊れた要素 → `ignored` 3 / `/node/server` 503 → `restVersion` null / 出力テキストにピアの host・friendlyName・publicKey が無い / outputSchema
 - initialize 結果に `instructions` が含まれること（`client.getInstructions()` が `SERVER_INSTRUCTIONS` と一致）
 - `prompts/list` が固定順で返り、`prompts/get` が `account` を埋め込んだ本文を返し、`account` 無し・不正アドレスがエラーになること。テンプレートに実在のアドレス・ホスト・鍵・ハッシュ・日付が無いこと
 - **2026-07-28 世代**（`test/tools/era_2026.test.ts`）: Client を `versionNegotiation: { mode: { pin: '2026-07-28' } }` で同じ `createMcpHandler.fetch` に接続し、`getProtocolEra() === 'modern'`、`tools/list` が全ツールを既定順で annotations / outputSchema 付きで返し `ttlMs` / `cacheScope` が宣言どおり載ること（生 JSON でも確認）、`prompts/list` / `prompts/get`、`tools/call` が `content[0].text` と `structuredContent` の両方を返すこと（csv 出力では text が CSV）、`getInstructions()` と discover 結果の `instructions`、`_meta` のサーバー identity、全ツールのスモーク呼び出し（`SMOKE_CALLS`、outputSchema 検証付き）。2025 世代のテストはそのまま残し、そちらでは cache フィールドが付かないことを確認する。**注意**: SDK Client の `mode: 'auto'` はインプロセスの `createMcpHandler` に対して modern に解決する（2026-09-13 に確認）ので、ハーネスの既定は明示的に `mode: 'legacy'` にしてある。auto のままだと 2025 世代の回帰テストは存在しない

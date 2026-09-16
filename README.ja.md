@@ -8,7 +8,7 @@
 
 [English README](README.md)
 
-[Symbol](https://docs.symbol.dev/) の REST API を 17 個の目的別ツールとして公開する、読み取り専用の
+[Symbol](https://docs.symbol.dev/) の REST API を 19 個の目的別ツールとして公開する、読み取り専用の
 [MCP](https://modelcontextprotocol.io/) サーバーです。REST エンドポイントを 1 対 1 で写すのではなく、
 各ツールが「人が実際に尋ねる質問」に答えます。
 
@@ -123,12 +123,12 @@ claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- nod
 | `SYMBOL_NODE_URL` | 必須 | 照会先ノードの REST URL。例 `https://<node-host>:3001`。`https://` 必須（`http://` は `localhost` / `127.0.0.1` のみ）。ポートは指定どおりに使います。 |
 | `SYMBOL_NETWORK` | 任意 | `mainnet` または `testnet`。指定時、ノードが別ネットワークなら起動に失敗します。 |
 | `SYMBOL_TIMEZONE` | 任意 | `Asia/Tokyo` などの IANA 名。UTC の日時の隣にローカル時刻を併記します。 |
-| `SYMBOL_REFERENCE_NODES` | 任意 | `symbol_network_compare` の比較対象となる `https://` ノード URL のカンマ区切り。ここに無いホストへは一切通信しません。 |
+| `SYMBOL_REFERENCE_NODES` | 任意 | `symbol_network_compare` と `symbol_version_drift` の比較対象となる `https://` ノード URL のカンマ区切り。ここに無いホストへは一切通信しません。 |
 | `SYMBOL_REQUEST_TIMEOUT_MS` | 任意 | リクエストごとのタイムアウト（100〜600000）。既定 `10000`。 |
 
 ## ツール
 
-17 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
+19 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
 `account` 引数（と `symbol_transaction_search` の `address`）は、base32 アドレス・hex 公開鍵のほかに、アドレスエイリアスを持つ
 ネームスペース名（`alice`、`alice.pay`）も受け付けます。解決結果は `accountResolution` と summary の先頭に出ます。
 
@@ -151,6 +151,8 @@ claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- nod
 | `symbol_transaction_status` | `transactionHashes`（配列、1〜20 件） | 各トランザクションの現在の状態: confirmed（高さ付き）/ unconfirmed / partial（署名待ち）/ failed（ノードのコードとその意味付き）/ not_found。バッチ全体を 1 リクエストで照会。 |
 | `symbol_finality_participation` | `account`, `epoch`（任意、既定は最新の確定エポック）, `epochs`（1〜20、既定 1）, `format` | アカウントの Voting キーが各エポックのファイナリティ proof に実際に署名したか: participated（prevote と precommit の両方）/ missed（署名しなかったステージ付き）/ no_active_key / unavailable。ステージごとの署名数と、現在のエポックをカバーする鍵が無い／現在のエポックが missed のときの警告（過去のエポックでは警告しない）。 |
 | `symbol_delegation_diagnose` | `account`, `recentDays`（1〜30、既定 7）, `format` | 委任ハーベストが有効か、無効ならどこで止まっているか: アカウントの存在、ハーベスト残高制限、importance（0 なら次の再計算までのブロック数）、linked / VRF / node の各鍵、node 鍵と設定ノードの `nodePublicKey` の一致、そのノードでの解錠、accountType、直近 N 日のハーベスト実績、ノード宛の委任要求トランザクション。判定は `active` / `not_active` / `cannot_verify`（別ノードへの委任はここからは確認できない）。 |
+| `symbol_node_health` | `format` | 設定ノードが今、健全に動いているか: API ノードと DB の状態（`/node/health` の 503 応答も本文を読んで判定）、DB のブロック数とチェーン高さの差、ノード時計とこの端末の時計のずれ、ファイナリティ遅延（ブロック数と分）、ロール。固定順の 6 チェックが ok / warn / fail / unknown とヒントを持ち、判定は `healthy` / `degraded`（warn、または確認できなかった項目あり）/ `unhealthy`。閾値は `/network/properties` から導出。`symbol_node_status` を補完。 |
+| `symbol_version_drift` | `format` | 設定ノードのバージョンがネットワークの多数派から取り残されていないか: ノードが知るピアと参照ノードのバージョン分布、多数派の版、自ノードより新しい版の割合。判定は `ok` / `behind`（多数派より古い、または新しい版が半数以上）/ `far_behind`（75% 以上が新しい。接続を拒否され始める可能性）/ `unknown`（ピアなし）。ピアの host や鍵は出力しません。 |
 
 ### 質問の例
 
@@ -202,6 +204,12 @@ accountType、直近のハーベスト実績、委任要求トランザクショ
 （止まっている項目とヒント付き）/ `cannot_verify`（`SYMBOL_NODE_URL` 以外のノードに委任しているため
 ノード側を確認できない）を返します。
 
+**「ノードは健全？ バージョンは古くない？」**
+→ `symbol_node_health {}` が設定ノードの API ノード・DB・ストレージ・時計・ファイナリティ遅延を確認し、
+healthy / degraded / unhealthy と問題のあるチェックを返します。
+→ `symbol_version_drift {}` がノードのバージョンをピアと参照ノードと比べ、ok / behind / far_behind を返します。
+どちらもノードの OS 移行後に最初に見る項目です。
+
 期待される引数まで含めた他の例は [`evals/cases.json`](evals/cases.json) にあります。
 
 ## Prompts
@@ -212,7 +220,7 @@ accountType、直近のハーベスト実績、委任要求トランザクショ
 | Prompt | 手順 |
 |---|---|
 | `voting_key_renewal_checklist` | `symbol_voting_key_status`（失効予定・推奨ウィンドウ・空き枠）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare` → 運用者がこのサーバーの外で VotingKeyLink を送信 → そのハッシュを `symbol_transaction_status` で確認 → `symbol_voting_key_status` を再度呼んで新キーを確認 → 新キーの startEpoch が確定した後に `symbol_finality_participation` で参加を確認 → 4 行で要約。 |
-| `monthly_health_check` | `symbol_node_status` → `symbol_network_compare` → `symbol_harvesting_status` → `symbol_voting_key_status`（30 日以内に失効するなら警告を先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income` → 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
+| `monthly_health_check` | `symbol_node_status` → `symbol_node_health`（unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare` → `symbol_harvesting_status` → `symbol_voting_key_status`（30 日以内に失効するなら警告を先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income` → 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
 
 サーバーは initialize 時に短い `instructions`（読み取り専用であること、アカウントの指定形式、ハーベスト報酬と Voting キーの質問に使うツール、
 返された数値をそのまま使うこと）も送ります。
@@ -221,8 +229,8 @@ accountType、直近のハーベスト実績、委任要求トランザクショ
 
 - **読み取り専用。** トランザクションの作成・署名・アナウンスは行いません。秘密鍵・ニーモニック・トークンを
   受け取る引数はなく、呼び出し間で何も保存しません。
-- **通信先は固定。** 通信するのは `SYMBOL_NODE_URL` と、`symbol_network_compare` に限り `SYMBOL_REFERENCE_NODES`
-  のホストだけです。ツール引数で URL を受け取らないため、モデルがリクエストを別ホストへ向けることはできません。
+- **通信先は固定。** 通信するのは `SYMBOL_NODE_URL` と、`symbol_network_compare` / `symbol_version_drift` に限り
+  `SYMBOL_REFERENCE_NODES` のホストだけです。ツール引数で URL を受け取らないため、モデルがリクエストを別ホストへ向けることはできません。
   テレメトリはありません。
 - **チェーン上の文字列は信頼しない。** 転送メッセージ、ノードの friendlyName、ホスト名、エイリアス名は第三者が
   書ける値です。それが分かる名前（`messageText` など）で出力し、制御文字・双方向制御文字を除去し、長さを制限します。
@@ -262,6 +270,9 @@ accountType、直近のハーベスト実績、委任要求トランザクショ
 - **ファイナリティ参加はノードが保持する proof から判定します。** `unavailable` は「そのエポックの proof をノードが
   持っていない」（未確定、または保持期間外）ことを意味し、投票しなかったことを意味しません。登録されている投票者の
   総数はサーバーには分からないので、`signatureCount` は nodewatch のような外部の一覧と比べてください。
+- **バージョンの比較はサンプルです。** `symbol_version_drift` が見るのは設定ノードが今知っているピアと参照ノードで、
+  ネットワーク全体ではありません（全体像は nodewatch）。`symbol_node_health` の時計ずれはこのサーバーを動かしている
+  端末の時計との比較で、端末側がずれている可能性もあります。
 - **mainnet と testnet のみ。** トランザクションの作成・署名・送信は設計上行いません。
 - **URL は指定どおりに使います。** ポートやスキームを勝手に変えません。http の 3000 番しか開いていないノードは
   localhost 以外では使えません。
