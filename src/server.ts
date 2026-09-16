@@ -10,6 +10,7 @@ import { addressParseTool } from './tools/symbol_address_parse.js';
 import { delegationDiagnoseTool } from './tools/symbol_delegation_diagnose.js';
 import { feeEstimateTool } from './tools/symbol_fee_estimate.js';
 import { finalityParticipationTool } from './tools/symbol_finality_participation.js';
+import { harvesterWatchTool } from './tools/symbol_harvester_watch.js';
 import { harvestingIncomeTool } from './tools/symbol_harvesting_income.js';
 import { harvestingStatusTool } from './tools/symbol_harvesting_status.js';
 import { mosaicGetTool } from './tools/symbol_mosaic_get.js';
@@ -69,6 +70,7 @@ export const TOOLS: readonly AnyToolDefinition[] = [
   // 0.3.0
   nodeHealthTool,
   versionDriftTool,
+  harvesterWatchTool,
 ];
 
 /** Same rule as TOOLS: append only, never reorder, so `prompts/list` is deterministic. */

@@ -90,6 +90,7 @@ describe('prompts', () => {
       'symbol_node_health',
       'symbol_version_drift',
       'symbol_network_compare',
+      'symbol_harvester_watch',
       'symbol_harvesting_status',
       'symbol_voting_key_status',
       'symbol_account_get',
@@ -99,6 +100,8 @@ describe('prompts', () => {
     expect(positions.every((p) => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
     expect(text).toMatch(/behind or far_behind/);
+    expect(text).toMatch(/mode "compare_and_save"/);
+    expect(text).toMatch(/negative deltaCount/);
     expect(text).toMatch(/previous calendar month/);
     expect(text).toMatch(/granularity "daily"/);
     expect(text).toMatch(/within 30 days/);

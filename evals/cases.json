@@ -231,6 +231,15 @@
       "expectedTool": "symbol_version_drift",
       "expectedArguments": {},
       "notes": "\"Outdated\" / \"behind\" / \"do I need to upgrade\" is a comparison against the versions the node's peers (and the reference nodes, if configured) run, which only symbol_version_drift makes: it reports the distribution, the majority version and a verdict (ok / behind / far_behind / unknown). symbol_node_status shows the node's own version but compares it with nothing. The check matters most right after a node OS or tooling migration, because a node behind the majority is refused by its peers."
+    },
+    {
+      "id": "delegator-churn",
+      "audience": "node-operator",
+      "question": "Have my delegators decreased?",
+      "question_ja": "うちの委任者、減ってない？",
+      "expectedTool": "symbol_harvester_watch",
+      "expectedArguments": {},
+      "notes": "\"Decreased / increased / came back since last time\" is a comparison against the previous snapshot, which only symbol_harvester_watch keeps (one file per node under SYMBOL_STATE_DIR). The default mode compare_and_save also records today's list for the next check; pass mode \"compare\" to look without recording. symbol_harvesting_status lists the current unlocked keys but remembers nothing. Without SYMBOL_STATE_DIR the tool reports the current count and says no comparison is possible."
     }
   ]
 }

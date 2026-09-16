@@ -54,7 +54,8 @@ async function main(): Promise<void> {
   const tz = config.timeZone ? `, timezone ${config.timeZone}` : '';
   const refs =
     config.referenceNodes.length > 0 ? `, ${config.referenceNodes.length} reference node(s)` : '';
-  console.error(`${SERVER_NAME} ${version}: ${network.name} via ${rest.host}${tz}${refs}`);
+  const state = config.stateDir ? `, state dir ${config.stateDir}` : '';
+  console.error(`${SERVER_NAME} ${version}: ${network.name} via ${rest.host}${tz}${refs}${state}`);
 
   serveStdio(() => createServer(ctx), {
     onerror: (err) => console.error(`${SERVER_NAME}: ${err.message}`),
