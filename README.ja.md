@@ -1,5 +1,7 @@
 # symbol-mcp-server
 
+[![npm version](https://img.shields.io/npm/v/symbol-mcp-server)](https://www.npmjs.com/package/symbol-mcp-server)
+
 > **Symbol 専用です。** このサーバーは [Symbol](https://docs.symbol.dev/)（catapult）ノードと通信します。
 > 別チェーンで API も異なる NEM NIS1（XEM）には対応していません。
 > **非公式プロジェクトです。** NEM / Symbol のコアチームとは無関係の独立したプロジェクトです。
@@ -27,13 +29,15 @@
 
 ## インストール
 
-**npm から**（公開後）:
+**npm から**（推奨）:
 
 ```sh
 npx -y symbol-mcp-server --help
 ```
 
-**ソースから**（現時点では npm 未公開のため、こちらを使ってください）:
+[MCP Registry](https://registry.modelcontextprotocol.io) にも `io.github.inotakeh/symbol` として登録されています。
+
+**ソースから:**
 
 ```sh
 git clone https://github.com/inotakeh/symbol-mcp-server.git
@@ -93,9 +97,9 @@ symbol-mcp-server 0.1.0: mainnet via <node-host>:3001, timezone Asia/Tokyo
 ### Claude Code
 
 ```sh
-claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -e SYMBOL_TIMEZONE=Asia/Tokyo -- npx -y symbol-mcp-server
+claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -e SYMBOL_TIMEZONE=Asia/Tokyo -- npx -y symbol-mcp-server
 # ソースのチェックアウトから:
-claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/to/symbol-mcp-server/dist/index.js
+claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/to/symbol-mcp-server/dist/index.js
 ```
 
 プロジェクト単位で `.mcp.json` をコミットする場合:

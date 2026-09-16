@@ -1,5 +1,7 @@
 # symbol-mcp-server
 
+[![npm version](https://img.shields.io/npm/v/symbol-mcp-server)](https://www.npmjs.com/package/symbol-mcp-server)
+
 > **Symbol only.** This server talks to [Symbol](https://docs.symbol.dev/) (catapult) nodes. It does not
 > support NEM NIS1 (XEM), which is a separate chain with a different API.
 > **Unofficial.** This is an independent project with no affiliation to the NEM or Symbol core teams.
@@ -30,13 +32,15 @@ applied and as the raw integer; timestamps are ISO 8601 UTC, with a local time a
 
 ## Install
 
-**From npm** (once published):
+**From npm** (recommended):
 
 ```sh
 npx -y symbol-mcp-server --help
 ```
 
-**From source** (the package is not on npm yet):
+Also listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.inotakeh/symbol`.
+
+**From source:**
 
 ```sh
 git clone https://github.com/inotakeh/symbol-mcp-server.git
@@ -97,9 +101,9 @@ From a source checkout:
 ### Claude Code
 
 ```sh
-claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -e SYMBOL_TIMEZONE=Asia/Tokyo -- npx -y symbol-mcp-server
+claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -e SYMBOL_TIMEZONE=Asia/Tokyo -- npx -y symbol-mcp-server
 # or, from a source checkout:
-claude mcp add symbol -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/to/symbol-mcp-server/dist/index.js
+claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- node /path/to/symbol-mcp-server/dist/index.js
 ```
 
 Or commit a project-level `.mcp.json`:
