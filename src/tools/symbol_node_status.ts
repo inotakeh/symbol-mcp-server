@@ -64,7 +64,8 @@ export const nodeStatusTool = defineTool({
   run: async (ctx) => {
     const [info, health, chain, peers, { properties }] = await Promise.all([
       ctx.rest.get('/node/info', NodeInfoSchema),
-      ctx.rest.get('/node/health', NodeHealthSchema),
+      // catapult-rest answers 503 with the same body when a service is down; read it.
+      ctx.rest.get('/node/health', NodeHealthSchema, { acceptStatuses: [503] }),
       ctx.rest.get('/chain/info', ChainInfoSchema),
       ctx.rest.get('/node/peers', NodePeersSchema),
       ctx.getNetworkData(),

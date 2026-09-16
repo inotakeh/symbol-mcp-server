@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   FIXTURE_BLOCK_TIME,
   fixture,
+  jsonResponse,
   mainnetRoutes,
   startTestServer,
   type TestServer,
@@ -80,5 +81,19 @@ describe('symbol_node_status', () => {
     expect(result.structuredContent?.node).toMatchObject({ friendlyName: 'fixture-node' });
     expect(result.structuredContent?.health).toEqual({ apiNode: 'up', db: 'down', healthy: false });
     expect(result.structuredContent?.warnings).toEqual([expect.stringMatching(/db=down/)]);
+  });
+
+  it('reads the 503 body of /node/health instead of failing the call', async () => {
+    server = await startTestServer({
+      now: new Date(FIXTURE_BLOCK_TIME.getTime() + 60_000),
+      routes: {
+        ...mainnetRoutes(),
+        'GET /node/health': () => jsonResponse({ status: { apiNode: 'down', db: 'up' } }, 503),
+      },
+    });
+    const result = await server.callTool('symbol_node_status');
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent?.health).toEqual({ apiNode: 'down', db: 'up', healthy: false });
+    expect(result.structuredContent?.warnings).toEqual([expect.stringMatching(/apiNode=down/)]);
   });
 });
