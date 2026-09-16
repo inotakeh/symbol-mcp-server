@@ -19,6 +19,8 @@ describe('server instructions', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_voting_key_status/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_finality_participation/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_delegation_diagnose/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_node_health/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_version_drift/);
     expect(SERVER_INSTRUCTIONS).toMatch(/never recompute/);
   });
 

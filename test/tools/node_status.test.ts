@@ -37,7 +37,7 @@ describe('symbol_node_status', () => {
       network: { name: 'mainnet', identifier: 104, matchesConfiguredNetwork: true },
       health: { apiNode: 'up', db: 'up', healthy: true },
       chain: { height: 5_763_675, finalizedHeight: 5_763_656, finalizationEpoch: 4004 },
-      peers: { count: 3 },
+      peers: { count: 6 },
       sync: {
         latestBlockTime: { utc: '2026-09-10T03:01:38.808Z', local: '2026-09-10T12:01:38+09:00' },
         ageSeconds: 60,

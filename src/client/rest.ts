@@ -42,6 +42,16 @@ export interface RestClientOptions {
 export const DEFAULT_MAX_BODY_BYTES = 5 * 1024 * 1024;
 export const DEFAULT_MAX_CONCURRENCY = 4;
 
+export interface GetOptions {
+  /**
+   * Non-2xx statuses whose JSON body is still parsed against the schema instead of becoming a
+   * RestError. catapult-rest answers `/node/health` with 503 and the same NodeHealthInfoDTO when
+   * a service is down (symbol-openapi spec/core/node/routes/nodeHealth.yml), so the body is the
+   * answer. 404 is only accepted when listed explicitly.
+   */
+  readonly acceptStatuses?: readonly number[];
+}
+
 class Semaphore {
   private active = 0;
   private readonly waiters: Array<() => void> = [];
@@ -85,8 +95,8 @@ export class RestClient {
     this.fetchImpl = options.fetchImpl;
   }
 
-  async get<T>(path: string, schema: z.ZodType<T>): Promise<T> {
-    return this.request('GET', path, undefined, schema);
+  async get<T>(path: string, schema: z.ZodType<T>, options?: GetOptions): Promise<T> {
+    return this.request('GET', path, undefined, schema, options);
   }
 
   /** GET that maps a 404 to null instead of throwing (e.g. `/accounts/{id}/multisig`). */
@@ -108,6 +118,7 @@ export class RestClient {
     path: string,
     body: unknown,
     schema: z.ZodType<T>,
+    options?: GetOptions,
   ): Promise<T> {
     if (!path.startsWith('/')) throw new Error('path must start with "/"');
     const url = `${this.baseUrl}${path}`;
@@ -136,10 +147,11 @@ export class RestClient {
         throw this.mapFetchError(err, path);
       }
 
-      if (response.status === 404) {
+      const accepted = options?.acceptStatuses?.includes(response.status) === true;
+      if (response.status === 404 && !accepted) {
         throw new RestError('not_found', `${path} was not found on ${this.host}`, path, 404);
       }
-      if (!response.ok) {
+      if (!response.ok && !accepted) {
         throw new RestError(
           'http',
           `${this.host} answered HTTP ${response.status} for ${path}`,

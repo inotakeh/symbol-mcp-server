@@ -8,9 +8,10 @@
 export const SERVER_INSTRUCTIONS = [
   'symbol-mcp-server is a read-only view of one Symbol node: no tool accepts a private key or mnemonic; nothing is signed or announced.',
   'Identify an account by its 39-character base32 address, its 64-character hex public key, or a namespace name (alice) with an address alias.',
-  'Harvest rewards are receipts, not transactions. For any question about harvesting income, rewards or earnings call symbol_harvesting_income; do not use symbol_transaction_search or a web browser for that.',
+  'Harvest rewards are receipts, not transactions: for harvesting income, rewards or earnings call symbol_harvesting_income, never symbol_transaction_search or a web browser.',
   'For monthly or yearly totals or a spreadsheet, pass granularity "monthly" or output "csv".',
-  'For when a voting key expires and when to renew it, call symbol_voting_key_status; for whether that key actually signed finalization votes, call symbol_finality_participation.',
-  'If delegated harvesting is not working or you need to know whether it is active, call symbol_delegation_diagnose.',
+  'For when a voting key expires, call symbol_voting_key_status; for whether it actually signed finalization votes, symbol_finality_participation.',
+  'If delegated harvesting is not working, call symbol_delegation_diagnose.',
+  'For whether the node itself is healthy (database, clock, storage, finalization lag) call symbol_node_health; for whether its version is behind the network, symbol_version_drift.',
   'Every amount, date and count is computed by the server; report values as returned and never recompute, round or sum them.',
 ].join(' ');

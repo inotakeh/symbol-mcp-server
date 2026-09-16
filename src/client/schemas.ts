@@ -67,8 +67,70 @@ export const BlockInfoSchema = z.object({
 });
 export type BlockInfo = z.infer<typeof BlockInfoSchema>;
 
-/** `/node/peers` is an array of node-info-like objects; we only count them. */
+/** `/node/peers` is an array of node-info-like objects; symbol_node_status only counts them. */
 export const NodePeersSchema = z.array(z.object({}).loose());
+
+/**
+ * One entry of `GET /node/peers` (symbol-openapi NodeInfoDTO: version, publicKey,
+ * networkGenerationHashSeed, roles, port, networkIdentifier, friendlyName and host are required,
+ * nodePublicKey optional). symbol_version_drift validates entries one by one with this schema so a
+ * single odd peer does not make the whole list `invalid_response`; the raw list is `NodePeersRawSchema`.
+ */
+export const NodePeerSchema = z
+  .object({
+    version: z.number().int().nonnegative(),
+    publicKey: Hex64,
+    networkGenerationHashSeed: Hex64,
+    roles: z.number().int().nonnegative(),
+    host: z.string().optional(),
+    friendlyName: z.string().optional(),
+  })
+  .loose();
+export type NodePeer = z.infer<typeof NodePeerSchema>;
+export const NodePeersRawSchema = z.array(z.unknown());
+
+/** `GET /node/storage` (symbol-openapi StorageInfoDTO): three required integer counts. */
+export const NodeStorageSchema = z.object({
+  numBlocks: z.number().int().nonnegative(),
+  numTransactions: z.number().int().nonnegative(),
+  numAccounts: z.number().int().nonnegative(),
+});
+export type NodeStorage = z.infer<typeof NodeStorageSchema>;
+
+/**
+ * `GET /node/time` (symbol-openapi NodeTimeDTO -> CommunicationTimestampsDTO). Both timestamps are
+ * `Timestamp` (decimal string, milliseconds since the nemesis block) and optional in the spec.
+ */
+export const NodeTimeSchema = z.object({
+  communicationTimestamps: z.object({
+    sendTimestamp: Uint64String.optional(),
+    receiveTimestamp: Uint64String.optional(),
+  }),
+});
+export type NodeTime = z.infer<typeof NodeTimeSchema>;
+
+/**
+ * `GET /node/server` (symbol-openapi ServerInfoDTO -> ServerDTO). v1.0.4 lists restVersion,
+ * sdkVersion and deployment as required but defines no property for sdkVersion, and older
+ * catapult-rest versions omit deployment, so everything but restVersion is optional and loose.
+ */
+export const ServerInfoSchema = z.object({
+  serverInfo: z
+    .object({
+      restVersion: z.string(),
+      sdkVersion: z.string().optional(),
+      deployment: z
+        .object({
+          deploymentTool: z.string().optional(),
+          deploymentToolVersion: z.string().optional(),
+          lastUpdatedDate: z.string().optional(),
+        })
+        .loose()
+        .optional(),
+    })
+    .loose(),
+});
+export type ServerInfo = z.infer<typeof ServerInfoSchema>;
 
 const LinkedKeySchema = z.object({ publicKey: Hex64 });
 

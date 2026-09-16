@@ -1,0 +1,11 @@
+{
+  "serverInfo": {
+    "restVersion": "2.4.4",
+    "sdkVersion": "3.2.3",
+    "deployment": {
+      "deploymentTool": "symbol-bootstrap",
+      "deploymentToolVersion": "1.1.11",
+      "lastUpdatedDate": "2026-08-01"
+    }
+  }
+}
