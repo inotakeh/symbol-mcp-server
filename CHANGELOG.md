@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Node.js 22 or newer is required (`engines.node` is `>=22`). Node.js 20 reached end of life; CI
+  runs on Node.js 22 and 24.
+- The test runner is vitest 5 (development only; it needs Node.js 22.12 or newer). No test or
+  configuration change was needed and no tool behavior changed.
+
 ## [0.3.0] - 2026-09-17
 
 ### Added
