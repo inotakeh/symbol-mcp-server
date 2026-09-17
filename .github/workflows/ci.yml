@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [20, 22]
+        node: [22, 24]
     steps:
       # SECURITY: pin every third-party action to a full commit SHA before the first release
       # (Dependabot keeps pinned SHAs updated). Tags are used here only as a starting point.
