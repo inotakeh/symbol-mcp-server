@@ -6,7 +6,7 @@
   "license": "MIT",
   "mcpName": "io.github.inotakeh/symbol",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bin": {
     "symbol-mcp-server": "dist/index.js"
@@ -47,6 +47,6 @@
     "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "22.20.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "vitest": "5.0.1"
   }
 }

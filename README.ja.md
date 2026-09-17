@@ -23,7 +23,7 @@
 
 ## 要件
 
-- Node.js 20 以上。
+- Node.js 22 以上。
 - `https://` で到達できる Symbol REST ノード（公開ノードは多くが 3001 番ポート）。公開ノードの一覧は
   https://nodewatch.symbol.tools/ を参照。
 

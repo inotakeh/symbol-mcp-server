@@ -40,15 +40,15 @@
 
 | 項目 | 採用 | 根拠 |
 |---|---|---|
-| 言語/ランタイム | TypeScript、**Node.js ≥ 20**、ESM（`"type": "module"`） | SDK v2 の `engines` と ESM-first |
+| 言語/ランタイム | TypeScript、**Node.js ≥ 22**、ESM（`"type": "module"`） | Node 20 は EOL。SDK v2 は ESM-first |
 | MCP SDK | **`@modelcontextprotocol/server` `^2.0.0`** | 2026-07-27 公開の安定版。v1 の `@modelcontextprotocol/sdk` は保守のみ |
 | スキーマ | **`zod` `^4.2.0`**、`import * as z from 'zod/v4'` | SDK v2 の依存。`inputSchema` には `z.object(...)` を渡す（v1 のように shape を渡さない） |
 | サーバー起動 | `serveStdio(createServer)` を `@modelcontextprotocol/server/stdio` から | v1 の `new StdioServerTransport()` + `connect` は廃止 |
 | HTTP | 標準 `fetch` + `AbortSignal.timeout()` | 依存を増やさない |
 | Symbol SDK | 原則不要。アドレス導出・ネームスペースID生成のテストベクタ確認にのみ `symbol-sdk`（npm）を参照 | 読み取りと算術しかしない |
-| テスト | vitest。SDK公式のインプロセス方式（§7） | `docs/testing.md` |
+| テスト | vitest 5（開発時は Node 22.12 以上）。SDK公式のインプロセス方式（§7） | `docs/testing.md` |
 | Lint/Format | biome | 軽量 |
-| CI | GitHub Actions。Node 20 / 22 のマトリクスで lint + test | |
+| CI | GitHub Actions。Node 22 / 24 のマトリクスで lint + test | |
 | 配布 | npm。`bin` で `npx` 起動。**ビルド済み JS（`dist/`）を配布**（利用者に tsx を要求しない） | |
 | ライセンス | **MIT**（初回コミットに含める） | 公開リポジトリの必須要件 |
 
@@ -340,7 +340,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 ```
 
 **package.json の要点**
-- `"type": "module"`, `"engines": {"node": ">=20"}`, `"bin": {"<cmd>": "dist/index.js"}`, `"files": ["dist","README.md","LICENSE"]`
+- `"type": "module"`, `"engines": {"node": ">=22"}`, `"bin": {"<cmd>": "dist/index.js"}`, `"files": ["dist","README.md","LICENSE"]`
 - `"mcpName": "io.github.<GitHubユーザー名>/symbol"`（Registry の検証に必須。GitHub認証で公開するなら必ず `io.github.<user>/` で始める）
 - `repository` / `homepage` / `keywords`（symbol, xym, blockchain, mcp, model-context-protocol）
 - dependencies: `@modelcontextprotocol/server ^2.0.0`, `zod ^4.2.0`。devDependencies: typescript, vitest, biome, `@modelcontextprotocol/client`（テスト用）

@@ -17,7 +17,7 @@ Run `npm run lint && npm run typecheck && npm test` before every commit.
 
 ## Stack and conventions
 
-- TypeScript, ESM (`"type": "module"`), Node >= 20. No CommonJS.
+- TypeScript, ESM (`"type": "module"`), Node >= 22. No CommonJS.
 - MCP SDK v2: `@modelcontextprotocol/server` (`registerTool`, `serveStdio`). Never `@modelcontextprotocol/sdk` (v1).
 - Zod v4: `import * as z from 'zod/v4'`; `inputSchema` is a `z.object(...)`.
 - Every tool: name `symbol_<resource>_<action>`, `title`, `description`, explicit `annotations` (`readOnlyHint: true`), `outputSchema`, returns `structuredContent` + the same JSON in a `text` block, first field `summary`.

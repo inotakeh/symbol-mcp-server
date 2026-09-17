@@ -26,7 +26,7 @@ applied and as the raw integer; timestamps are ISO 8601 UTC, with a local time a
 
 ## Requirements
 
-- Node.js 20 or newer.
+- Node.js 22 or newer.
 - A Symbol REST node reachable over `https://` (port 3001 on most public nodes). Public nodes are
   listed at https://nodewatch.symbol.tools/.
 
