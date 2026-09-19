@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { Receipt, TransactionStatementInfo } from '../../src/client/schemas.js';
 import {
   aggregateHarvestIncome,
+  blocksForDays,
+  CHUNK_DAYS,
   classifyHarvestReceipts,
   firstHeightAtOrAfter,
   lastHeightAtOrBefore,
+  MIN_CHUNK_DAYS,
+  shrinkChunkBlocks,
+  splitHeightRange,
 } from '../../src/domain/harvesting.js';
 
 const XYM = '6BED913FA20223F8';
@@ -326,5 +331,104 @@ describe('height search', () => {
     calls.length = 0;
     await firstHeightAtOrAfter(30_000 * 137, 100, 200, lookup);
     expect(calls.length).toBeLessThanOrEqual(9);
+  });
+});
+
+describe('blocksForDays', () => {
+  it('derives the chunk lengths from the block time', () => {
+    expect(CHUNK_DAYS).toBe(90);
+    expect(MIN_CHUNK_DAYS).toBe(7);
+    expect(blocksForDays(CHUNK_DAYS, 30_000)).toBe(259_200);
+    expect(blocksForDays(MIN_CHUNK_DAYS, 30_000)).toBe(20_160);
+    expect(blocksForDays(CHUNK_DAYS, 15_000)).toBe(518_400);
+    expect(blocksForDays(CHUNK_DAYS, 60_000)).toBe(129_600);
+  });
+  it('rounds and never returns less than one block', () => {
+    expect(blocksForDays(1, 7_000)).toBe(12_343);
+    expect(blocksForDays(1, 10 * 86_400_000)).toBe(1);
+  });
+  it('rejects a block time or day count that is not positive', () => {
+    for (const bad of [0, -30_000, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => blocksForDays(90, bad)).toThrow();
+      expect(() => blocksForDays(bad, 30_000)).toThrow();
+    }
+  });
+});
+
+describe('splitHeightRange', () => {
+  it('splits an evenly divisible range', () => {
+    expect(splitHeightRange(1, 300, 100)).toEqual([
+      { fromHeight: 1, toHeight: 100 },
+      { fromHeight: 101, toHeight: 200 },
+      { fromHeight: 201, toHeight: 300 },
+    ]);
+  });
+  it('puts the remainder in the last range', () => {
+    expect(splitHeightRange(1, 250, 100)).toEqual([
+      { fromHeight: 1, toHeight: 100 },
+      { fromHeight: 101, toHeight: 200 },
+      { fromHeight: 201, toHeight: 250 },
+    ]);
+  });
+  it('handles one-block chunks and a one-block range', () => {
+    expect(splitHeightRange(7, 9, 1)).toEqual([
+      { fromHeight: 7, toHeight: 7 },
+      { fromHeight: 8, toHeight: 8 },
+      { fromHeight: 9, toHeight: 9 },
+    ]);
+    expect(splitHeightRange(42, 42, 100)).toEqual([{ fromHeight: 42, toHeight: 42 }]);
+    expect(splitHeightRange(42, 42, 1)).toEqual([{ fromHeight: 42, toHeight: 42 }]);
+  });
+  it('keeps a range up to the chunk length whole and splits one block more', () => {
+    expect(splitHeightRange(500, 549, 100)).toEqual([{ fromHeight: 500, toHeight: 549 }]);
+    expect(splitHeightRange(500, 599, 100)).toEqual([{ fromHeight: 500, toHeight: 599 }]);
+    expect(splitHeightRange(500, 600, 100)).toEqual([
+      { fromHeight: 500, toHeight: 599 },
+      { fromHeight: 600, toHeight: 600 },
+    ]);
+  });
+  it('covers a year of mainnet blocks in five ranges without overlap or gap', () => {
+    const from = 4_700_000;
+    const to = from + 1_051_200 - 1;
+    const ranges = splitHeightRange(from, to, 259_200);
+    expect(ranges).toHaveLength(5);
+    expect(ranges[0]?.fromHeight).toBe(from);
+    expect(ranges.at(-1)?.toHeight).toBe(to);
+    ranges.slice(1).forEach((r, i) => {
+      expect(r.fromHeight).toBe((ranges[i]?.toHeight ?? Number.NaN) + 1);
+    });
+    expect(ranges.reduce((n, r) => n + (r.toHeight - r.fromHeight + 1), 0)).toBe(1_051_200);
+    expect(ranges.at(-1)).toEqual({ fromHeight: from + 4 * 259_200, toHeight: to });
+  });
+  it('rejects a reversed range, fractions and a chunk length below one', () => {
+    expect(() => splitHeightRange(10, 9, 100)).toThrow(RangeError);
+    expect(() => splitHeightRange(1.5, 9, 100)).toThrow(RangeError);
+    expect(() => splitHeightRange(1, 9.5, 100)).toThrow(RangeError);
+    expect(() => splitHeightRange(1, 9, 0)).toThrow(RangeError);
+    expect(() => splitHeightRange(1, 9, 2.5)).toThrow(RangeError);
+    expect(() => splitHeightRange(1, 9, Number.NaN)).toThrow(RangeError);
+  });
+});
+
+describe('shrinkChunkBlocks', () => {
+  it('halves, rounding up', () => {
+    expect(shrinkChunkBlocks(259_200, 20_160)).toBe(129_600);
+    expect(shrinkChunkBlocks(129_600, 20_160)).toBe(64_800);
+    expect(shrinkChunkBlocks(64_800, 20_160)).toBe(32_400);
+    expect(shrinkChunkBlocks(101, 10)).toBe(51);
+  });
+  it('stops at the minimum instead of going below it', () => {
+    expect(shrinkChunkBlocks(32_400, 20_160)).toBe(20_160);
+    expect(shrinkChunkBlocks(20_161, 20_160)).toBe(20_160);
+  });
+  it('returns null at or below the minimum', () => {
+    expect(shrinkChunkBlocks(20_160, 20_160)).toBeNull();
+    expect(shrinkChunkBlocks(13_200, 20_160)).toBeNull();
+    expect(shrinkChunkBlocks(1, 1)).toBeNull();
+  });
+  it('rejects lengths that are not positive integers', () => {
+    expect(() => shrinkChunkBlocks(0, 10)).toThrow(RangeError);
+    expect(() => shrinkChunkBlocks(10.5, 10)).toThrow(RangeError);
+    expect(() => shrinkChunkBlocks(100, 0)).toThrow(RangeError);
   });
 });
