@@ -1,4 +1,5 @@
 import * as z from 'zod/v4';
+import { RestError } from '../client/rest.js';
 import {
   BlockInfoSchema,
   ChainInfoSchema,
@@ -13,9 +14,14 @@ import { parseHeight } from '../domain/epoch.js';
 import {
   aggregateHarvestIncome,
   type BlockTimestampLookup,
+  blocksForDays,
+  CHUNK_DAYS,
   firstHeightAtOrAfter,
   type HarvestTotals,
   lastHeightAtOrBefore,
+  MIN_CHUNK_DAYS,
+  shrinkChunkBlocks,
+  splitHeightRange,
 } from '../domain/harvesting.js';
 import {
   type CalendarDate,
@@ -38,7 +44,7 @@ import { fetchAccount } from './symbol_account_get.js';
 
 /** catapult-rest caps statement pages at 100 entries. */
 export const STATEMENT_PAGE_SIZE = 100;
-/** Hard stop: 200 pages = 20,000 statements per call. */
+/** Hard stop: 200 pages = 20,000 statements per call, counted across all height chunks. */
 export const MAX_STATEMENT_PAGES = 200;
 export const CONCISE_RECEIPT_LIMIT = 50;
 export const DETAILED_RECEIPT_LIMIT = 500;
@@ -188,6 +194,18 @@ const outputSchema = z.object({
   }),
   pagesFetched: z.number(),
   statementsFetched: z.number(),
+  fetch: z
+    .object({
+      chunks: z.number().describe('Height chunks that were read.'),
+      chunkBlocks: z
+        .number()
+        .describe('Initial chunk length in blocks (about 90 days at the target block time).'),
+      splitRetries: z
+        .number()
+        .describe('Times a chunk was halved because the node timed out on its first page.'),
+      pagesFetched: z.number().describe('Statement pages read over all chunks.'),
+    })
+    .describe('How the statements were read: wide ranges are split into height chunks.'),
   truncated: z.boolean(),
   truncationReasons: z.array(z.enum(['pageLimit', 'receiptList'])),
   notes: z.array(z.string()),
@@ -297,12 +315,93 @@ function blockTimestampLookup(ctx: AppContext): BlockTimestampLookup {
   };
 }
 
+interface StatementFetchOptions {
+  readonly base32: string;
+  readonly harvestFeeType: number;
+  readonly fromHeight: number;
+  readonly toHeight: number;
+  readonly chunkBlocks: number;
+  readonly minChunkBlocks: number;
+}
+
+interface StatementFetchResult {
+  readonly statements: TransactionStatementInfo[];
+  readonly pagesFetched: number;
+  readonly chunks: number;
+  readonly splitRetries: number;
+  /** False when MAX_STATEMENT_PAGES ran out before the last chunk was read. */
+  readonly complete: boolean;
+}
+
+/**
+ * Reads the statements chunk by chunk, sequentially (one request in flight), 100 per page with
+ * the page number restarting in every chunk. When the FIRST page of a chunk times out, the rest
+ * of the range is re-split with half the chunk length (kept for the rest of the call) and read
+ * again from the same height; at the minimum length the timeout is final. Any other failure, and
+ * a timeout on a later page, propagates unchanged.
+ */
+async function fetchHarvestStatements(
+  ctx: AppContext,
+  options: StatementFetchOptions,
+): Promise<StatementFetchResult> {
+  const statements: TransactionStatementInfo[] = [];
+  let pagesFetched = 0;
+  let chunks = 0;
+  let splitRetries = 0;
+  let pending = splitHeightRange(options.fromHeight, options.toHeight, options.chunkBlocks);
+
+  for (let range = pending[0]; range !== undefined; range = pending[0]) {
+    let chunkDone = false;
+    for (let pageNumber = 1; !chunkDone; pageNumber++) {
+      if (pagesFetched >= MAX_STATEMENT_PAGES) {
+        return { statements, pagesFetched, chunks, splitRetries, complete: false };
+      }
+      const params = new URLSearchParams({
+        receiptType: String(options.harvestFeeType),
+        targetAddress: options.base32,
+        fromHeight: String(range.fromHeight),
+        toHeight: String(range.toHeight),
+        pageSize: String(STATEMENT_PAGE_SIZE),
+        order: 'asc',
+        pageNumber: String(pageNumber),
+      });
+      let page: z.output<typeof TransactionStatementPageSchema>;
+      try {
+        page = await ctx.rest.get(
+          `/statements/transaction?${params.toString()}`,
+          TransactionStatementPageSchema,
+        );
+      } catch (err) {
+        if (!(err instanceof RestError) || err.kind !== 'timeout' || pageNumber !== 1) throw err;
+        const length = range.toHeight - range.fromHeight + 1;
+        const smaller = shrinkChunkBlocks(length, options.minChunkBlocks);
+        if (smaller === null) {
+          throw new ToolInputError(
+            `Node ${ctx.rest.host} did not answer /statements/transaction for heights ${formatInteger(range.fromHeight)}-${formatInteger(range.toHeight)} (${plural(length, 'block')}) within ${ctx.config.requestTimeoutMs} ms, even after shrinking the query to about ${MIN_CHUNK_DAYS} days. The node is not responding: narrow the range with fromHeight/toHeight, or raise SYMBOL_REQUEST_TIMEOUT_MS (currently ${ctx.config.requestTimeoutMs}).`,
+          );
+        }
+        splitRetries += 1;
+        pending = splitHeightRange(range.fromHeight, options.toHeight, smaller);
+        break;
+      }
+      pagesFetched += 1;
+      statements.push(...page.data);
+      chunkDone = page.data.length < STATEMENT_PAGE_SIZE;
+    }
+    if (chunkDone) {
+      chunks += 1;
+      pending = pending.slice(1);
+    }
+  }
+  return { statements, pagesFetched, chunks, splitRetries, complete: true };
+}
+
 export const harvestingIncomeTool = defineTool({
   name: 'symbol_harvesting_income',
   title: 'Symbol harvesting income',
   description:
     "Use this tool whenever the user asks about harvesting rewards, harvest income, or earnings for a period (e.g. 'last month', 'this year', 'per day'). Do not use symbol_transaction_search or a browser for this; harvest rewards are receipts, not transactions. " +
-    'Total the harvest rewards (HarvestFee receipts of the network currency) an account received in a period, computed on the server with exact integer arithmetic: receipt count and XYM total, split into harvester (blocks the account harvested), beneficiary (blocks others harvested with this account as beneficiary) and unknown. Period is a date range (YYYY-MM-DD, resolved to heights from block timestamps) or a height range. granularity=daily gives per-day buckets, granularity=monthly per-calendar-month buckets (yearly questions), granularity=receipt lists each receipt; output=csv returns the same rows as CSV text for a spreadsheet. Read-only; no fiat conversion.',
+    'Total the harvest rewards (HarvestFee receipts of the network currency) an account received in a period, computed on the server with exact integer arithmetic: receipt count and XYM total, split into harvester (blocks the account harvested), beneficiary (blocks others harvested with this account as beneficiary) and unknown. Period is a date range (YYYY-MM-DD, resolved to heights from block timestamps) or a height range. granularity=daily gives per-day buckets, granularity=monthly per-calendar-month buckets (yearly questions), granularity=receipt lists each receipt; output=csv returns the same rows as CSV text for a spreadsheet. Periods of a year or more are fine: the range is read in chunks internally. Read-only; no fiat conversion.',
   inputSchema,
   outputSchema,
   renderText: (out) => out.csv ?? undefined,
@@ -379,32 +478,19 @@ export const harvestingIncomeTool = defineTool({
     const fromTime = ctx.instant(networkTimestampToDate(fromTs, epochAdjustment));
     const toTime = ctx.instant(networkTimestampToDate(toTs, epochAdjustment));
 
-    // Every HarvestFee statement addressed to the account, oldest first, 100 per page.
+    // Every HarvestFee statement addressed to the account, oldest first, in height chunks.
     const harvestFeeType = receiptTypeCode('HarvestFee');
-    const statements: TransactionStatementInfo[] = [];
-    let pagesFetched = 0;
-    let complete = false;
-    for (let pageNumber = 1; pageNumber <= MAX_STATEMENT_PAGES; pageNumber++) {
-      const params = new URLSearchParams({
-        receiptType: String(harvestFeeType),
-        targetAddress: base32,
-        fromHeight: String(fromHeight),
-        toHeight: String(toHeight),
-        pageSize: String(STATEMENT_PAGE_SIZE),
-        order: 'asc',
-        pageNumber: String(pageNumber),
-      });
-      const page = await ctx.rest.get(
-        `/statements/transaction?${params.toString()}`,
-        TransactionStatementPageSchema,
-      );
-      pagesFetched += 1;
-      statements.push(...page.data);
-      if (page.data.length < STATEMENT_PAGE_SIZE) {
-        complete = true;
-        break;
-      }
-    }
+    const chunkBlocks = blocksForDays(CHUNK_DAYS, properties.blockGenerationTargetTimeMs);
+    const minChunkBlocks = blocksForDays(MIN_CHUNK_DAYS, properties.blockGenerationTargetTimeMs);
+    const fetched = await fetchHarvestStatements(ctx, {
+      base32,
+      harvestFeeType,
+      fromHeight,
+      toHeight,
+      chunkBlocks,
+      minChunkBlocks,
+    });
+    const { statements, pagesFetched, complete } = fetched;
 
     const shares = {
       beneficiaryPercentage: properties.harvestBeneficiaryPercentage,
@@ -520,7 +606,14 @@ export const harvestingIncomeTool = defineTool({
       );
     }
 
+    if (fetched.splitRetries > 0) {
+      lines.push(
+        `(the node timed out on ${formatInteger(fetched.splitRetries)} wide ${fetched.splitRetries === 1 ? 'query' : 'queries'}; retried with smaller chunks)`,
+      );
+    }
+
     notes.push(
+      `Wide ranges are read in chunks of about ${CHUNK_DAYS} days (${formatInteger(chunkBlocks)} blocks), halved down to about ${MIN_CHUNK_DAYS} days when the node times out on a chunk; the totals are the same as from one query.`,
       'Harvesting is probabilistic: income varies strongly from day to day, so short periods are not representative.',
       `Amounts are in ${label} only; no fiat conversion is applied.`,
       'harvester = blocks this account harvested (directly or through a delegated node); beneficiary = blocks harvested by others whose node names this account as beneficiary; unknown = receipts whose share split was not recognised.',
@@ -552,6 +645,12 @@ export const harvestingIncomeTool = defineTool({
       },
       pagesFetched,
       statementsFetched: statements.length,
+      fetch: {
+        chunks: fetched.chunks,
+        chunkBlocks,
+        splitRetries: fetched.splitRetries,
+        pagesFetched,
+      },
       truncated: truncationReasons.length > 0,
       truncationReasons,
       notes,

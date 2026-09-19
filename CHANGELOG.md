@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `symbol_harvesting_income`: a period of about a year (roughly 1,050,000 blocks) timed out on the
+  first page of `/statements/transaction`, because catapult-rest is slow on a wide height range
+  combined with a target address. The range is now split into chunks of about 90 days (derived
+  from `blockGenerationTargetTime`) that are read one after another; when the first page of a chunk
+  times out, the rest of the range is re-split with half the chunk length, down to about 7 days,
+  and read again from the same height. A timeout at the smallest chunk is an error that names the
+  height range and the timeout; every other error is unchanged. The limit of 200 pages counts across
+  all chunks, and totals, buckets, receipts and CSV are the same as from one query. New output field
+  `fetch { chunks, chunkBlocks, splitRetries, pagesFetched }`, a note about the chunking, and a last
+  summary line when the node timed out on wide queries.
+
 ### Changed
 
 - Node.js 22 or newer is required (`engines.node` is `>=22`). Node.js 20 reached end of life; CI

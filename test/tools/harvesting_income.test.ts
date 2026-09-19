@@ -493,6 +493,339 @@ describe('symbol_harvesting_income', () => {
     );
   });
 
+  describe('chunked statement fetching', () => {
+    /** 90 and 7 days at the fixture's 30 s target block time. */
+    const CHUNK = 259_200;
+    const MIN_CHUNK = 20_160;
+    /** Raw amounts the fixture row pays to the account: harvester + beneficiary. */
+    const ROW_HARVESTER = 51_247_120n;
+    const ROW_BENEFICIARY = 18_302_542n;
+
+    type Row = ReturnType<typeof syntheticStatements>[number];
+
+    /** One statement at `height`, every receipt amount multiplied by `factor` (ratios unchanged). */
+    function statementAt(height: number, factor = 1): Row {
+      const row = syntheticStatements(height, 1)[0];
+      if (!row) throw new Error('fixture row missing');
+      const receipts = (row.statement as unknown as { receipts: Array<{ amount: string }> })
+        .receipts;
+      return {
+        ...row,
+        statement: {
+          ...row.statement,
+          receipts: receipts.map((r) => ({
+            ...r,
+            amount: (BigInt(r.amount) * BigInt(factor)).toString(),
+          })),
+        },
+      } as Row;
+    }
+
+    function timeoutError(): Error {
+      const err = new Error('The operation was aborted due to timeout');
+      err.name = 'TimeoutError';
+      return err;
+    }
+
+    /** Serves `all` like the node: filtered by the requested heights, ascending, 100 per page. */
+    function pagedStatements(
+      all: Row[],
+      timesOut: (widthBlocks: number, pageNumber: number) => boolean = () => false,
+    ) {
+      const sorted = [...all].sort(
+        (a, b) => Number(a.statement.height) - Number(b.statement.height),
+      );
+      return statementsRoute((pageNumber, from, to) => {
+        if (timesOut(to - from + 1, pageNumber)) throw timeoutError();
+        return sorted
+          .filter((r) => Number(r.statement.height) >= from && Number(r.statement.height) <= to)
+          .slice((pageNumber - 1) * 100, pageNumber * 100);
+      });
+    }
+
+    function statementRequests(s: TestServer) {
+      return s.requests
+        .filter((u) => u.pathname === '/statements/transaction')
+        .map((u) => ({
+          fromHeight: Number(u.searchParams.get('fromHeight')),
+          toHeight: Number(u.searchParams.get('toHeight')),
+          pageNumber: Number(u.searchParams.get('pageNumber')),
+        }));
+    }
+
+    it('keeps a range of up to about 90 days in one query and reports how it was read', async () => {
+      server = await startTestServer({ routes: routes(), now: NOW });
+      const result = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: 5_764_879,
+        toHeight: 5_767_496,
+      });
+      expect(result.isError).toBe(false);
+      expect(statementRequests(server)).toEqual([
+        { fromHeight: 5_764_879, toHeight: 5_767_496, pageNumber: 1 },
+      ]);
+      expect(result.structuredContent).toMatchObject({
+        pagesFetched: 1,
+        fetch: { chunks: 1, chunkBlocks: CHUNK, splitRetries: 0, pagesFetched: 1 },
+      });
+      const notes = (result.structuredContent as { notes: string[] }).notes;
+      expect(notes.join(' ')).toMatch(/chunks of about 90 days \(259,200 blocks\)/);
+      expect(result.structuredContent?.summary).not.toMatch(/timed out/);
+    });
+
+    it('counts receipts on chunk boundaries exactly once', async () => {
+      const FROM = 5_000_000;
+      const TO = 5_700_000;
+      const inside = [
+        FROM,
+        FROM + CHUNK - 1,
+        FROM + CHUNK,
+        FROM + 2 * CHUNK - 1,
+        FROM + 2 * CHUNK,
+        TO,
+      ];
+      const all = [...inside, FROM - 1, TO + 1].map((h) => statementAt(h));
+      server = await startTestServer({
+        routes: routes({ 'GET /statements/transaction': pagedStatements(all) }),
+        now: NOW,
+      });
+      const result = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: FROM,
+        toHeight: TO,
+        granularity: 'receipt',
+        output: 'csv',
+      });
+      expect(result.isError).toBe(false);
+      const sc = result.structuredContent as Record<string, unknown>;
+      expect(outputSchema?.safeParse(sc).success).toBe(true);
+      expect(sc).toMatchObject({
+        totals: {
+          receipts: 12,
+          raw: '417297972',
+          xym: '417.297972',
+          receiptsHarvester: 6,
+          rawHarvester: '307482720',
+          receiptsBeneficiary: 6,
+          rawBeneficiary: '109815252',
+          receiptsUnknown: 0,
+        },
+        statementsFetched: 6,
+        pagesFetched: 3,
+        fetch: { chunks: 3, chunkBlocks: CHUNK, splitRetries: 0, pagesFetched: 3 },
+        truncated: false,
+      });
+      // Requests: the three consecutive chunks, ascending, page numbers restarting at 1.
+      expect(statementRequests(server)).toEqual([
+        { fromHeight: FROM, toHeight: FROM + CHUNK - 1, pageNumber: 1 },
+        { fromHeight: FROM + CHUNK, toHeight: FROM + 2 * CHUNK - 1, pageNumber: 1 },
+        { fromHeight: FROM + 2 * CHUNK, toHeight: TO, pageNumber: 1 },
+      ]);
+      // Rows stay in ascending height order, harvester before beneficiary, in JSON and CSV.
+      const receipts = (sc as { receipts: Array<{ height: number; kind: string }> }).receipts;
+      expect(receipts.map((r) => r.height)).toEqual(inside.flatMap((h) => [h, h]));
+      expect(receipts.slice(0, 2).map((r) => r.kind)).toEqual(['harvester', 'beneficiary']);
+      const csvHeights = result.text
+        .trimEnd()
+        .split('\n')
+        .slice(1)
+        .map((line) => Number(line.split(',')[0]));
+      expect(csvHeights).toEqual(inside.flatMap((h) => [h, h]));
+      expect(new Set(server.requests.map((u) => u.host))).toEqual(new Set([TEST_NODE_HOST]));
+    });
+
+    it('restarts the page number in every chunk', async () => {
+      const FROM = 5_000_000;
+      const TO = FROM + 2 * CHUNK - 1;
+      const all = [...syntheticStatements(FROM + 10, 150), ...syntheticStatements(FROM + CHUNK, 3)];
+      server = await startTestServer({
+        routes: routes({ 'GET /statements/transaction': pagedStatements(all) }),
+        now: NOW,
+      });
+      const result = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: FROM,
+        toHeight: TO,
+        granularity: 'monthly',
+      });
+      expect(result.isError).toBe(false);
+      expect(statementRequests(server)).toEqual([
+        { fromHeight: FROM, toHeight: FROM + CHUNK - 1, pageNumber: 1 },
+        { fromHeight: FROM, toHeight: FROM + CHUNK - 1, pageNumber: 2 },
+        { fromHeight: FROM + CHUNK, toHeight: TO, pageNumber: 1 },
+      ]);
+      expect(result.structuredContent).toMatchObject({
+        totals: { receipts: 306, raw: (153n * (ROW_HARVESTER + ROW_BENEFICIARY)).toString() },
+        statementsFetched: 153,
+        fetch: { chunks: 2, splitRetries: 0, pagesFetched: 3 },
+      });
+    });
+
+    it('halves a chunk whose first page times out, and a year equals its two halves', async () => {
+      const FROM = 4_700_000;
+      const YEAR = 1_051_200;
+      const TO = FROM + YEAR - 1;
+      const MID = FROM + YEAR / 2;
+      const heights = new Set<number>([FROM, MID - 1, MID, TO]);
+      for (let h = FROM + 4_001; h <= TO; h += 9_973) heights.add(h);
+      const all = [...heights].map((h, i) => statementAt(h, (i % 7) + 1));
+      // The node only answers a first page in time when the range is at most about 45 days wide.
+      const route = pagedStatements(
+        all,
+        (width, pageNumber) => pageNumber === 1 && width > CHUNK / 2,
+      );
+      server = await startTestServer({
+        routes: routes({ 'GET /statements/transaction': route }),
+        now: NOW,
+      });
+      const call = async (fromHeight: number, toHeight: number) => {
+        const r = await server?.callTool('symbol_harvesting_income', {
+          account: ADDRESS,
+          fromHeight,
+          toHeight,
+          granularity: 'monthly',
+        });
+        expect(r?.isError).toBe(false);
+        expect(outputSchema?.safeParse(r?.structuredContent).success).toBe(true);
+        return r?.structuredContent as {
+          summary: string;
+          totals: Record<string, string | number>;
+          monthly: Array<{ month: string; raw: string }>;
+          fetch: { chunks: number; splitRetries: number; pagesFetched: number };
+          truncated: boolean;
+        };
+      };
+      const year = await call(FROM, TO);
+      const first = await call(FROM, MID - 1);
+      const second = await call(MID, TO);
+
+      for (const key of ['raw', 'rawHarvester', 'rawBeneficiary', 'rawUnknown']) {
+        expect(BigInt(year.totals[key] as string)).toBe(
+          BigInt(first.totals[key] as string) + BigInt(second.totals[key] as string),
+        );
+      }
+      for (const key of ['receipts', 'receiptsHarvester', 'receiptsBeneficiary']) {
+        expect(year.totals[key]).toBe(
+          (first.totals[key] as number) + (second.totals[key] as number),
+        );
+      }
+      expect(year.totals.receipts).toBe(heights.size * 2);
+      expect(BigInt(year.totals.raw as string)).toBe(
+        year.monthly.reduce((sum, m) => sum + BigInt(m.raw), 0n),
+      );
+      expect(year.truncated).toBe(false);
+      // 259,200 timed out once; the rest of the year was read in 129,600-block chunks.
+      expect(year.fetch).toEqual({
+        chunks: 9,
+        chunkBlocks: CHUNK,
+        splitRetries: 1,
+        pagesFetched: 9,
+      });
+      expect(first.fetch.splitRetries).toBeGreaterThanOrEqual(1);
+      expect(year.summary.split('\n').at(-1)).toBe(
+        '(the node timed out on 1 wide query; retried with smaller chunks)',
+      );
+      expect(new Set(server.requests.map((u) => u.host))).toEqual(new Set([TEST_NODE_HOST]));
+    });
+
+    it('fails with the height range and the timeout when even the smallest chunk times out', async () => {
+      const route = pagedStatements([], () => true);
+      server = await startTestServer({
+        routes: routes({ 'GET /statements/transaction': route }),
+        now: NOW,
+      });
+      const result = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: 5_000_000,
+        toHeight: 5_299_999,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.text).toMatch(
+        /did not answer \/statements\/transaction for heights 5,000,000-5,020,159 \(20,160 blocks\) within 10000 ms/,
+      );
+      expect(result.text).toMatch(/about 7 days/);
+      expect(result.text).toMatch(/narrow the range with fromHeight\/toHeight/);
+      expect(result.text).toMatch(/raise SYMBOL_REQUEST_TIMEOUT_MS \(currently 10000\)/);
+      expect(result.text).not.toMatch(/at .*\.ts:\d+/);
+      // 259,200 -> 129,600 -> 64,800 -> 32,400 -> 20,160, always from the same height.
+      expect(statementRequests(server)).toEqual(
+        [CHUNK, 129_600, 64_800, 32_400, MIN_CHUNK].map((length) => ({
+          fromHeight: 5_000_000,
+          toHeight: 5_000_000 + length - 1,
+          pageNumber: 1,
+        })),
+      );
+    });
+
+    it('does not retry a timeout on a later page', async () => {
+      const route = pagedStatements(
+        syntheticStatements(5_000_000, 150),
+        (_width, pageNumber) => pageNumber === 2,
+      );
+      server = await startTestServer({
+        routes: routes({ 'GET /statements/transaction': route }),
+        now: NOW,
+      });
+      const result = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: 5_000_000,
+        toHeight: 5_700_000,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.text).toMatch(/did not answer .* within 10000 ms/);
+      expect(result.text).not.toMatch(/even after shrinking/);
+      expect(statementRequests(server)).toHaveLength(2);
+    });
+
+    it('does not retry other node errors', async () => {
+      server = await startTestServer({
+        routes: routes({
+          'GET /statements/transaction': () => jsonResponse({ code: 'InternalError' }, 500),
+        }),
+        now: NOW,
+      });
+      const result = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: 5_000_000,
+        toHeight: 5_700_000,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.text).toMatch(/answered HTTP 500/);
+      expect(statementRequests(server)).toHaveLength(1);
+    });
+
+    it('counts the page limit across chunks', async () => {
+      // Every chunk has 120 full pages, then an empty one.
+      const route = statementsRoute((pageNumber, from) =>
+        pageNumber <= 120 ? syntheticStatements(from + (pageNumber - 1) * 100, 100) : [],
+      );
+      server = await startTestServer({
+        routes: routes({ 'GET /statements/transaction': route }),
+        now: NOW,
+      });
+      const result = await server.callTool('symbol_harvesting_income', {
+        account: ADDRESS,
+        fromHeight: 5_000_000,
+        toHeight: 5_700_000,
+      });
+      expect(result.isError).toBe(false);
+      expect(result.structuredContent).toMatchObject({
+        pagesFetched: 200,
+        statementsFetched: 19_900,
+        fetch: { chunks: 1, splitRetries: 0, pagesFetched: 200 },
+        truncated: true,
+        truncationReasons: ['pageLimit'],
+      });
+      expect(result.structuredContent?.summary).toMatch(
+        /Narrow the period or split it with fromHeight\/toHeight/,
+      );
+      const requests = statementRequests(server);
+      expect(requests).toHaveLength(200);
+      expect(requests.filter((r) => r.fromHeight === 5_000_000)).toHaveLength(121);
+      expect(requests.filter((r) => r.fromHeight === 5_000_000 + CHUNK)).toHaveLength(79);
+    });
+  });
+
   it('caps toHeight at the current height and notes it', async () => {
     server = await startTestServer({ routes: routes(), now: NOW });
     const result = await server.callTool('symbol_harvesting_income', {
