@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-19
+
+### Changed
+
+- **Breaking: Node.js 22 or newer is required** (`engines.node` is `>=22`, was `>=20`). Node.js 20
+  reached end of life and is no longer supported or tested: npm reports `EBADENGINE` for it (an
+  error with `engine-strict`). Upgrade Node.js before upgrading this package. CI runs on Node.js 22
+  and 24. This is why the version moves to 0.4.0 rather than 0.3.1.
+- The test runner is vitest 5 (development only; it needs Node.js 22.12 or newer). No test or
+  configuration change was needed and no tool behavior changed.
+
 ### Fixed
 
 - `symbol_harvesting_income`: a period of about a year (roughly 1,050,000 blocks) timed out on the
@@ -19,13 +30,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   all chunks, and totals, buckets, receipts and CSV are the same as from one query. New output field
   `fetch { chunks, chunkBlocks, splitRetries, pagesFetched }`, a note about the chunking, and a last
   summary line when the node timed out on wide queries.
-
-### Changed
-
-- Node.js 22 or newer is required (`engines.node` is `>=22`). Node.js 20 reached end of life; CI
-  runs on Node.js 22 and 24.
-- The test runner is vitest 5 (development only; it needs Node.js 22.12 or newer). No test or
-  configuration change was needed and no tool behavior changed.
 
 ## [0.3.0] - 2026-09-17
 
@@ -205,7 +209,8 @@ Initial release candidate (0.1.0).
 - Every request has a timeout, a `User-Agent`, a 5 MB response cap and a concurrency limit of 4,
   and every response is schema-validated before use.
 
-[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/inotakeh/symbol-mcp-server/releases/tag/v0.1.0
