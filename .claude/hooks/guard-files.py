@@ -34,6 +34,7 @@ PROTECTED = [
     ".claude/**",
     ".claude",
     "CLAUDE.md",
+    "AGENTS.md",
     "CLAUDE.local.md",
     ".mcp.json",
     # CI / release / repo governance
