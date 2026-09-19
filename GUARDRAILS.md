@@ -6,7 +6,7 @@
 
 | 層 | 何で実現するか | 性質 |
 |---|---|---|
-| 1. 行動指針 | `CLAUDE.md` | **助言**。モデルは従おうとするが強制ではない（公式明記） |
+| 1. 行動指針 | `AGENTS.md`（`CLAUDE.md` は `@AGENTS.md` の 1 行で import するだけ） | **助言**。モデルは従おうとするが強制ではない（公式明記） |
 | 2. 権限ルール | `.claude/settings.json` の `permissions.deny/ask/allow` | 強制。ただし Bash ルールは**コマンド文字列一致**で、`/bin/rm` や `sh -c` で回避されうる（公式明記） |
 | 3. フック | `PreToolUse`（Bash / Edit / Write）・`PostToolUse` | **強制・決定的**。コマンド全文を検査。exit 2 のブロックは allow ルールにも `bypassPermissions` にも勝つ |
 | 4. サンドボックス | `sandbox` 設定（macOS Seatbelt / Linux bubblewrap） | **OS レベル強制**。ファイル書込先・読取禁止・接続先ドメインを全子プロセスに適用。プロンプトインジェクションでモデルが騙されても効く |
@@ -31,7 +31,8 @@
 
 ```
 .
-├── CLAUDE.md                        # 行動指針（<100行）。設計ブリーフ docs/DESIGN-BRIEF.md を @import
+├── AGENTS.md                        # 行動指針（<100行）。設計ブリーフ docs/DESIGN-BRIEF.md を @import
+├── CLAUDE.md                        # 「@AGENTS.md」の 1 行だけ（Claude Code が AGENTS.md を読むための import）
 ├── GUARDRAILS.md                    # この文書
 ├── SECURITY.md                      # 脆弱性報告ポリシー（private vulnerability reporting）
 ├── .npmrc                           # ignore-scripts=true, save-exact, engine-strict
@@ -76,15 +77,17 @@
 - **確認要求（permissionDecision: ask）**: 通常の `git push`、`rebase/merge`、作業を捨てる git 操作、`gh pr create`、`npm update` — auto モードでも必ず人間に出る
 - **通過（exit 0）**: それ以外。permissions ルールと分類器に委ねる
 
-`guard-files.py` は `.claude/**`、`CLAUDE.md`、ワークフロー、CODEOWNERS、`LICENSE`、`server.json`、`.npmrc`、lockfile、`.env*`（`.env.example` は許可）、鍵ファイル、**プロジェクト外のパス**への Edit/Write を止める。
+`guard-files.py` は `.claude/**`、`CLAUDE.md`、`AGENTS.md`、ワークフロー、CODEOWNERS、`LICENSE`、`server.json`、`.npmrc`、lockfile、`.env*`（`.env.example` は許可）、鍵ファイル、**プロジェクト外のパス**への Edit/Write を止める。
 
 `scan-secrets.py` は書込直後にファイルを走査し、秘密鍵ブロック・Anthropic/npm/GitHub/AWS トークン・「privateKey = <64hex>」形式・ハードコードされた credential リテラルを検出したら exit 2 で Claude に即時削除を指示する。PostToolUse は取り消せないので、GitHub の push protection が次の層。公開テストベクタは `secrets-scan:ignore-file` マーカーで除外。
 
 フックは `.claude/settings.json` に置いてあるので**リポジトリを trust した後にだけ動く**。`disableAllHooks` や `--setting-sources` で外せるのは人間だけ（エージェントは `.claude/` を書けない）。
 
-### 2.3 CLAUDE.md の設計方針
+### 2.3 AGENTS.md（CLAUDE.md）の設計方針
 
-公式ガイダンス: 200 行未満、具体的で検証可能な指示、「コードを読めば分かること」は書かない、強調は本当に重要な行だけ。この CLAUDE.md は約 60 行で、コマンド・規約・リポジトリ作法・セキュリティルール・完了条件のみ。設計の詳細は `@docs/DESIGN-BRIEF.md` の import に逃がしている。**「ブロックされたら回避策を探さず、説明して止まれ」**を明記してあるのが要点で、これがないとエージェントは別経路を試す。
+行動指針の本体は `AGENTS.md`（エージェント共通の置き場所）にあり、`CLAUDE.md` は `@AGENTS.md` の 1 行だけで Claude Code にそれを import させる。どちらも保護対象（フック・deny・サンドボックス `denyWrite`・CI・CODEOWNERS）。
+
+公式ガイダンス（CLAUDE.md 向けだが import 先にもそのまま当てはまる）: 200 行未満、具体的で検証可能な指示、「コードを読めば分かること」は書かない、強調は本当に重要な行だけ。この AGENTS.md は約 60 行で、コマンド・規約・リポジトリ作法・セキュリティルール・完了条件のみ。設計の詳細は `@docs/DESIGN-BRIEF.md` の import に逃がしている。**「ブロックされたら回避策を探さず、説明して止まれ」**を明記してあるのが要点で、これがないとエージェントは別経路を試す。
 
 ## 3. GitHub リポジトリ側の設定（人間が行う。エージェントには権限を与えない）
 
