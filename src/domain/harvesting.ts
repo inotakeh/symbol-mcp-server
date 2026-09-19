@@ -10,6 +10,10 @@
  * beneficiary (verified on mainnet, 2026-09-11). Older blocks or accounts without a beneficiary
  * show two receipts, (100-N):N. Receipts are not returned in amount order, so the shares are
  * identified by sorting.
+ *
+ * Statements are read in height chunks of about CHUNK_DAYS: catapult-rest answers the first page
+ * of a wide height range plus targetAddress too slowly (a year timed out on mainnet, 2026-09-19,
+ * while half a year answered), so the tool splits the range and halves a chunk that times out.
  */
 import type { Receipt, TransactionStatementInfo } from '../client/schemas.js';
 import { calendarDateKey } from './localdate.js';
@@ -215,6 +219,71 @@ export function aggregateHarvestIncome(
     (month) => ({ month, ...emptyTotals() }),
   );
   return { rows, totals, daily, monthly, unknownStatements };
+}
+
+/** Policy constant, not a network constant: one statement query covers about this many days. */
+export const CHUNK_DAYS = 90;
+/** Policy constant: a chunk that timed out is never shrunk below about this many days. */
+export const MIN_CHUNK_DAYS = 7;
+
+const DAY_MS = 86_400_000;
+
+/** Inclusive height range. */
+export interface HeightRange {
+  readonly fromHeight: number;
+  readonly toHeight: number;
+}
+
+/** Blocks produced in `days` at the target block time from /network/properties; at least 1. */
+export function blocksForDays(days: number, blockGenerationTargetTimeMs: number): number {
+  if (!Number.isFinite(days) || days <= 0) {
+    throw new Error('days must be positive');
+  }
+  if (!Number.isFinite(blockGenerationTargetTimeMs) || blockGenerationTargetTimeMs <= 0) {
+    throw new Error('blockGenerationTargetTimeMs must be positive');
+  }
+  return Math.max(1, Math.round((days * DAY_MS) / blockGenerationTargetTimeMs));
+}
+
+/**
+ * Consecutive inclusive ranges of at most `chunkBlocks` heights covering [fromHeight, toHeight]:
+ * ascending, no overlap, no gap. The last range holds the remainder.
+ */
+export function splitHeightRange(
+  fromHeight: number,
+  toHeight: number,
+  chunkBlocks: number,
+): HeightRange[] {
+  if (!Number.isSafeInteger(fromHeight) || !Number.isSafeInteger(toHeight)) {
+    throw new RangeError('heights must be integers');
+  }
+  if (fromHeight > toHeight) {
+    throw new RangeError('fromHeight must not be above toHeight');
+  }
+  if (!Number.isSafeInteger(chunkBlocks) || chunkBlocks < 1) {
+    throw new RangeError('chunkBlocks must be a positive integer');
+  }
+  const ranges: HeightRange[] = [];
+  for (let start = fromHeight; start <= toHeight; start += chunkBlocks) {
+    ranges.push({ fromHeight: start, toHeight: Math.min(start + chunkBlocks - 1, toHeight) });
+  }
+  return ranges;
+}
+
+/**
+ * Chunk length to retry with after a range of `lengthBlocks` timed out: half of it (rounded up),
+ * but never below `minChunkBlocks`. Null when the range is already at or below the minimum, so a
+ * failure is only final for a range of at most `minChunkBlocks`.
+ */
+export function shrinkChunkBlocks(lengthBlocks: number, minChunkBlocks: number): number | null {
+  if (!Number.isSafeInteger(lengthBlocks) || lengthBlocks < 1) {
+    throw new RangeError('lengthBlocks must be a positive integer');
+  }
+  if (!Number.isSafeInteger(minChunkBlocks) || minChunkBlocks < 1) {
+    throw new RangeError('minChunkBlocks must be a positive integer');
+  }
+  if (lengthBlocks <= minChunkBlocks) return null;
+  return Math.max(Math.ceil(lengthBlocks / 2), minChunkBlocks);
 }
 
 /** Network timestamp (ms) of a block; injected so the search is testable without HTTP. */
