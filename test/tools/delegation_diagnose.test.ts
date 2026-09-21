@@ -30,6 +30,7 @@ type Output = {
   checks: Check[];
   summary: string;
   recentHarvest: { receipts: number; lastHeight: number | null } | null;
+  account: { keys: { linked: string | null; vrf: string | null; node: string | null } };
   node: { configuredNodePublicKey: string | null; unlockedCount: number | null };
   notes: string[];
 };
@@ -106,6 +107,8 @@ describe('symbol_delegation_diagnose', () => {
     for (const id of EXPECTED_ORDER.slice(0, 10)) expect(statusOf(out, id)).toBe('ok');
     // The captured transfer page holds no delegation request: informational warning, still active.
     expect(statusOf(out, 'delegation_request_found')).toBe('warn');
+    // The account delegates to the configured node: its node key is the node's public key.
+    expect(out.account.keys).toMatchObject({ linked: LINKED, node: NODE_KEY });
     expect(out.node).toEqual({ configuredNodePublicKey: NODE_KEY, unlockedCount: 15 });
     expect(out.recentHarvest).toMatchObject({ receipts: 1, lastHeight: 5764879 });
     expect(out.summary.split('\n')[0]).toBe(`delegated harvesting: active (${ADDRESS}).`);

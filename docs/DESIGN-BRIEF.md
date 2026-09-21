@@ -27,7 +27,7 @@
 ## 2. 設計原則（必須）
 
 1. **読み取り専用**。秘密鍵・ニーモニックを受け取る引数を作らない。署名しない。`PUT /transactions`（アナウンス）はツール化しない。
-2. **ツールは「質問に答える」単位**。エンドポイントの写しにしない。合計 14 ツール（§5）。Anthropicのガイド「複数の下位操作を1つの目的別ツールに統合する」に従う。
+2. **ツールは「質問に答える」単位**。エンドポイントの写しにしない。合計 20 ツール（§5。`src/server.ts` の `TOOLS`。§13 の `check` は CLI サブコマンドでツールには数えない）。Anthropicのガイド「複数の下位操作を1つの目的別ツールに統合する」に従う。
 3. **ノードURLは環境変数でのみ設定**（`SYMBOL_NODE_URL`）。**ツール引数でURLを受け取らない**（モデルが内部ネットワークへリクエストを向けられる SSRF 経路になるため）。起動時に `/node/info` を取得し、`networkGenerationHashSeed` で mainnet/testnet を判定。`SYMBOL_NETWORK` が指定されていて不一致なら**起動失敗**。使用ノードとネットワークを stderr にログ。
 4. **出力は構造化＋人間向け**。全ツールに `outputSchema` を定義し、`structuredContent` と、その JSON 文字列を入れた `text` ブロックの**両方**を返す（仕様の後方互換要件）。`structuredContent` の先頭に `summary: string`（1〜3行の要約）を必ず含める。金額は divisibility 適用後の値と生の整数の両方。日時は ISO 8601（UTC）＋ `SYMBOL_TIMEZONE` 指定時はローカル時刻も。数値IDは名前解決（例: `6BED913FA20223F8` → `symbol.xym`、`16724` → `transfer`）。
 5. **ネットワーク定数はハードコードしない**。`/network/properties` から取得してプロセス内キャッシュ。既知の値はテストの期待値としてのみ使う（例外: §4 の generationHashSeed 照合表）。
@@ -183,7 +183,7 @@ friendlyName、host、ロール（ビットフラグを Peer/API/Voting に展�
 **`symbol_finality_participation`**（0.2.0 で追加。ツール配列の末尾に登録し、既存の順序を変えない）— `account`（アドレスまたは公開鍵）、`epoch`（任意。未指定なら `/chain/info` の `latestFinalizedBlock.finalizationEpoch`）、`epochs`（1〜20、既定 1。`epoch` から過去に向かって連続 N エポック。取得は並行で、同時リクエストは RestClient の上限 4 に収まる）、`format`（concise は `participated` のエポックで `stages` を省略、detailed は全エポックに含める）。
 答える問い: 「このアカウントの投票鍵は、指定エポックのファイナリティ投票に実際に参加したか」。キー更新後の検証（新キーで投票できているか）と、月次の Voting ノード健全性確認に使う。`symbol_voting_key_status` は「いつ失効するか」、このツールは「実際に使われているか」。
 - 確認済み事項（2026-09-13、mainnet epoch 4010 の実 proof を人間が確認）: `GET /finalization/proof/epoch/{epoch}` の応答は `{ version, finalizationEpoch, finalizationPoint, height, hash, messageGroups: [{ stage, height, hashes[], signatures: [{ root: {parentPublicKey, signature}, bottom: {parentPublicKey, signature} }] }] }`。messageGroups は 2 件（stage 1 = precommit、stage 0 = prevote）、各 17 署名。**アカウントに登録された voting 公開鍵は `signatures[].root.parentPublicKey` と完全一致し、`bottom.parentPublicKey`（中間鍵）には現れない**。したがって参加判定は「root 鍵の集合に登録鍵が含まれるか」。stage の意味は OpenAPI v1.0.4 の `StageEnum`（0 = Prevote、1 = Precommit、2 = Count）で確認済み。署名数 17 に対し nodewatch 上の Voting ノードは 18 だったので、この差分（不参加ノード）の検出が目的の 1 つ。
-- 確認済み事項（2026-09-21、mainnet epoch 4027 の実 proof を人間が確認）: **messageGroups は「ステージごとに 1 件」とは限らない。同一ステージ・同一高さで複数グループに分かれることがある**（投票先ハッシュ一覧の違い。epoch 4027 は 3 件: stage 1 ×1、stage 0 が同じ高さ 5796428 に署名 2 本と 15 本の 2 グループ、合計 17）。1 人の投票者の鍵はそのうち 1 グループにしか現れないので、**判定はグループ単位ではなくステージ単位**: messageGroups を stage でまとめ、そのステージの全グループの root 鍵の和集合に登録鍵があれば署名済み。0.4.0 までの「全グループに自鍵があるか」は、このような proof で正しく投票したアカウントを missed と誤判定し、summary も「signed prevote and precommit only, not prevote」と矛盾した。
+- 確認済み事項（2026-09-21、mainnet epoch 4027 の実 proof を人間が確認。0.5.0 で修正）: **messageGroups は「ステージごとに 1 件」とは限らない。同一ステージ・同一高さで複数グループに分かれることがある**（投票先ハッシュ一覧の違い。epoch 4027 は 3 件: stage 1 ×1、stage 0 が同じ高さ 5796428 に署名 2 本と 15 本の 2 グループ、合計 17）。1 人の投票者の鍵はそのうち 1 グループにしか現れないので、**判定はグループ単位ではなくステージ単位**: messageGroups を stage でまとめ、そのステージの全グループの root 鍵の和集合に登録鍵があれば署名済み。0.4.0 までの「全グループに自鍵があるか」は、このような proof で正しく投票したアカウントを missed と誤判定し、summary も「signed prevote and precommit only, not prevote」と矛盾した。
 - 処理: `/accounts/{id}` の voting 鍵一覧と `/chain/info` を並行取得 → 対象エポックごとに proof を `getOrNull` で取得（404 は `status: 'unavailable'` にして `isError` にしない。全エポックが 404 のときだけ `isError`＋ヒント。要求エポックが最新確定エポックより大きいときはヒントに「proof は確定済みエポックにしか無い」と書く。proof の `finalizationEpoch` が要求と違えば `invalid_response`）→ messageGroups ごとに root 鍵集合を作り登録鍵と照合 → そのエポックで有効であるべき鍵（startEpoch ≤ e ≤ endEpoch）の有無を別途判定。判定は `src/domain/finality.ts` の純粋関数。
 - 判定: **proof に存在する全ステージ**で一致（ステージ内のどのグループでもよい）→ `participated`（proof の署名は現在の鍵一覧より優先。既に unlink した鍵の署名でも participated）。一致しないステージがあり有効鍵あり → `missed`。署名したステージの列挙は `describeSignedStages`（`src/domain/finality.ts`。ツールの summary と CLI check の detail が共用）: 全部 → `signed prevote and precommit`、一部 → `signed prevote, not precommit`、無し → `signed no stage (not prevote, not precommit)`。ステージ名は 1 回ずつしか出ないので矛盾した文にならない。summary のエポック行は `Epoch N: participated, signed prevote and precommit (prevote 17 signatures in 2 groups, precommit 17 signatures; …)`（グループが 1 つなら `in N groups` は付けない）。有効鍵なし → `no_active_key`。proof なし → `unavailable`。
 - 出力: `summary`、`account: { address, publicKey, votingKeys[{ publicKey, startEpoch, endEpoch, activeForEpoch }] }`、`current`、`requested`、`epochs[{ epoch, status, finalizationPoint, height, proofHash, stages[{ stage, stageName, height, heights[], groups, signatureCount, participated, matchedPublicKey }], participatedAllStages }]`（新しいエポックが先頭。`stages[]` は**ステージごとに 1 要素**で、`groups` = そのステージのメッセージグループ数、`heights` = グループの高さ（重複なし昇順）、`height` = その最小値（グループが 1 つなら従来と同じ値）、`signatureCount` = そのステージの全グループの署名数の合計）、`totals { checked, participated, missed, noActiveKey, unavailable }`、`warning`（「今」投票できるかの警告で、判定は現在の finalizationEpoch 基準。現在の finalizationEpoch をカバーする鍵が無い → 参加不能の警告（要求エポックに関係なく判定）／先頭の要求エポックが現在の finalizationEpoch と一致し missed → 投票していない警告／それ以外は null。過去エポックの `no_active_key` / `missed` は `epochs[].status` に留める。歴史的エポックに鍵が無いのは正常）、`notes`（`signatureCount` は署名した投票者数で、登録ノード総数はこのサーバーからは分からない／`unavailable` は投票の有無を意味しない）。**他ノードの公開鍵は出力しない**。
@@ -336,6 +336,8 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 │   ├── cli/                # check.ts（runCheck・対応表・decideExit）、format.ts（text / JSON）。MCP SDK を import しない（§13）
 │   ├── context.ts          # AppContext と createAppContext（サーバーと check で共通の起動手順）
 │   ├── server.ts           # createServer(): McpServer（ツール登録）
+│   ├── instructions.ts     # SERVER_INSTRUCTIONS（initialize 結果に載せる本文、§3.1）
+│   ├── prompts/            # 1ファイル1プロンプト（§3.1）
 │   ├── config.ts           # env 読込・URL検証・ネットワーク照合
 │   ├── client/rest.ts      # fetch ラッパ（timeout, UA, サイズ上限, スキーマ検証）
 │   ├── domain/             # address.ts, amount.ts, epoch.ts, version.ts, txtype.ts, message.ts, properties.ts
@@ -414,7 +416,7 @@ README、CHANGELOG、SECURITY.md、`evals/`（代表的な質問10件と期待�
 **ツール設計**
 - Anthropic「Writing effective tools for agents」: https://www.anthropic.com/engineering/writing-tools-for-agents
 
-## 13. CLI モード（`check`。既存の節番号は振り直さず末尾に追加）
+## 13. CLI モード（`check`。0.5.0 で追加。既存の節番号は振り直さず末尾に追加）
 
 **目的**: MCP クライアント無しで、cron から 1 コマンドでノードの健全性を判定し、異常があれば非ゼロで終了する。**通知はしない**（cron の `MAILTO` に任せる。外部通信を増やさない）。引数なしで起動したときの挙動（MCP サーバー、stdio）、`--help` / `--version`、未知の引数 → exit 2 は変えない。
 
