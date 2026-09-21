@@ -230,11 +230,19 @@ export interface ToolCallResult {
   readonly structuredContent: Record<string, unknown> | undefined;
 }
 
+export interface TestContext {
+  readonly ctx: AppContext;
+  readonly config: Config;
+  /** Every URL asked of the (fake) node, in order. */
+  readonly requests: URL[];
+}
+
 /**
- * Boots the server the same way index.ts does (config -> RestClient -> resolveNetwork ->
- * createServer) but in-process, with fetch stubbed.
+ * Stubs the global fetch with the routes and builds the AppContext the way index.ts does
+ * (config -> RestClient -> resolveNetwork). For code that runs outside MCP, such as the CLI
+ * check; the caller undoes the stub with `vi.unstubAllGlobals()`.
  */
-export async function startTestServer(options: TestServerOptions = {}): Promise<TestServer> {
+export async function createTestContext(options: TestServerOptions = {}): Promise<TestContext> {
   const fake = createFakeFetch(options.routes ?? mainnetRoutes());
   vi.stubGlobal('fetch', fake.fetch);
 
@@ -247,6 +255,15 @@ export async function startTestServer(options: TestServerOptions = {}): Promise<
   const network = await resolveNetwork(rest, config);
   const now = options.now ?? TEST_NOW;
   const ctx = new AppContext(config, rest, network, '0.0.0-test', () => now);
+  return { ctx, config, requests: fake.requests };
+}
+
+/**
+ * Boots the server the same way index.ts does (config -> RestClient -> resolveNetwork ->
+ * createServer) but in-process, with fetch stubbed.
+ */
+export async function startTestServer(options: TestServerOptions = {}): Promise<TestServer> {
+  const { ctx, config, requests } = await createTestContext(options);
 
   const handler = createMcpHandler(() => createServer(ctx));
   const rawResponses: RawResponse[] = [];
@@ -273,7 +290,7 @@ export async function startTestServer(options: TestServerOptions = {}): Promise<
 
   return {
     client,
-    requests: fake.requests,
+    requests,
     rawResponses,
     config,
     ctx,

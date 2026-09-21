@@ -375,7 +375,10 @@ const NO_ACCOUNT =
 export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<CheckReport> {
   const { account, warnDays } = options;
   const timeLimitMs = options.timeLimitMs ?? DEFAULT_TIME_LIMIT_MS;
-  const limitText = `time limit of ${Math.round(timeLimitMs / 1000)} s`;
+  const limitText =
+    timeLimitMs >= 1000
+      ? `time limit of ${Math.round(timeLimitMs / 1000)} s`
+      : `time limit of ${timeLimitMs} ms`;
   // Filled by the voting key step (an object, because the assignment happens in a closure).
   const resolved: { address: string | null } = { address: null };
 
