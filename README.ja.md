@@ -150,7 +150,7 @@ claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- nod
 | `symbol_network_compare` | なし | 自ノードと `SYMBOL_REFERENCE_NODES` の高さ・確定高さ、最良ノードとの差、`lagging` フラグ。参照ノード未設定時はその旨と対処を案内。 |
 | `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。`granularity: monthly` で暦月ごと（年次の質問向け）、`output: csv` で表計算向けの CSV テキスト（JSON も併せて返す）。1 年以上を 1 回で指定してよい（約 90 日分ずつに分割して取得。`fetch` にチャンク数・再試行数・ページ数）。 |
 | `symbol_transaction_status` | `transactionHashes`（配列、1〜20 件） | 各トランザクションの現在の状態: confirmed（高さ付き）/ unconfirmed / partial（署名待ち）/ failed（ノードのコードとその意味付き）/ not_found。バッチ全体を 1 リクエストで照会。 |
-| `symbol_finality_participation` | `account`, `epoch`（任意、既定は最新の確定エポック）, `epochs`（1〜20、既定 1）, `format` | アカウントの Voting キーが各エポックのファイナリティ proof に実際に署名したか: participated（prevote と precommit の両方）/ missed（署名しなかったステージ付き）/ no_active_key / unavailable。ステージごとの署名数と、現在のエポックをカバーする鍵が無い／現在のエポックが missed のときの警告（過去のエポックでは警告しない）。 |
+| `symbol_finality_participation` | `account`, `epoch`（任意、既定は最新の確定エポック）, `epochs`（1〜20、既定 1）, `format` | アカウントの Voting キーが各エポックのファイナリティ proof に実際に署名したか: participated（prevote と precommit の両方）/ missed（署名しなかったステージ付き）/ no_active_key / unavailable。ステージごとの署名数（proof が 1 つのステージを複数のメッセージグループに分けていても 1 ステージとして扱い、どのグループの署名でも署名済みと数える）と、現在のエポックをカバーする鍵が無い／現在のエポックが missed のときの警告（過去のエポックでは警告しない）。 |
 | `symbol_delegation_diagnose` | `account`, `recentDays`（1〜30、既定 7）, `format` | 委任ハーベストが有効か、無効ならどこで止まっているか: アカウントの存在、ハーベスト残高制限、importance（0 なら次の再計算までのブロック数）、linked / VRF / node の各鍵、node 鍵と設定ノードの `nodePublicKey` の一致、そのノードでの解錠、accountType、直近 N 日のハーベスト実績、ノード宛の委任要求トランザクション。判定は `active` / `not_active` / `cannot_verify`（別ノードへの委任はここからは確認できない）。 |
 | `symbol_node_health` | `format` | 設定ノードが今、健全に動いているか: API ノードと DB の状態（`/node/health` の 503 応答も本文を読んで判定）、DB のブロック数とチェーン高さの差、ノード時計とこの端末の時計のずれ、ファイナリティ遅延（ブロック数と分）、ロール。固定順の 6 チェックが ok / warn / fail / unknown とヒントを持ち、判定は `healthy` / `degraded`（warn、または確認できなかった項目あり）/ `unhealthy`。閾値は `/network/properties` から導出。`symbol_node_status` を補完。 |
 | `symbol_version_drift` | `format` | 設定ノードのバージョンがネットワークの多数派から取り残されていないか: ノードが知るピアと参照ノードのバージョン分布、多数派の版、自ノードより新しい版の割合。判定は `ok` / `behind`（多数派より古い、または新しい版が半数以上）/ `far_behind`（75% 以上が新しい。接続を拒否され始める可能性）/ `unknown`（ピアなし）。ピアの host や鍵は出力しません。 |
@@ -231,6 +231,67 @@ healthy / degraded / unhealthy と問題のあるチェックを返します。
 
 サーバーは initialize 時に短い `instructions`（読み取り専用であること、アカウントの指定形式、ハーベスト報酬と Voting キーの質問に使うツール、
 返された数値をそのまま使うこと）も送ります。
+
+## CLI: cron からの監視
+
+同じバイナリに、MCP クライアント無しで動く 1 回実行のサブコマンド `check` があります。上のツールでノードを判定し、
+レポートを 1 つ出力して、異常があれば非ゼロで終了します。
+
+```
+symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <n>]
+                        [--format text|json] [--quiet]
+```
+
+環境変数はサーバーと共通です（`SYMBOL_NODE_URL` 必須、`SYMBOL_TIMEZONE` / `SYMBOL_REFERENCE_NODES` /
+`SYMBOL_STATE_DIR` は任意）。Node.js 22 以上が必要です。引数なしで起動したときは従来どおり MCP サーバーです。
+
+| # | 項目 | ok / warn / fail |
+|---|---|---|
+| 1 | `node_health` | `symbol_node_health`: healthy / degraded / unhealthy |
+| 2 | `version_drift` | `symbol_version_drift`: ok / behind または unknown / far_behind |
+| 3 | `harvester_watch` | `symbol_harvester_watch`（比較して保存）: 解錠中のハーベスターが前回より減った、またはスナップショットを保存できなかったら warn。`SYMBOL_STATE_DIR` 未設定なら skip |
+| 4 | `voting_key_status` | `--account` 指定時: アクティブな Voting キーの失効まで `--warn-days`（既定 14、1〜120）日以内なら warn、3 日以内またはアクティブなキーが無ければ fail。後継キーが切れ目なく登録済みなら ok。`--account` 無しなら skip |
+| 5 | `finality_participation` | `--account` 指定時、最新の確定エポック: participated / missed またはノードに proof が無い / そのエポックをカバーする鍵が無い。`--account` 無しなら skip |
+
+判定はツールのものをそのまま使い、check はその出力を読み替えるだけです。warn / fail の行の下に出る hint もツールの文言です。
+ツールが 1 つ失敗しても（HTTP エラーなど）その項目が fail になるだけで、他の項目は実行されます。
+
+| exit code | 意味 |
+|---|---|
+| 0 | すべて ok または skip |
+| 1 | warn あり（fail なし） |
+| 2 | fail あり |
+| 3 | 実行できなかった: 設定エラー、ノードに到達できない、引数エラー（stderr に 1〜2 行で原因とヒント） |
+
+text 出力（既定。値は説明用の例）:
+
+```
+symbol check: WARN (node.example:3001, mainnet, 2026-01-15T07:00:03+09:00)
+[ok] node_health: healthy (finalization lag 12 blocks)
+[ok] version_drift: ok. node.example:3001 runs 1.0.3.9; majority of 24 sampled nodes runs 1.0.3.9; 0% run something newer.
+[ok] harvester_watch: 18 unlocked harvesters on node.example:3001, unchanged since 2026-01-14T07:00:02+09:00 (2026-01-13T22:00:02.000Z). Snapshot saved (31 stored).
+[warn] voting_key_status: active key 0A1B2C3D… expires in about 12.4 days (epoch 4321, estimated 2026-01-27T16:40:00+09:00 (2026-01-27T07:40:00.000Z))
+  hint: Active voting key 0A1B2C3D… expires at epoch 4321 in about 12.4 days (...) and no successor key is registered.
+[ok] finality_participation: epoch 4290: participated (signed prevote and precommit)
+```
+
+`--format json` は同じレポートを 1 つの JSON で出力します: `{ verdict, exitCode, node: { host, network }, checkedAt,
+checks: [{ id, status, detail, hint }], warnDays, account }`。`verdict` は `ok` / `warn` / `fail` / `error`（exit code 3）、
+`account` は解決後のアドレスです。`--quiet` は exit code が 0 のとき何も出力しないので、cron からは「読むものがあるときだけ」
+メールが届きます。
+
+```
+MAILTO=you@example.com
+0 7 * * * SYMBOL_NODE_URL=https://node.example:3001 SYMBOL_STATE_DIR=/var/lib/symbol-mcp-server \
+  npx --yes symbol-mcp-server check --account NXXX... --warn-days 14 --quiet
+```
+
+- **check は通知を行いません。** stdout / stderr への出力と exit code だけで、メールは cron（`MAILTO`）に任せます。
+  通信先は `SYMBOL_NODE_URL` と `SYMBOL_REFERENCE_NODES` だけで、サーバーと同じく読み取り専用です。`SYMBOL_STATE_DIR` を
+  設定している場合、実行のたびに `symbol_harvester_watch` と同じファイルへスナップショットを 1 件追記します（新しい 60 件を保持）。
+- 全体の実行時間は 120 秒が上限です。上限に達すると残りの項目は skip になり、理由を stderr に出し、総合判定は最良でも WARN で、
+  `--quiet` でも出力します。
+- サブコマンド名の打ち間違いは従来どおりサーバーの「未知の引数」として exit 2 になります。
 
 ## セキュリティ
 

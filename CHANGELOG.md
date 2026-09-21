@@ -7,6 +7,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `symbol-mcp-server check`: a one-shot node health check for cron that needs no MCP client.
+  `check [--account <address|publicKey|namespace>] [--warn-days <n>] [--format text|json] [--quiet]`
+  runs `node_health`, `version_drift`, `harvester_watch` (needs `SYMBOL_STATE_DIR`) and, with
+  `--account`, `voting_key_status` and `finality_participation`, by calling the existing tools and
+  re-reading their verdicts as ok / warn / fail / skip; no tool threshold changed. Exit codes: 0 all
+  ok or skipped, 1 warnings, 2 failures, 3 could not run (configuration, node unreachable, bad
+  arguments). Text output has one line per item with the tool's own hint under warn and fail
+  lines; `--format json` prints the same report as one JSON document; `--quiet` prints nothing on
+  exit code 0, so cron mails only when there is something to read. The check sends no
+  notification and contacts only `SYMBOL_NODE_URL` and `SYMBOL_REFERENCE_NODES`. A voting key
+  warns within `--warn-days` (default 14) and fails within 3 days or without an active key, but is
+  ok once a successor key is registered without a gap. The run is limited to 120 seconds; at the
+  limit the remaining items are skipped and the result is WARN at best. Starting the binary
+  without arguments (the MCP server), `--help` and `--version` are unchanged; `--help` now also
+  documents `check`. See "CLI: monitoring from cron" in the README.
+
+### Fixed
+
+- `symbol_finality_participation` reported `missed` for an account that had voted, when the proof
+  split one stage into several message groups. A node does that when voters signed different
+  hash lists, even at the same height (mainnet epoch 4027: one precommit group and two prevote
+  groups with 2 and 15 signatures); a voter's key is then in one of the groups only, while the
+  tool required it in every group, and the summary contradicted itself ("signed prevote and
+  precommit only, not prevote"). Stages are now judged as a whole: a stage is signed when the key
+  is among the root signers of any of its groups, and `participated` means every stage present
+  in the proof is signed. `stages[]` has one entry per stage with the new fields `groups` (message
+  groups of the stage) and `heights` (their distinct heights); `signatureCount` is the total over
+  the stage's groups and `height` the lowest height (unchanged for the usual one group per stage).
+  The summary lists the signed stages and, when missed, the unsigned ones, each named once
+  ("signed prevote and precommit", "signed prevote, not precommit"). Proofs with one group per
+  stage give the same result as before.
+
 ## [0.4.0] - 2026-09-19
 
 ### Changed

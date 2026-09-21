@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildVotingStatus,
   classifyVotingKey,
+  hasSuccessorKey,
+  RENEWAL_WINDOW_END_DAYS,
   type VotingStatusParams,
 } from '../../src/domain/voting.js';
 
@@ -34,6 +36,22 @@ describe('classifyVotingKey', () => {
     expect(classifyVotingKey(key, 10)).toBe('active');
     expect(classifyVotingKey(key, 20)).toBe('active');
     expect(classifyVotingKey(key, 21)).toBe('expired');
+  });
+});
+
+describe('hasSuccessorKey', () => {
+  const key = { endEpoch: 4059 };
+  it('is true when a future key starts no later than the epoch after the key ends', () => {
+    expect(hasSuccessorKey(key, [{ startEpoch: 4060 }])).toBe(true);
+    expect(hasSuccessorKey(key, [{ startEpoch: 4050 }])).toBe(true);
+    expect(hasSuccessorKey(key, [{ startEpoch: 4200 }, { startEpoch: 4060 }])).toBe(true);
+  });
+  it('is false with a gap of one epoch or more, and without future keys', () => {
+    expect(hasSuccessorKey(key, [{ startEpoch: 4061 }])).toBe(false);
+    expect(hasSuccessorKey(key, [])).toBe(false);
+  });
+  it('shares the end of the renewal window with the CLI check (3 days)', () => {
+    expect(RENEWAL_WINDOW_END_DAYS).toBe(3);
   });
 });
 

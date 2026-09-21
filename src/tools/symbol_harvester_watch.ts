@@ -85,13 +85,20 @@ const outputSchema = z.object({
   notes: z.array(z.string()),
 });
 
+/** Exported for the CLI check, which shows it as the hint when the count dropped. */
+export const RESTART_NOTE =
+  'Right after a node restart the unlocked count can be 0 or low for a while, until delegations are re-activated.';
+
 const NOTES = [
   "The unlocked list (/node/unlockedaccount) is the node's own report and is not backed by chain data.",
   'Keys are remote (linked) harvesting keys; the delegators’ main accounts cannot be identified from them.',
-  'Right after a node restart the unlocked count can be 0 or low for a while, until delegations are re-activated.',
+  RESTART_NOTE,
 ];
 
-const UNSET_NOTE =
+/** Prefix of the note added when compare_and_save could not write the snapshot file. */
+export const NOT_SAVED_NOTE_PREFIX = 'Snapshot not saved:';
+
+export const UNSET_NOTE =
   'SYMBOL_STATE_DIR is not set, so snapshots are not stored and no comparison is possible. Set it to an absolute directory (created on first save, mode 0700) to compare against the previous call.';
 
 function countText(n: number): string {
@@ -219,7 +226,7 @@ export const harvesterWatchTool = defineTool({
         if (!(err instanceof StateFileError) || mode === 'save_only') throw err;
         saveErrorCode = err.code;
         notes.push(
-          `Snapshot not saved: could not ${err.operation} ${err.path} (${err.code}). Check that SYMBOL_STATE_DIR is writable by the server process.`,
+          `${NOT_SAVED_NOTE_PREFIX} could not ${err.operation} ${err.path} (${err.code}). Check that SYMBOL_STATE_DIR is writable by the server process.`,
         );
       }
     }
