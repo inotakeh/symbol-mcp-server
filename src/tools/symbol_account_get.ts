@@ -11,7 +11,6 @@ import { hexAddressToBase32 } from '../domain/address.js';
 import { formatAmount } from '../domain/amount.js';
 import { parseHeight } from '../domain/epoch.js';
 import {
-  ACCOUNT_INPUT_HINT,
   type AccountResolution,
   AccountResolutionSchema,
   resolveAccountInput,
