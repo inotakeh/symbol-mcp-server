@@ -128,10 +128,25 @@ const outputSchema = z.object({
   notes: z.array(z.string()),
 });
 
+/** Exported for the CLI check, which shows it as the hint when no proof could be read. */
+export const UNAVAILABLE_NOTE =
+  'unavailable means the node holds no proof for that epoch (not yet finalized, or outside the history it keeps); it says nothing about whether the account voted.';
+
+/**
+ * No requested epoch has a proof on the node. Still a ToolInputError (same message and isError
+ * result for MCP callers); the subclass lets the CLI check tell it from a bad account argument.
+ */
+export class ProofUnavailableError extends ToolInputError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProofUnavailableError';
+  }
+}
+
 const NOTES = [
   "participated means one of the account's registered voting keys is among the root signers of every stage of the proof (prevote and precommit); signing only one stage counts as missed.",
   'signatureCount is the number of voters whose signature appears in that stage. The total number of registered voting nodes is not known to this server, so a shortfall can only be judged against an external list such as nodewatch.',
-  'unavailable means the node holds no proof for that epoch (not yet finalized, or outside the history it keeps); it says nothing about whether the account voted.',
+  UNAVAILABLE_NOTE,
   "Only this account's keys are reported; other voters' public keys are not included.",
 ];
 
@@ -206,7 +221,7 @@ export const finalityParticipationTool = defineTool({
         target > latestEpoch
           ? `epoch ${target} is above the latest finalized epoch ${latestEpoch}, and proofs exist only for finalized epochs`
           : 'nodes keep finalization proofs for a limited history';
-      throw new ToolInputError(
+      throw new ProofUnavailableError(
         `No finalization proof for ${range} is available on ${ctx.rest.host} (${why}). Omit epoch to check the latest finalized epoch (${latestEpoch}), use a smaller epochs value, or point SYMBOL_NODE_URL at a node that keeps more history.`,
       );
     }

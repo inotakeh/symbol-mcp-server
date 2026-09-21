@@ -12,7 +12,7 @@ import {
   NamespaceNamesSchema,
   NetworkPropertiesRawSchema,
 } from './client/schemas.js';
-import type { Config, ResolvedNetwork } from './config.js';
+import { type Config, loadConfig, type ResolvedNetwork, resolveNetwork } from './config.js';
 import { type NetworkProperties, parseNetworkProperties } from './domain/properties.js';
 import { sanitizeUntrusted } from './domain/sanitize.js';
 import { formatInstant, type Instant } from './domain/time.js';
@@ -198,4 +198,25 @@ export class AppContext {
       span > 0 && deltaMs > 0 ? deltaMs / span : properties.blockGenerationTargetTimeMs;
     return { averageBlockTimeMs, sampleBlocks: span, fromHeight, toHeight };
   }
+}
+
+/**
+ * Start-up sequence shared by the MCP server and the CLI check: read the environment, build the
+ * REST client, verify the node's network. Throws ConfigError, NetworkVerificationError or
+ * RestError; the caller decides how to report them.
+ */
+export async function createAppContext(
+  env: Readonly<Record<string, string | undefined>>,
+  serverName: string,
+  version: string,
+  clock?: () => Date,
+): Promise<AppContext> {
+  const config = loadConfig(env);
+  const rest = new RestClient({
+    baseUrl: config.nodeUrl,
+    timeoutMs: config.requestTimeoutMs,
+    userAgent: `${serverName}/${version}`,
+  });
+  const network = await resolveNetwork(rest, config);
+  return new AppContext(config, rest, network, version, clock);
 }

@@ -89,8 +89,20 @@ export interface VotingStatusReport {
 }
 
 const RENEWAL_WINDOW_START_DAYS = 7;
-const RENEWAL_WINDOW_END_DAYS = 3;
+/** The recommended renewal window closes this many days before expiry. */
+export const RENEWAL_WINDOW_END_DAYS = 3;
 const DAY_MS = 86_400_000;
+
+/**
+ * True when a registered future key takes over without a gap, i.e. it starts no later than the
+ * epoch after `key` ends. An expiring key with a successor needs no warning.
+ */
+export function hasSuccessorKey(
+  key: { readonly endEpoch: number },
+  futureKeys: ReadonlyArray<{ readonly startEpoch: number }>,
+): boolean {
+  return futureKeys.some((f) => f.startEpoch <= key.endEpoch + 1);
+}
 
 export function buildVotingStatus(p: VotingStatusParams): VotingStatusReport {
   const G = p.votingSetGrouping;
@@ -159,7 +171,7 @@ export function buildVotingStatus(p: VotingStatusParams): VotingStatusReport {
   }
   for (const key of active) {
     const days = key.remainingDays ?? 0;
-    const covered = future.some((f) => f.startEpoch <= key.endEpoch + 1);
+    const covered = hasSuccessorKey(key, future);
     if (days <= warnWithinDays && !covered) {
       warnings.push(
         `Active voting key ${key.publicKey.slice(0, 8)}… expires at epoch ${key.endEpoch} in about ${days} days (${key.expiresAt ? formatInstantText(key.expiresAt) : 'unknown time'}) and no successor key is registered.`,

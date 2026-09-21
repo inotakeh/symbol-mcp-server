@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * Entry point: load configuration, verify the node's network, then serve MCP over stdio.
+ * Entry point: wires the real process into runCli. With no arguments it loads the configuration,
+ * verifies the node's network and serves MCP over stdio; `check` prints one health report.
  *
- * stdout is the JSON-RPC channel. All logging goes to stderr via console.error.
+ * In server mode stdout is the JSON-RPC channel and all logging goes to stderr via console.error.
+ * The stdout writer below is only ever reached by the `check` subcommand, which never serves MCP.
  */
 import { createRequire } from 'node:module';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
-import { helpText, parseCliArgs } from './cli.js';
-import { RestClient } from './client/rest.js';
-import { loadConfig, resolveNetwork } from './config.js';
-import { AppContext } from './context.js';
+import { runCli } from './cli.js';
+import { createAppContext } from './context.js';
 import { createServer, SERVER_NAME } from './server.js';
 
 function readVersion(): string {
@@ -22,34 +22,9 @@ function readVersion(): string {
   }
 }
 
-async function main(): Promise<void> {
-  const version = readVersion();
-
-  // Any argument comes from a human at a terminal; MCP hosts pass none. Never write to stdout.
-  const cli = parseCliArgs(process.argv.slice(2));
-  if (cli.mode === 'help') {
-    console.error(helpText(SERVER_NAME, version));
-    return;
-  }
-  if (cli.mode === 'version') {
-    console.error(`${SERVER_NAME} ${version}`);
-    return;
-  }
-  if (cli.mode === 'unknown') {
-    console.error(
-      `${SERVER_NAME}: unknown argument ${JSON.stringify(cli.arg)}. The server is configured through environment variables, not flags; run "${SERVER_NAME} --help" for the list.`,
-    );
-    process.exit(2);
-  }
-
-  const config = loadConfig(process.env);
-  const rest = new RestClient({
-    baseUrl: config.nodeUrl,
-    timeoutMs: config.requestTimeoutMs,
-    userAgent: `${SERVER_NAME}/${version}`,
-  });
-  const network = await resolveNetwork(rest, config);
-  const ctx = new AppContext(config, rest, network, version);
+async function serve(version: string): Promise<void> {
+  const ctx = await createAppContext(process.env, SERVER_NAME, version);
+  const { config, rest, network } = ctx;
 
   const tz = config.timeZone ? `, timezone ${config.timeZone}` : '';
   const refs =
@@ -59,6 +34,21 @@ async function main(): Promise<void> {
 
   serveStdio(() => createServer(ctx), {
     onerror: (err) => console.error(`${SERVER_NAME}: ${err.message}`),
+  });
+}
+
+async function main(): Promise<void> {
+  const version = readVersion();
+  // Any argument comes from a human at a terminal or from cron; MCP hosts pass none.
+  process.exitCode = await runCli(process.argv.slice(2), {
+    env: process.env,
+    stdout: (text) => {
+      process.stdout.write(text);
+    },
+    stderr: (text) => console.error(text),
+    serve: () => serve(version),
+    version,
+    now: () => new Date(),
   });
 }
 
