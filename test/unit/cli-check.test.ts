@@ -282,9 +282,33 @@ describe('mapFinality', () => {
     });
     expect(missed).toEqual({
       status: 'warn',
-      detail: 'epoch 4004: missed (signed prevote only)',
+      detail: 'epoch 4004: missed (signed prevote, not precommit)',
       hint: 'The account did not vote in the current epoch.',
     });
+    // A stage split into two message groups arrives as ONE stage from the tool.
+    const stages = [
+      { stageName: 'prevote', participated: true },
+      { stageName: 'precommit', participated: true },
+    ];
+    expect(
+      mapFinality({
+        epochs: [{ epoch: 4027, status: 'participated', stages }],
+        warning: null,
+        notes: [],
+      }),
+    ).toEqual({
+      status: 'ok',
+      detail: 'epoch 4027: participated (signed prevote and precommit)',
+      hint: null,
+    });
+    const none = stages.map((s) => ({ ...s, participated: false }));
+    expect(
+      mapFinality({
+        epochs: [{ epoch: 4027, status: 'missed', stages: none }],
+        warning: 'w',
+        notes: [],
+      }).detail,
+    ).toBe('epoch 4027: missed (signed no stage (not prevote, not precommit))');
     expect(mapFinality(view('no_active_key', { warning: 'no key' }))).toEqual({
       status: 'fail',
       detail: 'epoch 4004: no active key',

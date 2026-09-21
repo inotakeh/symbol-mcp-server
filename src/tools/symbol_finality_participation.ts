@@ -4,6 +4,7 @@ import { ChainInfoSchema, FinalizationProofSchema } from '../client/schemas.js';
 import { hexAddressToBase32 } from '../domain/address.js';
 import { parseHeight } from '../domain/epoch.js';
 import {
+  describeSignedStages,
   type EpochParticipation,
   evaluateEpochParticipation,
   expandEpochRange,
@@ -55,13 +56,25 @@ const inputSchema = z.object({
 const StageSchema = z.object({
   stage: z.number().describe('StageEnum value: 0 prevote, 1 precommit, 2 count.'),
   stageName: z.string(),
-  height: z.number(),
+  height: z
+    .number()
+    .describe('Lowest height among the message groups of this stage; all of them are in heights.'),
+  heights: z
+    .array(z.number())
+    .describe('Distinct heights of the message groups of this stage, ascending.'),
+  groups: z
+    .number()
+    .describe(
+      'Message groups of this stage in the proof. Usually 1; more when voters signed different hash lists, even at the same height.',
+    ),
   signatureCount: z
     .number()
     .describe(
-      'Voters whose signature is in this stage of the proof. The total number of registered voters is not known to this server.',
+      'Signatures in all message groups of this stage together. The total number of registered voters is not known to this server.',
     ),
-  participated: z.boolean(),
+  participated: z
+    .boolean()
+    .describe("One of the account's voting keys signed at least one message group of this stage."),
   matchedPublicKey: nullable(
     z.string(),
     "The account's voting key found among the signers; null when none of its keys signed.",
@@ -145,28 +158,27 @@ export class ProofUnavailableError extends ToolInputError {
 
 const NOTES = [
   "participated means one of the account's registered voting keys is among the root signers of every stage of the proof (prevote and precommit); signing only one stage counts as missed.",
-  'signatureCount is the number of voters whose signature appears in that stage. The total number of registered voting nodes is not known to this server, so a shortfall can only be judged against an external list such as nodewatch.',
+  'A proof can split one stage into several message groups, even at the same height, when voters signed different hash lists. Stages are judged as a whole: a signature in any group of the stage counts, stages[] has one entry per stage, and groups says how many message groups it had.',
+  'signatureCount is the number of signatures in that stage, all of its message groups together. The total number of registered voting nodes is not known to this server, so a shortfall can only be judged against an external list such as nodewatch.',
   UNAVAILABLE_NOTE,
   "Only this account's keys are reported; other voters' public keys are not included.",
 ];
 
 function stageCounts(r: EpochParticipation): string {
-  return r.stages.map((s) => `${s.stageName} ${s.signatureCount} signatures`).join(', ');
+  return r.stages
+    .map(
+      (s) =>
+        `${s.stageName} ${s.signatureCount} signatures${s.groups > 1 ? ` in ${s.groups} groups` : ''}`,
+    )
+    .join(', ');
 }
 
 function describeEpoch(r: EpochParticipation): string {
   switch (r.status) {
     case 'participated':
-      return `Epoch ${r.epoch}: participated (${stageCounts(r)}; proof at height ${formatInteger(r.height ?? 0)}, point ${r.finalizationPoint}).`;
-    case 'missed': {
-      const signed = r.stages.filter((s) => s.participated).map((s) => s.stageName);
-      const missed = r.stages.filter((s) => !s.participated).map((s) => s.stageName);
-      const detail =
-        signed.length > 0
-          ? `signed ${signed.join(' and ')} only, not ${missed.join(' or ')}`
-          : "the account's key signed neither stage";
-      return `Epoch ${r.epoch}: MISSED, ${detail} (${stageCounts(r)}).`;
-    }
+      return `Epoch ${r.epoch}: participated, ${describeSignedStages(r.stages)} (${stageCounts(r)}; proof at height ${formatInteger(r.height ?? 0)}, point ${r.finalizationPoint}).`;
+    case 'missed':
+      return `Epoch ${r.epoch}: MISSED, ${describeSignedStages(r.stages)} (${stageCounts(r)}).`;
     case 'no_active_key':
       return `Epoch ${r.epoch}: no registered voting key covers this epoch (${stageCounts(r)}).`;
     default:
@@ -278,7 +290,7 @@ export const finalityParticipationTool = defineTool({
         const { stages, ...rest } = r;
         return format === 'concise' && r.status === 'participated'
           ? rest
-          : { ...rest, stages: stages.map((s) => ({ ...s })) };
+          : { ...rest, stages: stages.map((s) => ({ ...s, heights: [...s.heights] })) };
       }),
       totals,
       warning,

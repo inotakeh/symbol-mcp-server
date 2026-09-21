@@ -25,6 +25,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without arguments (the MCP server), `--help` and `--version` are unchanged; `--help` now also
   documents `check`. See "CLI: monitoring from cron" in the README.
 
+### Fixed
+
+- `symbol_finality_participation` reported `missed` for an account that had voted, when the proof
+  split one stage into several message groups. A node does that when voters signed different
+  hash lists, even at the same height (mainnet epoch 4027: one precommit group and two prevote
+  groups with 2 and 15 signatures); a voter's key is then in one of the groups only, while the
+  tool required it in every group, and the summary contradicted itself ("signed prevote and
+  precommit only, not prevote"). Stages are now judged as a whole: a stage is signed when the key
+  is among the root signers of any of its groups, and `participated` means every stage present
+  in the proof is signed. `stages[]` has one entry per stage with the new fields `groups` (message
+  groups of the stage) and `heights` (their distinct heights); `signatureCount` is the total over
+  the stage's groups and `height` the lowest height (unchanged for the usual one group per stage).
+  The summary lists the signed stages and, when missed, the unsigned ones, each named once
+  ("signed prevote and precommit", "signed prevote, not precommit"). Proofs with one group per
+  stage give the same result as before.
+
 ## [0.4.0] - 2026-09-19
 
 ### Changed

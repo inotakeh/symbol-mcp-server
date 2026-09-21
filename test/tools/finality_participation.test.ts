@@ -3,6 +3,10 @@
  * (test/fixtures/mainnet/finalization-proof-epoch.json, see test/fixtures/README.md). The
  * account's active voting key (H("fixture:voting-key-2")) is root signer #01 in both stages; the
  * other 16 root keys are H("fixture:voter-02") ... H("fixture:voter-17").
+ *
+ * finalization-proof-split-prevote.json has the shape of the real epoch 4027 proof: one precommit
+ * group and TWO prevote groups at the same height (2 and 15 signatures), the account's key in the
+ * larger one only. Stages are judged as a whole, so that is a participated epoch.
  */
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -35,6 +39,11 @@ const PROOF_HEIGHT = 5_772_912;
 const PREVOTE_HEIGHT = 5_772_892;
 const SIGNATURES = 17;
 const PROOF_PATH = `/finalization/proof/epoch/${PROOF_EPOCH}`;
+const SPLIT_EPOCH = 4027;
+const SPLIT_PREVOTE_HEIGHT = 5_796_428;
+const SPLIT_PROOF_HEIGHT = 5_796_448;
+const SPLIT_POINT = 22;
+const SPLIT_PATH = `/finalization/proof/epoch/${SPLIT_EPOCH}`;
 
 type Proof = {
   finalizationEpoch: number;
@@ -63,6 +72,8 @@ type EpochRow = {
     stage: number;
     stageName: string;
     height: number;
+    heights: number[];
+    groups: number;
     signatureCount: number;
     participated: boolean;
     matchedPublicKey: string | null;
@@ -71,6 +82,7 @@ type EpochRow = {
 };
 
 const proof = () => fixture<Proof>('mainnet/finalization-proof-epoch.json');
+const splitProof = () => fixture<Proof>('mainnet/finalization-proof-split-prevote.json');
 
 /** First epoch row of a successful call. */
 function firstEpoch(result: { structuredContent: Record<string, unknown> | undefined }): EpochRow {
@@ -88,15 +100,15 @@ function withVotingKeys(keys: Array<{ publicKey: string; startEpoch: number; end
 }
 
 /** chain-info fixture with the latest finalized epoch moved to `finalizationEpoch`. */
-function chainAt(finalizationEpoch: number) {
+function chainAt(finalizationEpoch: number, point = PROOF_POINT, height = PROOF_HEIGHT) {
   const chain = fixture<{ latestFinalizedBlock: Record<string, unknown> }>(
     'mainnet/chain-info.json',
   );
   chain.latestFinalizedBlock = {
     ...chain.latestFinalizedBlock,
     finalizationEpoch,
-    finalizationPoint: PROOF_POINT,
-    height: String(PROOF_HEIGHT),
+    finalizationPoint: point,
+    height: String(height),
   };
   return chain;
 }
@@ -127,6 +139,27 @@ describe('the synthetic proof fixture', () => {
       expect(new Set(roots)).toEqual(new Set([OWN_KEY, ...voters]));
       expect(g.signatures.map((s) => s.bottom.parentPublicKey)).not.toContain(OWN_KEY);
     }
+  });
+
+  it('has a second proof shaped like the real epoch 4027 one: prevote split into two groups', () => {
+    const p = splitProof();
+    expect(p.finalizationEpoch).toBe(SPLIT_EPOCH);
+    expect(p.messageGroups.map((g) => [g.stage, g.height, g.signatures.length])).toEqual([
+      [1, String(SPLIT_PROOF_HEIGHT), SIGNATURES],
+      [0, String(SPLIT_PREVOTE_HEIGHT), 2],
+      [0, String(SPLIT_PREVOTE_HEIGHT), 15],
+    ]);
+    // The two prevote groups voted for different hash lists: that is why the node splits them.
+    expect(p.messageGroups.map((g) => g.hashes.length)).toEqual([1, 13, 21]);
+    expect(p.messageGroups[2]?.hashes.slice(0, 13)).toEqual(p.messageGroups[1]?.hashes);
+    expect(p.hash).toBe(H('fixture:proof-4027-hash-21'));
+    const roots = p.messageGroups.map((g) => g.signatures.map((s) => s.root.parentPublicKey));
+    expect(roots[0]).toContain(OWN_KEY);
+    expect(new Set(roots[1])).toEqual(new Set([H('fixture:voter-16'), H('fixture:voter-17')]));
+    expect(roots[1]).not.toContain(OWN_KEY);
+    expect(roots[2]).toContain(OWN_KEY);
+    // Nobody signed both prevote groups; together they are the 17 voters of the precommit group.
+    expect(new Set([...(roots[1] ?? []), ...(roots[2] ?? [])])).toEqual(new Set(roots[0]));
   });
 });
 
@@ -173,6 +206,8 @@ describe('symbol_finality_participation', () => {
         stage: 0,
         stageName: 'prevote',
         height: PREVOTE_HEIGHT,
+        heights: [PREVOTE_HEIGHT],
+        groups: 1,
         signatureCount: SIGNATURES,
         participated: true,
         matchedPublicKey: OWN_KEY,
@@ -181,6 +216,8 @@ describe('symbol_finality_participation', () => {
         stage: 1,
         stageName: 'precommit',
         height: PROOF_HEIGHT,
+        heights: [PROOF_HEIGHT],
+        groups: 1,
         signatureCount: SIGNATURES,
         participated: true,
         matchedPublicKey: OWN_KEY,
@@ -199,7 +236,7 @@ describe('symbol_finality_participation', () => {
     expect(summary).toMatch(/1 epoch checked \(epoch 4010; latest finalized epoch 4004\)/);
     expect(summary).toMatch(/1 participated, 0 missed, 0 without an active key, 0 unavailable/);
     expect(summary).toMatch(
-      /Epoch 4010: participated \(prevote 17 signatures, precommit 17 signatures; proof at height 5,772,912, point 69\)/,
+      /Epoch 4010: participated, signed prevote and precommit \(prevote 17 signatures, precommit 17 signatures; proof at height 5,772,912, point 69\)/,
     );
     expect(summary).toMatch(
       /Voting keys: 2 registered, 1 covers epoch 4010 \(534A99C9… epochs 3700-4059\)/,
@@ -260,7 +297,7 @@ describe('symbol_finality_participation', () => {
       /did not sign any stage of the finalization proof for epoch 4010, the current finalization epoch/,
     );
     expect(result.structuredContent?.summary).toMatch(
-      /Epoch 4010: MISSED, the account's key signed neither stage/,
+      /Epoch 4010: MISSED, signed no stage \(not prevote, not precommit\) \(prevote 17/,
     );
     expect(result.structuredContent?.summary).toMatch(/Warning: /);
   });
@@ -308,9 +345,108 @@ describe('symbol_finality_participation', () => {
       ['precommit', false],
     ]);
     expect(result.structuredContent?.summary).toMatch(
-      /Epoch 4010: MISSED, signed prevote only, not precommit/,
+      /Epoch 4010: MISSED, signed prevote, not precommit \(prevote 17/,
     );
     expect(result.structuredContent?.warning).toMatch(/did not sign the precommit stage/);
+  });
+
+  it('counts a stage as signed when the key is in one of its two message groups (epoch 4027 shape)', async () => {
+    server = await startTestServer({
+      routes: routes({
+        'GET /chain/info': chainAt(SPLIT_EPOCH, SPLIT_POINT, SPLIT_PROOF_HEIGHT),
+      }),
+    });
+    // No epoch argument: this is what the CLI check asks for (the latest finalized epoch).
+    const result = await server.callTool('symbol_finality_participation', {
+      account: ADDRESS,
+      format: 'detailed',
+    });
+    expect(result.isError).toBe(false);
+    const row = firstEpoch(result);
+    expect(row).toMatchObject({
+      epoch: SPLIT_EPOCH,
+      status: 'participated',
+      finalizationPoint: SPLIT_POINT,
+      height: SPLIT_PROOF_HEIGHT,
+      participatedAllStages: true,
+    });
+    // One entry per stage: the two prevote groups are one stage with 2 + 15 signatures.
+    expect(row.stages).toEqual([
+      {
+        stage: 0,
+        stageName: 'prevote',
+        height: SPLIT_PREVOTE_HEIGHT,
+        heights: [SPLIT_PREVOTE_HEIGHT],
+        groups: 2,
+        signatureCount: SIGNATURES,
+        participated: true,
+        matchedPublicKey: OWN_KEY,
+      },
+      {
+        stage: 1,
+        stageName: 'precommit',
+        height: SPLIT_PROOF_HEIGHT,
+        heights: [SPLIT_PROOF_HEIGHT],
+        groups: 1,
+        signatureCount: SIGNATURES,
+        participated: true,
+        matchedPublicKey: OWN_KEY,
+      },
+    ]);
+    expect(result.structuredContent?.totals).toMatchObject({ participated: 1, missed: 0 });
+    expect(result.structuredContent?.warning).toBeNull();
+    const summary = result.structuredContent?.summary as string;
+    expect(summary).toContain(
+      'Epoch 4027: participated, signed prevote and precommit (prevote 17 signatures in 2 groups, precommit 17 signatures; proof at height 5,796,448, point 22).',
+    );
+    expect(summary).not.toMatch(/MISSED|only|Warning/);
+    const notes = (result.structuredContent?.notes ?? []) as string[];
+    expect(notes.join(' ')).toContain('a signature in any group of the stage counts');
+    expect(JSON.stringify(result.structuredContent)).not.toContain(H('fixture:voter-16'));
+    const def = TOOLS.find((t) => t.name === 'symbol_finality_participation');
+    expect(def?.outputSchema.safeParse(result.structuredContent).success).toBe(true);
+    expect(server.requests.map((u) => u.pathname)).toContain(SPLIT_PATH);
+  });
+
+  it('is the same answer in concise format and for an explicit epoch', async () => {
+    server = await startTestServer();
+    const result = await server.callTool('symbol_finality_participation', {
+      account: ADDRESS,
+      epoch: SPLIT_EPOCH,
+    });
+    expect(result.isError).toBe(false);
+    const row = firstEpoch(result);
+    expect(row.status).toBe('participated');
+    expect(row.stages).toBeUndefined();
+  });
+
+  it('names each stage once when the key is in neither prevote group', async () => {
+    const p = splitProof();
+    for (const g of p.messageGroups.filter((group) => group.stage === 0)) {
+      for (const s of g.signatures) {
+        if (s.root.parentPublicKey === OWN_KEY) s.root.parentPublicKey = H('fixture:voter-99');
+      }
+    }
+    server = await startTestServer({
+      routes: routes({
+        'GET /chain/info': chainAt(SPLIT_EPOCH, SPLIT_POINT, SPLIT_PROOF_HEIGHT),
+        [`GET ${SPLIT_PATH}`]: p,
+      }),
+    });
+    const result = await server.callTool('symbol_finality_participation', { account: ADDRESS });
+    expect(result.isError).toBe(false);
+    const row = firstEpoch(result);
+    expect(row.status).toBe('missed');
+    expect(
+      row.stages?.map((s) => [s.stageName, s.groups, s.signatureCount, s.participated]),
+    ).toEqual([
+      ['prevote', 2, SIGNATURES, false],
+      ['precommit', 1, SIGNATURES, true],
+    ]);
+    const summary = result.structuredContent?.summary as string;
+    expect(summary).toContain('Epoch 4027: MISSED, signed precommit, not prevote (prevote 17');
+    expect(summary).not.toMatch(/signed [a-z ]*prevote[a-z ,]* not prevote|prevote and precommit/);
+    expect(result.structuredContent?.warning).toMatch(/did not sign the prevote stage of/);
   });
 
   it('reports no_active_key when no registered key covers the epoch', async () => {

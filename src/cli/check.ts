@@ -10,6 +10,7 @@
 import * as z from 'zod/v4';
 import { RestError } from '../client/rest.js';
 import type { AppContext } from '../context.js';
+import { describeSignedStages } from '../domain/finality.js';
 import { sanitizeUntrusted } from '../domain/sanitize.js';
 import type { Instant } from '../domain/time.js';
 import { formatInstantText } from '../domain/time.js';
@@ -262,9 +263,10 @@ export function mapFinality(output: FinalityView): ItemBody {
     };
   }
   let detail = `epoch ${latest.epoch}: ${latest.status.replaceAll('_', ' ')}`;
-  if (latest.status === 'missed' && latest.stages) {
-    const signed = latest.stages.filter((s) => s.participated).map((s) => s.stageName);
-    detail += signed.length > 0 ? ` (signed ${signed.join(' and ')} only)` : ' (signed no stage)';
+  // Stages are judged as a whole by the tool (a stage may span several message groups), so each
+  // is named once: "signed prevote and precommit" / "signed prevote, not precommit".
+  if (latest.status !== 'no_active_key' && latest.stages) {
+    detail += ` (${describeSignedStages(latest.stages)})`;
   }
   return {
     status: FINALITY_STATUS[latest.status],
@@ -418,7 +420,8 @@ export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<
           await finalityParticipationTool.run(ctx, {
             account: account ?? '',
             epochs: 1,
-            format: 'concise',
+            // detailed: the stages are listed for a participated epoch too (the detail names them).
+            format: 'detailed',
           }),
         ),
     },

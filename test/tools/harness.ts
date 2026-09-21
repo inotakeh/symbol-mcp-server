@@ -112,6 +112,9 @@ export function mainnetRoutes(): Routes {
     },
     // Synthetic finalization proof for epoch 4010 (keys derived, see test/fixtures/README.md).
     'GET /finalization/proof/epoch/4010': fixture('mainnet/finalization-proof-epoch.json'),
+    // Shape of the real epoch 4027 proof: the prevote stage split into two message groups at one
+    // height (2 and 15 signatures); the fixture account's key is in the larger group only.
+    'GET /finalization/proof/epoch/4027': fixture('mainnet/finalization-proof-split-prevote.json'),
   };
 }
 

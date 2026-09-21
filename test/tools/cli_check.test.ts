@@ -89,7 +89,7 @@ describe('runCheck against the fixture node', () => {
       /^active key 534A99C9… expires in about 27\.\d days \(epoch 4059, estimated /,
     );
     expect(item(report, 'finality_participation').detail).toBe(
-      `epoch ${LATEST_EPOCH}: participated`,
+      `epoch ${LATEST_EPOCH}: participated (signed prevote and precommit)`,
     );
     expect(report.account).toBe(ADDRESS);
     expect(report.warnDays).toBe(14);
@@ -310,6 +310,56 @@ describe('runCheck against the fixture node', () => {
     expect(item(report, 'voting_key_status').detail).toContain('public key DEADBEEF…');
     expect(formatCheckJson(report)).not.toContain(looksLikeSecret);
     expect(formatCheckText(report)).not.toContain(looksLikeSecret);
+  });
+
+  it('is ok when the prevote stage is split into two groups and the key is in one (epoch 4027 shape)', async () => {
+    const split = fixture<Record<string, unknown>>('mainnet/finalization-proof-split-prevote.json');
+    const { ctx } = await createTestContext({
+      routes: routes({
+        [`GET /finalization/proof/epoch/${LATEST_EPOCH}`]: {
+          ...split,
+          finalizationEpoch: LATEST_EPOCH,
+        },
+      }),
+    });
+    const report = await runCheck(ctx, { account: ADDRESS, warnDays: 14 });
+    expect(item(report, 'finality_participation')).toEqual({
+      id: 'finality_participation',
+      status: 'ok',
+      detail: `epoch ${LATEST_EPOCH}: participated (signed prevote and precommit)`,
+      hint: null,
+    });
+    expect(report.exitCode).toBe(0);
+  });
+
+  it('names the unsigned stage once when the key is in neither prevote group', async () => {
+    const split = fixture<{
+      messageGroups: Array<{
+        stage: number;
+        signatures: Array<{ root: { parentPublicKey: string } }>;
+      }>;
+    }>('mainnet/finalization-proof-split-prevote.json');
+    const own = '534A99C9338ECD32AD8E8C3F38304D2A9477049601ECE134A11F36EB4D36D549';
+    for (const g of split.messageGroups.filter((group) => group.stage === 0)) {
+      for (const s of g.signatures) {
+        if (s.root.parentPublicKey === own) s.root.parentPublicKey = 'F'.repeat(64);
+      }
+    }
+    // The missed epoch is the current one, so the tool also warns; move /chain/info to it.
+    const { ctx } = await createTestContext({
+      routes: routes({
+        [`GET /finalization/proof/epoch/${LATEST_EPOCH}`]: {
+          ...split,
+          finalizationEpoch: LATEST_EPOCH,
+        },
+      }),
+    });
+    const report = await runCheck(ctx, { account: ADDRESS, warnDays: 14 });
+    const finality = item(report, 'finality_participation');
+    expect(finality.status).toBe('warn');
+    expect(finality.detail).toBe(`epoch ${LATEST_EPOCH}: missed (signed precommit, not prevote)`);
+    expect(finality.hint).toMatch(/did not sign the prevote stage of/);
+    expect(report.exitCode).toBe(1);
   });
 
   it('warns (not fails) when the node has no proof for the latest epoch', async () => {
