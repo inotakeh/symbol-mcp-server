@@ -60,7 +60,7 @@ The server speaks MCP over stdio. On start-up it fetches `/node/info`, detects m
 from the generation hash seed, and logs one line to stderr:
 
 ```
-symbol-mcp-server 0.1.0: mainnet via <node-host>:3001, timezone Asia/Tokyo
+symbol-mcp-server 0.5.0: mainnet via <node-host>:3001, timezone Asia/Tokyo
 ```
 
 ### Claude Desktop

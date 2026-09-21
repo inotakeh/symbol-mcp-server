@@ -56,7 +56,7 @@ SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
 判定して、stderr に 1 行ログを出します。
 
 ```
-symbol-mcp-server 0.1.0: mainnet via <node-host>:3001, timezone Asia/Tokyo
+symbol-mcp-server 0.5.0: mainnet via <node-host>:3001, timezone Asia/Tokyo
 ```
 
 ### Claude Desktop
