@@ -297,6 +297,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - 状態ファイル I/O（`src/state/snapshotfile.ts`、一時ディレクトリ）: 無し / 不正 JSON / 形不一致 / ディレクトリ / symlink（win32 skip）→ corrupt、dir 0o700・file 0o600 の作成、既存 dir の mode 不変、一時ファイルが残らない、上書き、symlink 置換で外側ファイル不変、読み取り専用 dir で `StateFileError`（win32・root skip）、ディレクトリ外は fs に触れる前に拒否
 - `RestClient.get` の `acceptStatuses`（503 受理で本文が返る / 未指定は http / 他ステータスは http / 受理しても非 JSON は invalid_response / 404 は列挙時のみ）
 - 委任診断の規則（`src/domain/delegation.ts`）: verdict（fail 優先 / unknown → cannot_verify / warn のみ → active）、importance 再計算までの残りブロック（ちょうど倍数のときは G）、鍵有無、委任要求マーカー判定（マーカーのみ / 先頭 0xFE だが不一致 / 平文）
+- CLI check の純粋部分（`test/unit/cli-check.test.ts`、§13）: 5 項目それぞれの「ツールの verdict → status」対応表、`decideExit`（ok / skip のみ → 0、warn → 1、fail 優先 → 2、時間上限 → 最低 1、全項目到達不能 → 3）、`--warn-days` の境界（14 = warn / 14.1・15 = ok / 3 = fail / 0・失効のみ = fail / 後継キー登録済み = ok / active 複数は残り最大で判定）、hint がツールの文言から取られること、引数解析（既定値、`--flag value` と `--flag=value`、不正値・重複・値欠落・`--quiet=1` → usage、`check --help`）、`runCli` の exit 3（リクエスト 0 回）、`--quiet` は exit 0 のときだけ無出力、text / JSON の整形、`src/cli/*.ts` に `@modelcontextprotocol` の import が無いこと。`test/unit/cli.test.ts`: `check` が `serve` を呼ばない／引数なしは呼ぶ／`--help` に check と exit code。`test/unit/voting.test.ts`: `hasSuccessorKey`
 
 **ツール層（CIで必ず実行。SDK公式のインプロセス方式）**
 `createMcpHandler(createServer)` を作り、`@modelcontextprotocol/client` の `Client` を `StreamableHTTPClientTransport(url, { fetch: (u, i) => handler.fetch(new Request(u, i)) })` で接続して `client.callTool()` を呼ぶ。ノードへの `fetch` は `vi.stubGlobal('fetch', ...)` で差し替え、固定レスポンスを返す。
@@ -314,6 +315,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - initialize 結果に `instructions` が含まれること（`client.getInstructions()` が `SERVER_INSTRUCTIONS` と一致）
 - `prompts/list` が固定順で返り、`prompts/get` が `account` を埋め込んだ本文を返し、`account` 無し・不正アドレスがエラーになること。テンプレートに実在のアドレス・ホスト・鍵・ハッシュ・日付が無いこと
 - **2026-07-28 世代**（`test/tools/era_2026.test.ts`）: Client を `versionNegotiation: { mode: { pin: '2026-07-28' } }` で同じ `createMcpHandler.fetch` に接続し、`getProtocolEra() === 'modern'`、`tools/list` が全ツールを既定順で annotations / outputSchema 付きで返し `ttlMs` / `cacheScope` が宣言どおり載ること（生 JSON でも確認）、`prompts/list` / `prompts/get`、`tools/call` が `content[0].text` と `structuredContent` の両方を返すこと（csv 出力では text が CSV）、`getInstructions()` と discover 結果の `instructions`、`_meta` のサーバー identity、全ツールのスモーク呼び出し（`SMOKE_CALLS`、outputSchema 検証付き）。2025 世代のテストはそのまま残し、そちらでは cache フィールドが付かないことを確認する。**注意**: SDK Client の `mode: 'auto'` はインプロセスの `createMcpHandler` に対して modern に解決する（2026-09-13 に確認）ので、ハーネスの既定は明示的に `mode: 'legacy'` にしてある。auto のままだと 2025 世代の回帰テストは存在しない
+- **CLI check**（`test/tools/cli_check.test.ts`、§13。MCP クライアントを通さず、ハーネスの `createTestContext`（stub fetch + AppContext。`startTestServer` の前半を切り出したもの）で `runCheck` を直接呼ぶ）: 全 ok → exit 0（最新確定エポック 4004 の proof は epoch 4010 フィクスチャを in-test で付け替える。新しいフィクスチャは作らない）/ `/node/time` 503 → WARN・exit 1・text 1 行目 / `/node/health` 503 `db: down` → FAIL・exit 2 / 起動後に `/node/info` だけ 500 → その項目だけ fail で他は実行 / 起動後に fetch が throw → 全項目 unreachable で ERROR・exit 3 / `--account` 無しで 4・5 が skip、`SYMBOL_STATE_DIR` 無しで 3 が skip（該当リクエストも飛ばない）/ `SYMBOL_STATE_DIR` ありで 3 回実行（baseline → `+0 -1` で warn → `+1 -0` で ok）/ 読み取り専用 dir → warn（win32・root skip）/ `--warn-days 30` で warn・hint はツールの warning / ネームスペース名 → `account` は解決後アドレス / 存在しないアカウント → exit 2・`account` はマスク / 64 桁 hex を出力しない / proof 無し → warn / JSON の形（キー順・`CheckReportSchema`）/ `SYMBOL_NODE_URL` と参照ノード以外に fetch しない（参照ノードへは `/node/info` のみ）/ 時間上限（応答しないルート + `timeLimitMs: 300`）
 
 **統合（`SYMBOL_INTEGRATION=1` のときだけ。CI既定では走らせない）**
 - testnet ノードに対して全ツールがエラーなく応答する
@@ -328,7 +330,10 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 ```
 .
 ├── src/
-│   ├── index.ts            # #!/usr/bin/env node、config読込→createServer→serveStdio
+│   ├── index.ts            # #!/usr/bin/env node、runCli に実プロセスを配線するだけ（serve = createAppContext→createServer→serveStdio）
+│   ├── cli.ts              # 引数解析（手書き）、runCli(argv, deps)、--help の本文。check サブコマンドの入口（§13）
+│   ├── cli/                # check.ts（runCheck・対応表・decideExit）、format.ts（text / JSON）。MCP SDK を import しない（§13）
+│   ├── context.ts          # AppContext と createAppContext（サーバーと check で共通の起動手順）
 │   ├── server.ts           # createServer(): McpServer（ツール登録）
 │   ├── config.ts           # env 読込・URL検証・ネットワーク照合
 │   ├── client/rest.ts      # fetch ラッパ（timeout, UA, サイズ上限, スキーマ検証）
@@ -407,3 +412,43 @@ README、CHANGELOG、SECURITY.md、`evals/`（代表的な質問10件と期待�
 
 **ツール設計**
 - Anthropic「Writing effective tools for agents」: https://www.anthropic.com/engineering/writing-tools-for-agents
+
+## 13. CLI モード（`check`。既存の節番号は振り直さず末尾に追加）
+
+**目的**: MCP クライアント無しで、cron から 1 コマンドでノードの健全性を判定し、異常があれば非ゼロで終了する。**通知はしない**（cron の `MAILTO` に任せる。外部通信を増やさない）。引数なしで起動したときの挙動（MCP サーバー、stdio）、`--help` / `--version`、未知の引数 → exit 2 は変えない。
+
+```
+symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <n>] [--format text|json] [--quiet]
+```
+
+- 環境変数は MCP と共通（`createAppContext` = loadConfig → RestClient → resolveNetwork → AppContext を `src/context.ts` に置き、サーバーと check の両方が使う）。`--warn-days` は 1〜120 の整数で既定 14、`--format` は既定 text、`--quiet` は exit 0 のとき何も出力しない。
+- 引数解析は手書き（`src/cli.ts` の `parseCliArgs`）。`--flag value` と `--flag=value` の両方。未知フラグ・位置引数・値欠落・重複・範囲外・`--quiet=…`・`--account` の構文不正（`classifyAccountId`。通信なし）は exit 3。`check --help` は全体の help。
+
+**判定は既存ツールの読み替えのみ**。`runCheck(ctx, options)`（`src/cli/check.ts`）が 5 項目を**固定順・逐次**で `tool.run(ctx, input)` を直接呼ぶ（MCP のトランスポートも結果整形も通さない）。ツール側の閾値やロジックは CLI 用に変えない。対応表 `mapNodeHealth` / `mapVersionDrift` / `mapHarvesterWatch` / `mapVotingKeys(output, warnDays)` / `mapFinality` と `decideExit` は純粋関数で、引数は「読むフィールドだけ」の構造型（ツール出力がそのまま渡せる）。
+
+| # | id | 呼び方 | status |
+|---|---|---|---|
+| 1 | `node_health` | `symbol_node_health` | healthy → ok / degraded → warn / unhealthy → fail |
+| 2 | `version_drift` | `symbol_version_drift` | ok → ok / behind → warn / far_behind → fail / unknown → warn |
+| 3 | `harvester_watch` | `symbol_harvester_watch`、mode `compare_and_save` | `comparison.deltaCount < 0` → warn、`saved === false`（書込失敗）→ warn、それ以外 ok（baseline も ok）。`ctx.config.stateDir` 未設定ならツールを呼ばず skip（detail はツールの `UNSET_NOTE`） |
+| 4 | `voting_key_status` | `symbol_voting_key_status`（`--account` 指定時） | active キーが無い → fail。active のうち `remainingDays` 最大の鍵について: 後継キーが切れ目なく登録済み（`hasSuccessorKey`。ツールの警告抑止と同じ規則を `domain/voting.ts` から切り出したもの）→ ok、`≤ RENEWAL_WINDOW_END_DAYS`（3。推奨ウィンドウの終端。ツールと同じ定数）→ fail、`≤ warn-days` → warn、それ以外 ok。`--account` 無しなら skip |
+| 5 | `finality_participation` | `symbol_finality_participation`、`epochs: 1`（`--account` 指定時） | participated → ok / missed → warn / no_active_key → fail / unavailable → warn。`--account` 無しなら skip |
+
+- 各項目は `{ id, status: ok|warn|fail|skip, detail, hint: string|null }`。**hint はツールの出力から取る**（新しい助言文を書かない）: 1 = 最も重い非 ok check（fail > warn > unknown、同順位はツールの固定順）の `checks[].hint`、2 = summary の「- 」行、3 = 保存失敗の note（`NOT_SAVED_NOTE_PREFIX`）または再起動注記（`RESTART_NOTE`）、4 = その鍵の 8 桁プレフィックスを含む `warnings[]`（active 無しのときは `warnings[0]`）、5 = `warning`、unavailable は `UNAVAILABLE_NOTE`。ツールが 30 日より前は警告を出さないので、`--warn-days` > 30 の warn は hint が null になりうる。
+- detail: 1 = verdict と非 ok check の id・status、最も重い check の detail（healthy のときは `chain` の高さ差を finalization lag として添える）、2 = summary の 1 行目、3 = ツールの summary、4 = 鍵プレフィックス・残り日数・endEpoch・失効予定（後継ありなら `successor registered`）、5 = エポックと status。
+- 例外: `RestError` → fail（detail に kind / status / path、hint は `describeError`）。`ToolInputError` → fail（1 文目が detail、残りが hint。存在しないアカウントはここ → exit 2）。ただし `epochs: 1` で proof が無いとツールは `unavailable` を返さず例外を投げるので、`ProofUnavailableError extends ToolInputError`（メッセージも MCP 側の isError 結果も不変）を足し、check はこれだけ warn にする。それ以外の例外 → fail（詳細は `describeError` が stderr へ）。1 項目が失敗しても残りは実行する。
+- JSON の `account`: 4 番目の出力の base32 アドレス。4 番目が失敗・skip なら `maskIdentifier` でマスクした入力、`--account` 無しなら null。64 桁 hex（秘密鍵の貼り間違いかもしれない値）は出力に現れない。
+
+**exit code**（`decideExit`）: 0 = すべて ok または skip、1 = warn あり（fail なし）、2 = fail あり、3 = 実行できなかった。3 になるのは、引数エラー、`createAppContext` の失敗（`ConfigError` / `NetworkVerificationError` / `/node/info` の `RestError`。stdout は空）、実行した項目（skip 以外）が**全部** `unreachable` / `timeout` の `RestError` だったとき（verdict `error`）。3 のときは stderr に 1〜2 行の原因とヒント。`process.exit` は使わず `process.exitCode`（stdout の書き残しを切らない）。サーバーの起動失敗（exit 1）は従来どおり。
+
+**出力**: stdout のみ、色・装飾なし。
+- text（既定）: 1 行目 `symbol check: OK|WARN|FAIL|ERROR (<host>, <network>, <time>)`（`<time>` は `ctx.instant(now)` の local、無ければ utc）、以降 1 項目 1 行 `[ok] node_health: …`、warn / fail の行の次に `  hint: …` を 1 行（hint が null なら出さない）。detail / hint の改行は空白に畳む。
+- json: `runCheck` の結果をそのまま 1 つの JSON で。`{ verdict: ok|warn|fail|error, exitCode, node: { host, network }, checkedAt: Instant, checks: [...], warnDays, account: string|null }`。structuredContent と同じ規約（数値は数値、Instant は既存の形）。形は `CheckReportSchema`（zod）でテストする。
+- `--quiet` は exit 0 のときだけ無出力。診断行（時間上限、起動後の到達不能）は `options.onDiagnostic` 経由で stderr へ。
+- **stdout に書くのは check モードだけ**で、書く場所は `index.ts` が `deps.stdout` に渡す `process.stdout.write` の 1 箇所。サーバーモードは従来どおり stdout に何も書かない（§10 の `console.log` 禁止はそのまま。biome の `noConsole` も据え置き）。
+
+**実行時間上限**: `options.timeLimitMs`（既定 120,000。CLI フラグは足さない）。各項目を残り時間と競争させ、上限に達したら実行中の項目と残りを skip にする（detail に理由）。総合判定は**最低でも WARN（exit 1）**で、`--quiet` でも出力し、stderr に理由を書く。打ち切った項目のリクエストは中断しないので、プロセスは最長 `SYMBOL_REQUEST_TIMEOUT_MS` 程度残りうる（打ち切られた `harvester_watch` が後からスナップショットを書くことはあり得るが、内容は通常の追記と同じ）。
+
+**外部通信・状態**: `SYMBOL_NODE_URL` と、`symbol_version_drift` 経由の `SYMBOL_REFERENCE_NODES`（`/node/info` のみ）だけ。通知・テレメトリなし。ディスクに書くのは従来どおり `symbol_harvester_watch` の状態ファイルだけ（§2-9。check は 1 回の実行で 1 件追記する）。
+
+**置き場所**: `src/cli/` に閉じる（`check.ts`、`format.ts`）。将来 CLI を別パッケージに切り出せるように、**`src/cli/` から `@modelcontextprotocol` を import しない**（テストで検査。`tools/_shared.ts` 経由の `import type` は実行時に消えるので今回は許容）。`src/cli.ts` は `runCli(argv, deps)`（`deps = { env, stdout, stderr, serve, version, now }`）で、`index.ts` は実プロセスを配線して `process.exitCode` を設定するだけ。instructions / prompts / evals は変更しない（CLI は MCP の外）。

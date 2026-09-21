@@ -246,6 +246,70 @@ prompt text contains no addresses, hosts, keys or dates of its own.
 The server also sends short `instructions` at initialize time (read-only, account formats, which
 tool answers harvest-income and voting-key questions, use the returned numbers as they are).
 
+## CLI: monitoring from cron
+
+The same binary has a one-shot `check` subcommand that needs no MCP client. It judges the node with
+the tools above, prints one report and exits non-zero when something is wrong:
+
+```
+symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <n>]
+                        [--format text|json] [--quiet]
+```
+
+It reads the same environment variables as the server (`SYMBOL_NODE_URL` is required;
+`SYMBOL_TIMEZONE`, `SYMBOL_REFERENCE_NODES` and `SYMBOL_STATE_DIR` are optional) and needs
+Node.js 22 or newer. Started without arguments the binary is still the MCP server, unchanged.
+
+| # | Item | ok / warn / fail |
+|---|---|---|
+| 1 | `node_health` | `symbol_node_health`: healthy / degraded / unhealthy |
+| 2 | `version_drift` | `symbol_version_drift`: ok / behind or unknown / far_behind |
+| 3 | `harvester_watch` | `symbol_harvester_watch` (compare and save): warn when fewer harvesters are unlocked than at the previous run, or when the snapshot could not be saved. Skipped without `SYMBOL_STATE_DIR` |
+| 4 | `voting_key_status` | With `--account`: warn when the active voting key expires within `--warn-days` (default 14, 1 to 120), fail within 3 days or without an active key; ok when a successor key is already registered without a gap. Skipped without `--account` |
+| 5 | `finality_participation` | With `--account`, latest finalized epoch: participated / missed or no proof on the node / no key covers the epoch. Skipped without `--account` |
+
+The judgments are the tools' own; the check only reads their output, and the hint printed under a
+warn or fail line is the tool's text. A tool that fails (for example an HTTP error) fails its item
+and the others still run.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | every item is ok or skipped |
+| 1 | at least one warning, no failure |
+| 2 | at least one failure |
+| 3 | the check could not run: configuration error, node unreachable, or bad arguments (one or two lines on stderr say why) |
+
+Text output (the default; illustrative values):
+
+```
+symbol check: WARN (node.example:3001, mainnet, 2026-01-15T07:00:03+09:00)
+[ok] node_health: healthy (finalization lag 12 blocks)
+[ok] version_drift: ok. node.example:3001 runs 1.0.3.9; majority of 24 sampled nodes runs 1.0.3.9; 0% run something newer.
+[ok] harvester_watch: 18 unlocked harvesters on node.example:3001, unchanged since 2026-01-14T07:00:02+09:00 (2026-01-13T22:00:02.000Z). Snapshot saved (31 stored).
+[warn] voting_key_status: active key 0A1B2C3D… expires in about 12.4 days (epoch 4321, estimated 2026-01-27T16:40:00+09:00 (2026-01-27T07:40:00.000Z))
+  hint: Active voting key 0A1B2C3D… expires at epoch 4321 in about 12.4 days (...) and no successor key is registered.
+[ok] finality_participation: epoch 4290: participated
+```
+
+`--format json` prints the same report as one JSON document: `{ verdict, exitCode, node: { host,
+network }, checkedAt, checks: [{ id, status, detail, hint }], warnDays, account }`, with `verdict`
+one of `ok`, `warn`, `fail`, `error` (exit code 3) and `account` the resolved address. `--quiet`
+prints nothing when the exit code is 0, so cron only mails when there is something to read:
+
+```
+MAILTO=you@example.com
+0 7 * * * SYMBOL_NODE_URL=https://node.example:3001 SYMBOL_STATE_DIR=/var/lib/symbol-mcp-server \
+  npx --yes symbol-mcp-server check --account NXXX... --warn-days 14 --quiet
+```
+
+- **The check sends no notification.** It writes to stdout and stderr and sets the exit code; mail
+  is cron's job (`MAILTO`). It contacts `SYMBOL_NODE_URL` and the `SYMBOL_REFERENCE_NODES`, nothing
+  else, and is as read-only as the server. With `SYMBOL_STATE_DIR` set, every run appends one
+  snapshot to the file `symbol_harvester_watch` uses (the newest 60 are kept).
+- The whole run is limited to 120 seconds. At the limit the remaining items are skipped, the reason
+  goes to stderr, and the result is WARN at best, printed even with `--quiet`.
+- A typo in the subcommand name is an unknown argument of the server and exits with 2, as before.
+
 ## Security
 
 - **Read-only.** No tool signs, builds or announces transactions. No argument accepts a private key,

@@ -7,6 +7,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `symbol-mcp-server check`: a one-shot node health check for cron that needs no MCP client.
+  `check [--account <address|publicKey|namespace>] [--warn-days <n>] [--format text|json] [--quiet]`
+  runs `node_health`, `version_drift`, `harvester_watch` (needs `SYMBOL_STATE_DIR`) and, with
+  `--account`, `voting_key_status` and `finality_participation`, by calling the existing tools and
+  re-reading their verdicts as ok / warn / fail / skip; no tool threshold changed. Exit codes: 0 all
+  ok or skipped, 1 warnings, 2 failures, 3 could not run (configuration, node unreachable, bad
+  arguments). Text output has one line per item with the tool's own hint under warn and fail
+  lines; `--format json` prints the same report as one JSON document; `--quiet` prints nothing on
+  exit code 0, so cron mails only when there is something to read. The check sends no
+  notification and contacts only `SYMBOL_NODE_URL` and `SYMBOL_REFERENCE_NODES`. A voting key
+  warns within `--warn-days` (default 14) and fails within 3 days or without an active key, but is
+  ok once a successor key is registered without a gap. The run is limited to 120 seconds; at the
+  limit the remaining items are skipped and the result is WARN at best. Starting the binary
+  without arguments (the MCP server), `--help` and `--version` are unchanged; `--help` now also
+  documents `check`. See "CLI: monitoring from cron" in the README.
+
 ## [0.4.0] - 2026-09-19
 
 ### Changed
