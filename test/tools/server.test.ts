@@ -45,6 +45,7 @@ describe('server registration', () => {
       'symbol_node_health',
       'symbol_version_drift',
       'symbol_harvester_watch',
+      'symbol_account_rank',
     ]);
     for (const tool of tools) {
       expect(tool.name).toMatch(/^symbol_[a-z]+_[a-z_]+$/);

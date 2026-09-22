@@ -1,12 +1,11 @@
 import * as z from 'zod/v4';
-import { ChainInfoSchema, MosaicInfoSchema, NamespaceInfoSchema } from '../client/schemas.js';
+import { ChainInfoSchema } from '../client/schemas.js';
 import { hexAddressToBase32 } from '../domain/address.js';
 import { formatAmount } from '../domain/amount.js';
 import { parseHeight } from '../domain/epoch.js';
-import { isHexNamespaceId } from '../domain/namespace.js';
 import { estimateDateAtHeight, formatInstantText, msToDays, roundTo } from '../domain/time.js';
-import { fetchNamespace, resolveNamespaceInput } from './_namespaces.js';
-import { defineTool, formatInteger, nullable, ToolInputError } from './_shared.js';
+import { resolveMosaicInput } from './_mosaics.js';
+import { defineTool, formatInteger, nullable } from './_shared.js';
 import { InstantSchema } from './_transactions.js';
 
 const inputSchema = z.object({
@@ -64,40 +63,7 @@ export const mosaicGetTool = defineTool({
   inputSchema,
   outputSchema,
   run: async (ctx, { mosaic }) => {
-    const trimmed = mosaic.trim();
-    let mosaicId: string;
-    let aliasFromName: string | undefined;
-    if (isHexNamespaceId(trimmed) && !trimmed.includes('.')) {
-      // A 16-hex value may be a mosaic id or a namespace id (alias); try the mosaic first.
-      mosaicId = trimmed.toUpperCase();
-    } else {
-      const resolved = resolveNamespaceInput(trimmed);
-      const ns = await fetchNamespace(ctx, resolved);
-      const aliased = ns.namespace.alias.mosaicId;
-      if (ns.namespace.alias.type !== 1 || !aliased) {
-        throw new ToolInputError(
-          `Namespace "${resolved.name ?? resolved.id}" exists but is not an alias for a mosaic (alias type ${ns.namespace.alias.type}). Use symbol_namespace_get to inspect it, or pass the mosaic hex id.`,
-        );
-      }
-      mosaicId = aliased.toUpperCase();
-      aliasFromName = resolved.name;
-    }
-
-    let info = await ctx.rest.getOrNull(`/mosaics/${mosaicId}`, MosaicInfoSchema);
-    if (!info && !aliasFromName) {
-      // Maybe the hex value was a namespace id that aliases a mosaic.
-      const ns = await ctx.rest.getOrNull(`/namespaces/${mosaicId}`, NamespaceInfoSchema);
-      const aliased = ns?.namespace.alias.mosaicId;
-      if (ns && ns.namespace.alias.type === 1 && aliased) {
-        mosaicId = aliased.toUpperCase();
-        info = await ctx.rest.getOrNull(`/mosaics/${mosaicId}`, MosaicInfoSchema);
-      }
-    }
-    if (!info) {
-      throw new ToolInputError(
-        `Mosaic ${mosaicId} does not exist on ${ctx.network.name} (node ${ctx.rest.host}). Check the id (16 hex characters) or use an alias name such as symbol.xym, and whether you meant mainnet or testnet.`,
-      );
-    }
+    const { mosaicId, info, aliasFromName } = await resolveMosaicInput(ctx, mosaic);
 
     const m = info.mosaic;
     const [aliases, { properties }] = await Promise.all([

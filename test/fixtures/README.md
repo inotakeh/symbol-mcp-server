@@ -65,6 +65,7 @@ the original data. `H(label)` is SHA3-256 of the UTF-8 label, upper-case hex:
 | node host / friendlyName | `mainnet-node.example` / `fixture-node` |
 | peer *NN* (01…06) in `peers.json` | `publicKey` `H("fixture:peer-NN")`, host `peer-NN.example`, friendlyName `peer NN` |
 | namespace `fixture-alias` | `level0` = `namespaceNameToHexId('fixture-alias')` from `src/domain/namespace.ts` (935F70F34BFD4E33); `ownerAddress` and `alias.address` = the main address in hex; document id first 12 bytes of `H("fixture:doc-id-namespace-alias")` |
+| holder *NNN* (001…300) in the synthetic `GET /accounts` holder list (built in `test/tools/harness.ts` `syntheticHolders`, no JSON file) | `publicKey` `H("fixture:holder-NNN")`, address `publicKeyToAddress(…, 104)` in hex, document id first 12 bytes of `H("fixture:holder-doc-NNN")`; row 157 is the main account itself; balance of row *n* = the main account's XYM balance + (157 − *n*) × 1,000 XYM, so balances are strictly descending |
 
 Numbers were changed to round synthetic values that keep the tests' arithmetic consistent with
 `chain-info.json` (height 5,763,675, finalization epoch 4004) and the fixed test clock in

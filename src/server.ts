@@ -6,6 +6,7 @@ import { monthlyHealthCheckPrompt } from './prompts/monthly_health_check.js';
 import { votingKeyRenewalChecklistPrompt } from './prompts/voting_key_renewal_checklist.js';
 import { type AnyToolDefinition, registerTools } from './tools/_shared.js';
 import { accountGetTool } from './tools/symbol_account_get.js';
+import { accountRankTool } from './tools/symbol_account_rank.js';
 import { addressParseTool } from './tools/symbol_address_parse.js';
 import { delegationDiagnoseTool } from './tools/symbol_delegation_diagnose.js';
 import { feeEstimateTool } from './tools/symbol_fee_estimate.js';
@@ -71,6 +72,8 @@ export const TOOLS: readonly AnyToolDefinition[] = [
   nodeHealthTool,
   versionDriftTool,
   harvesterWatchTool,
+  // 0.6.0
+  accountRankTool,
 ];
 
 /** Same rule as TOOLS: append only, never reorder, so `prompts/list` is deterministic. */

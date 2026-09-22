@@ -240,6 +240,28 @@
       "expectedTool": "symbol_harvester_watch",
       "expectedArguments": {},
       "notes": "\"Decreased / increased / came back since last time\" is a comparison against the previous snapshot, which only symbol_harvester_watch keeps (one file per node under SYMBOL_STATE_DIR). The default mode compare_and_save also records today's list for the next check; pass mode \"compare\" to look without recording. symbol_harvesting_status lists the current unlocked keys but remembers nothing. Without SYMBOL_STATE_DIR the tool reports the current count and says no comparison is possible."
+    },
+    {
+      "id": "holder-rank",
+      "audience": "general",
+      "question": "Where does NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY rank by XYM holdings?",
+      "question_ja": "うちは XYM 保有量で何位？（NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY）",
+      "expectedTool": "symbol_account_rank",
+      "expectedArguments": {
+        "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
+      },
+      "notes": "\"What rank / how many-th\" by holdings is a position in the holder list ordered by balance, which only symbol_account_rank computes (it scans GET /accounts?orderBy=balance 100 holders at a time, down to maxRank). symbol_account_get shows the balance but no rank. The mosaic defaults to XYM; the top-20 list comes with the answer."
+    },
+    {
+      "id": "top-holders",
+      "audience": "general",
+      "question": "What are the top 10 XYM addresses?",
+      "question_ja": "XYM の上位 10 アドレスは？",
+      "expectedTool": "symbol_account_rank",
+      "expectedArguments": {
+        "top": 10
+      },
+      "notes": "A rich list: no account argument, top 10 instead of the default 20, mosaic defaults to XYM. The tool returns each holder's balance and share of supply plus the combined top-10 share; it attaches no labels (exchanges, foundation), and the notes say so."
     }
   ]
 }

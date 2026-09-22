@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `symbol_account_rank`: where an account ranks among the holders of a mosaic (XYM by default) and
+  who the top holders are, like an explorer rich list. Arguments `account` (optional; address,
+  public key or namespace name), `mosaic` (optional; hex id or alias name), `top` (1 to 100,
+  default 20), `maxRank` (100 to 5000, default 1000) and `format`. The holder list
+  (`GET /accounts?mosaicId=&orderBy=balance`) is read 100 accounts per request, one request at a
+  time, until the account is found, the list ends, or `maxRank` is reached (`rankBeyond` then says
+  so). Balances, supply and shares (4 decimals) are BigInt arithmetic; the notes state that ranks
+  are by balance (catapult-rest has no importance ordering), that equal balances are ordered by the
+  node, and that no labels are attached to addresses. The 21st tool, appended to the list; the
+  server instructions route "rank by holdings / rich list" questions to it. See README "Tools".
+
 ## [0.5.0] - 2026-09-21
 
 ### Added

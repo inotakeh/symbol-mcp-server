@@ -8,7 +8,7 @@
 
 [English README](README.md)
 
-[Symbol](https://docs.symbol.dev/) の REST API を 20 個の目的別ツールとして公開する、読み取り専用の
+[Symbol](https://docs.symbol.dev/) の REST API を 21 個の目的別ツールとして公開する、読み取り専用の
 [MCP](https://modelcontextprotocol.io/) サーバーです。REST エンドポイントを 1 対 1 で写すのではなく、
 各ツールが「人が実際に尋ねる質問」に答えます。
 
@@ -129,7 +129,7 @@ claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- nod
 
 ## ツール
 
-20 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
+21 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
 `account` 引数（と `symbol_transaction_search` の `address`）は、base32 アドレス・hex 公開鍵のほかに、アドレスエイリアスを持つ
 ネームスペース名（`alice`、`alice.pay`）も受け付けます。解決結果は `accountResolution` と summary の先頭に出ます。
 
@@ -155,6 +155,7 @@ claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- nod
 | `symbol_node_health` | `format` | 設定ノードが今、健全に動いているか: API ノードと DB の状態（`/node/health` の 503 応答も本文を読んで判定）、DB のブロック数とチェーン高さの差、ノード時計とこの端末の時計のずれ、ファイナリティ遅延（ブロック数と分）、ロール。固定順の 6 チェックが ok / warn / fail / unknown とヒントを持ち、判定は `healthy` / `degraded`（warn、または確認できなかった項目あり）/ `unhealthy`。閾値は `/network/properties` から導出。`symbol_node_status` を補完。 |
 | `symbol_version_drift` | `format` | 設定ノードのバージョンがネットワークの多数派から取り残されていないか: ノードが知るピアと参照ノードのバージョン分布、多数派の版、自ノードより新しい版の割合。判定は `ok` / `behind`（多数派より古い、または新しい版が半数以上）/ `far_behind`（75% 以上が新しい。接続を拒否され始める可能性）/ `unknown`（ピアなし）。ピアの host や鍵は出力しません。 |
 | `symbol_harvester_watch` | `mode`（`compare` / `compare_and_save` / `save_only`）, `format` | 設定ノードで解錠中の委任ハーベスターが前回より増えたか減ったか: 追加・削除されたリモート鍵、件数の差分、直近 30 日のスナップショットの最小・最大・平均。スナップショットは `SYMBOL_STATE_DIR` 配下にノードごと 1 ファイル。未設定なら現在の一覧だけを返し「比較不可」と明記。`compare` は読むだけ、`compare_and_save`（既定）は今回分も保存、`save_only` は比較せず保存。 |
+| `symbol_account_rank` | `account`（任意）, `mosaic`（任意。hex id かエイリアス名、既定は XYM）, `top`（1〜100、既定 20）, `maxRank`（100〜5000、既定 1000）, `format` | あるアカウントがモザイクの保有量で何番目か、上位は誰か（エクスプローラのリッチリスト相当）: アカウントの残高・供給量に対する割合（小数 4 桁、整数演算）・順位、上位 N 件の残高と割合、上位 N 件の合計割合。保有者は `GET /accounts?orderBy=balance` から 100 件ずつ逐次読み、見つかるか `maxRank` に達するまで続けます（達したら `rankBeyond` に出ます）。`account` を省略すると上位一覧だけ。同額の順序はノード依存で、取引所・財団などのラベルは付けません。 |
 
 ### 質問の例
 
@@ -216,6 +217,12 @@ healthy / degraded / unhealthy と問題のあるチェックを返します。
 → `symbol_harvester_watch {}` が、いま解錠されているハーベスターを前回保存したスナップショットと比較し（追加・削除された鍵、
 件数差分、30 日の最小・最大・平均）、次回のために今日の一覧を保存します。`SYMBOL_STATE_DIR` が必要で、未設定なら現在の件数と
 「比較不可」を返します。
+
+**「うちは XYM 保有量で何位？（NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY）上位 10 件は誰？」**
+→ `symbol_account_rank { "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY", "top": 10 }`
+残高順の保有者一覧を 100 件ずつ、アカウントが見つかるか `maxRank`（既定 1000）に達するまで読み、
+残高・供給量に対する割合・順位を、上位 10 件とその合計割合とともに返します。割合はすべてサーバーが
+整数演算で計算します。上位は取引所や財団であることが多く、ツールはラベルを付けません。
 
 期待される引数まで含めた他の例は [`evals/cases.json`](evals/cases.json) にあります。
 
@@ -333,6 +340,9 @@ MAILTO=you@example.com
 - **検索は確定トランザクションのみ。** 未確定・partial のトランザクションはハッシュ指定の
   `symbol_transaction_get` で参照できます。
 - **ハーベスティング状況は設定ノードの範囲**（`/node/unlockedaccount`）で、ネットワーク全体ではありません。
+- **保有量の順位は走査で求めます。** `symbol_account_rank` は保有者一覧を 100 件ずつ `maxRank`（最大 5,000 = 50 リクエスト）まで
+  読みます。それより下のアカウントは `rank: null` と `rankBeyond` になります。同額のアカウントの順序はノード依存で、
+  呼び出しごとに入れ替わることがあります。
 - **ハーベスターの履歴はローカルです。** `symbol_harvester_watch` は自分が `SYMBOL_STATE_DIR` に書いたスナップショットとだけ比較します。
   別のマシン、ファイルの削除、ノード鍵の変更（移行で node.key.pem が変わった場合）は新しい baseline になります。同じ日に何度呼んでも
   その回数だけ積まれ、新しい 60 件だけが残ります。
