@@ -73,7 +73,7 @@ describe('2026-07-28 protocol era', () => {
       }>;
     };
     expect(result.tools.map((t) => t.name)).toEqual(TOOLS.map((t) => t.name));
-    expect(result.tools).toHaveLength(21);
+    expect(result.tools).toHaveLength(22);
     for (const tool of result.tools) {
       expect(tool.title).toBeTruthy();
       expect(tool.annotations).toMatchObject(TOOL_ANNOTATIONS);
@@ -88,7 +88,7 @@ describe('2026-07-28 protocol era', () => {
     // The same fields on the wire, not only on the decoded object.
     const raw = (await rawResults(server)).find((r) => Array.isArray(r.tools));
     expect(raw).toMatchObject({ ttlMs: LIST_CACHE_TTL_MS, cacheScope: 'public' });
-    expect(raw?.tools).toHaveLength(21);
+    expect(raw?.tools).toHaveLength(22);
   });
 
   it('lists and renders the prompts, with the cache hint on the list only', async () => {

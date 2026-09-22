@@ -7,6 +7,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `symbol_holdings_value`: what an account's balance of a mosaic (XYM by default) is worth at a
+  unit price **the caller supplies**. Arguments `account` (address, public key or namespace name),
+  `unitPrice` (a decimal string such as `"12.34"`, at most 12 fractional digits; exponents,
+  separators, symbols, signs and zero are rejected with a hint), `currency` (3 to 6 upper-case
+  letters), optional `priceSource` and `priceAsOf` (sanitized and echoed so the answer states where
+  and when the price was observed), `mosaic` and `format`. The product is computed in BigInt and
+  returned both exact (`value.exact`) and rounded half up to the currency's customary decimals
+  (`value.amount`: 0 for JPY and KRW, otherwise 2; the table `CURRENCY_DECIMALS` in
+  `src/domain/price.ts` is the only place to extend). The server never fetches or checks prices and
+  contacts `SYMBOL_NODE_URL` only; the notes say that the value is a plain product without fees,
+  spread or taxes and is not a tax computation. The 22nd tool, appended to the list; the server
+  instructions tell the model to obtain the price first (web search, another MCP server, the user)
+  and never to multiply balance by price itself. See README "Tools" and the example question.
+
+### Changed
+
+- Server instructions: existing sentences were shortened to make room for the holdings-value rule
+  within the 150-word limit; no routing rule was removed.
+
 ## [0.6.0] - 2026-09-22
 
 ### Added

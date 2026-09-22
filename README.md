@@ -8,7 +8,7 @@
 
 [日本語版 README](README.ja.md)
 
-Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 21
+Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 22
 task-level tools. Instead of mirroring REST endpoints one-to-one, each tool answers a question a
 person actually asks:
 
@@ -133,7 +133,7 @@ Or commit a project-level `.mcp.json`:
 
 ## Tools
 
-All 21 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
+All 22 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
 identifiers only, never URLs. Every `account` argument (and the `address` of
 `symbol_transaction_search`) takes a base32 address, a hex public key, or a namespace name such as
 `alice` or `alice.pay` that carries an address alias; the resolution is reported in
@@ -162,6 +162,7 @@ identifiers only, never URLs. Every `account` argument (and the `address` of
 | `symbol_version_drift` | `format` | Is the node's software version behind the network majority: versions of the peers the node knows plus the reference nodes, as a distribution with the majority version and the share running something newer. Verdict `ok`, `behind` (older than the majority, or newer versions hold at least half the sample), `far_behind` (75% or more newer: peers may refuse connections) or `unknown` (no peers). Peer hosts and keys are never reported. |
 | `symbol_harvester_watch` | `mode` (`compare`, `compare_and_save`, `save_only`), `format` | Did the delegated harvesters unlocked on the node increase or decrease since the last call: added and removed remote keys, count delta, and min / max / average over the snapshots of the last 30 days. Snapshots are kept in one file per node under `SYMBOL_STATE_DIR`; without it the current list is reported and no comparison is possible. `compare` reads only, `compare_and_save` (default) also stores the current list, `save_only` stores without comparing. |
 | `symbol_account_rank` | `account` (optional), `mosaic` (optional; hex id or alias, default XYM), `top` (1 to 100, default 20), `maxRank` (100 to 5000, default 1000), `format` | Where an account ranks among the holders of a mosaic and who the top holders are, like an explorer rich list: the account's balance, share of supply (4 decimals, integer arithmetic) and rank, the top N holders with balances and shares, and the combined top-N share. Holders are read from `GET /accounts?orderBy=balance` 100 per request, one request at a time, until the account is found or `maxRank` is reached (`rankBeyond` then says so). Omit `account` for the top list only. Ties are ordered by the node; no labels (exchange, foundation) are attached. |
+| `symbol_holdings_value` | `account`, `unitPrice` (decimal string, e.g. `"12.34"`), `currency` (3 to 6 upper-case letters), `priceSource` (optional), `priceAsOf` (optional), `mosaic` (optional, default XYM), `format` | What the account's balance of a mosaic is worth at a unit price **the caller supplies**: the balance, the normalised price, the exact product and the product rounded to the currency's customary decimals (0 for JPY and KRW, otherwise 2), all in integer arithmetic. The server never fetches or checks prices; `priceSource` and `priceAsOf` are echoed so the answer states where the number came from. Not a tax computation: no fees, spread or taxes. |
 
 ### Example questions
 
@@ -237,6 +238,16 @@ Reads the holder list ordered by balance 100 accounts at a time until the accoun
 `maxRank`, default 1000, is reached), and returns its balance, share of supply and rank together
 with the top 10 holders and their combined share. All shares are computed by the server in integer
 arithmetic; the top of the list is usually exchanges and the foundation, and the tool labels nobody.
+
+**"If XYM is 12.34 yen, how much are my holdings worth? NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"**
+→ `symbol_holdings_value { "account": "NCV5HR…", "unitPrice": "12.34", "currency": "JPY" }`
+Reads the balance and multiplies it by the price in integer arithmetic: `53,321,140 JPY` for
+4,321,000 XYM, with the exact product alongside. **The price comes from the caller.** This server
+never contacts a price API (it talks to `SYMBOL_NODE_URL` only), so when you ask *"what are my
+holdings worth right now?"* the flow in Claude Desktop is: the model looks the price up first (a web
+search, another MCP server that serves prices, or you type it in), then calls this tool with
+`unitPrice`, `currency` and, ideally, `priceSource` / `priceAsOf` so the answer says where and when
+the price was observed. The model is told not to multiply balance by price itself.
 
 More cases, with the exact arguments expected for each, are in [`evals/cases.json`](evals/cases.json).
 
@@ -363,6 +374,10 @@ https://nodewatch.symbol.tools/.
 - **Confirmed transactions only** in search. Unconfirmed and partial transactions are visible
   through `symbol_transaction_get` by hash.
 - **Harvesting status covers the configured node** (`/node/unlockedaccount`), not the whole network.
+- **No prices.** `symbol_holdings_value` multiplies a balance by a unit price the caller passes in; it
+  does not fetch, check or remember prices, and the result is only as good as that input. Look the
+  price up first (web search, a price MCP server, or the user) and pass it with `priceSource` and
+  `priceAsOf`. The value is the plain product: no fees, spread or taxes, and no tax lot accounting.
 - **Holder rank is a scan, not an index.** `symbol_account_rank` reads the holder list 100 accounts per
   request down to `maxRank` (at most 5,000, i.e. 50 requests); an account below that gets `rank: null`
   with `rankBeyond`. Equal balances are ordered by the node and may swap between calls.

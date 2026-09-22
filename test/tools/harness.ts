@@ -283,6 +283,10 @@ export const SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown
   // No SYMBOL_STATE_DIR in the default harness, so the smoke call never touches the disk.
   ['symbol_harvester_watch', { mode: 'compare' }],
   ['symbol_account_rank', { top: 5 }],
+  [
+    'symbol_holdings_value',
+    { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY', unitPrice: '1', currency: 'JPY' },
+  ],
 ];
 
 /**

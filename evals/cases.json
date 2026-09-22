@@ -262,6 +262,19 @@
         "top": 10
       },
       "notes": "A rich list: no account argument, top 10 instead of the default 20, mosaic defaults to XYM. The tool returns each holder's balance and share of supply plus the combined top-10 share; it attaches no labels (exchanges, foundation), and the notes say so."
+    },
+    {
+      "id": "holdings-value-jpy",
+      "audience": "general",
+      "question": "If XYM is 12.34 yen, how much are my holdings worth? My address is NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY.",
+      "question_ja": "XYM が 12.34 円のとき、うちの保有額はいくら？（NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY）",
+      "expectedTool": "symbol_holdings_value",
+      "expectedArguments": {
+        "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY",
+        "unitPrice": "12.34",
+        "currency": "JPY"
+      },
+      "notes": "The user named the price, so it is passed straight through: unitPrice is a decimal STRING (never a number) and currency is the ISO-style code (yen = JPY). The server never fetches prices; when the user asks \"how much is it worth now\" without a price, obtain the price first (web search, another MCP server, or ask the user) and then call this tool with priceSource / priceAsOf filled in. Do not call symbol_account_get and multiply the balance yourself: the product is computed on the server in integer arithmetic and rounded to the currency's customary decimals."
     }
   ]
 }
