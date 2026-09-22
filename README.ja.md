@@ -8,7 +8,7 @@
 
 [English README](README.md)
 
-[Symbol](https://docs.symbol.dev/) の REST API を 21 個の目的別ツールとして公開する、読み取り専用の
+[Symbol](https://docs.symbol.dev/) の REST API を 22 個の目的別ツールとして公開する、読み取り専用の
 [MCP](https://modelcontextprotocol.io/) サーバーです。REST エンドポイントを 1 対 1 で写すのではなく、
 各ツールが「人が実際に尋ねる質問」に答えます。
 
@@ -129,7 +129,7 @@ claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- nod
 
 ## ツール
 
-21 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
+22 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
 `account` 引数（と `symbol_transaction_search` の `address`）は、base32 アドレス・hex 公開鍵のほかに、アドレスエイリアスを持つ
 ネームスペース名（`alice`、`alice.pay`）も受け付けます。解決結果は `accountResolution` と summary の先頭に出ます。
 
@@ -156,6 +156,7 @@ claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- nod
 | `symbol_version_drift` | `format` | 設定ノードのバージョンがネットワークの多数派から取り残されていないか: ノードが知るピアと参照ノードのバージョン分布、多数派の版、自ノードより新しい版の割合。判定は `ok` / `behind`（多数派より古い、または新しい版が半数以上）/ `far_behind`（75% 以上が新しい。接続を拒否され始める可能性）/ `unknown`（ピアなし）。ピアの host や鍵は出力しません。 |
 | `symbol_harvester_watch` | `mode`（`compare` / `compare_and_save` / `save_only`）, `format` | 設定ノードで解錠中の委任ハーベスターが前回より増えたか減ったか: 追加・削除されたリモート鍵、件数の差分、直近 30 日のスナップショットの最小・最大・平均。スナップショットは `SYMBOL_STATE_DIR` 配下にノードごと 1 ファイル。未設定なら現在の一覧だけを返し「比較不可」と明記。`compare` は読むだけ、`compare_and_save`（既定）は今回分も保存、`save_only` は比較せず保存。 |
 | `symbol_account_rank` | `account`（任意）, `mosaic`（任意。hex id かエイリアス名、既定は XYM）, `top`（1〜100、既定 20）, `maxRank`（100〜5000、既定 1000）, `format` | あるアカウントがモザイクの保有量で何番目か、上位は誰か（エクスプローラのリッチリスト相当）: アカウントの残高・供給量に対する割合（小数 4 桁、整数演算）・順位、上位 N 件の残高と割合、上位 N 件の合計割合。保有者は `GET /accounts?orderBy=balance` から 100 件ずつ逐次読み、見つかるか `maxRank` に達するまで続けます（達したら `rankBeyond` に出ます）。`account` を省略すると上位一覧だけ。同額の順序はノード依存で、取引所・財団などのラベルは付けません。 |
+| `symbol_holdings_value` | `account`, `unitPrice`（10 進文字列。例 `"12.34"`）, `currency`（大文字 3〜6 文字）, `priceSource`（任意）, `priceAsOf`（任意）, `mosaic`（任意。既定は XYM）, `format` | **呼び出し側が与えた単価**で、アカウントのモザイク残高がいくらになるか: 残高、正規化した単価、丸め前の積、通貨の慣習的な桁（JPY と KRW は 0 桁、他は 2 桁）に四捨五入した積。すべて整数演算。サーバーは価格を取得も検証もしません。`priceSource` / `priceAsOf` はそのまま出力に echo され、答えに出所が残ります。税務計算ではなく、手数料・スプレッド・税は含みません。 |
 
 ### 質問の例
 
@@ -223,6 +224,14 @@ healthy / degraded / unhealthy と問題のあるチェックを返します。
 残高順の保有者一覧を 100 件ずつ、アカウントが見つかるか `maxRank`（既定 1000）に達するまで読み、
 残高・供給量に対する割合・順位を、上位 10 件とその合計割合とともに返します。割合はすべてサーバーが
 整数演算で計算します。上位は取引所や財団であることが多く、ツールはラベルを付けません。
+
+**「XYM が 12.34 円のとき、うちの保有額はいくら？（NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY）」**
+→ `symbol_holdings_value { "account": "NCV5HR…", "unitPrice": "12.34", "currency": "JPY" }`
+残高を読み、単価との積を整数演算で求めます（4,321,000 XYM なら `53,321,140 JPY`。丸め前の値も併記）。
+**単価は呼び出し側が用意します。** このサーバーは価格 API に一切アクセスしません（通信先は `SYMBOL_NODE_URL` だけ）。
+Claude Desktop で「今いくら？」と聞いたときの流れは、まずモデルが単価を調べ（web 検索、価格を返す別の MCP サーバー、
+またはユーザーが入力）、次にこのツールを `unitPrice` / `currency` と、できれば `priceSource` / `priceAsOf` 付きで
+呼びます。答えには「いつ・どこの単価か」が残ります。モデルには残高 × 単価を自分で計算しないよう指示しています。
 
 期待される引数まで含めた他の例は [`evals/cases.json`](evals/cases.json) にあります。
 
@@ -340,6 +349,10 @@ MAILTO=you@example.com
 - **検索は確定トランザクションのみ。** 未確定・partial のトランザクションはハッシュ指定の
   `symbol_transaction_get` で参照できます。
 - **ハーベスティング状況は設定ノードの範囲**（`/node/unlockedaccount`）で、ネットワーク全体ではありません。
+- **価格は扱いません。** `symbol_holdings_value` は呼び出し側が渡した単価と残高の積を求めるだけで、価格の取得・検証・
+  保存はしません。結果の確からしさはその入力次第です。先に単価を調べ（web 検索、価格 MCP サーバー、ユーザー入力）、
+  `priceSource` / `priceAsOf` と一緒に渡してください。値は単純な積で、手数料・スプレッド・税は含まず、取得価額や
+  譲渡損益の計算でもありません。
 - **保有量の順位は走査で求めます。** `symbol_account_rank` は保有者一覧を 100 件ずつ `maxRank`（最大 5,000 = 50 リクエスト）まで
   読みます。それより下のアカウントは `rank: null` と `rankBeyond` になります。同額のアカウントの順序はノード依存で、
   呼び出しごとに入れ替わることがあります。
