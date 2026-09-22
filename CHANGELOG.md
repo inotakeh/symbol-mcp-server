@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-22
+
 ### Added
 
 - `symbol_holdings_value`: what an account's balance of a mosaic (XYM by default) is worth at a
@@ -281,7 +283,8 @@ Initial release candidate (0.1.0).
 - Every request has a timeout, a `User-Agent`, a 5 MB response cap and a concurrency limit of 4,
   and every response is schema-validated before use.
 
-[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.3.0...v0.4.0
