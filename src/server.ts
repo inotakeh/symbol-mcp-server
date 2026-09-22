@@ -14,6 +14,7 @@ import { finalityParticipationTool } from './tools/symbol_finality_participation
 import { harvesterWatchTool } from './tools/symbol_harvester_watch.js';
 import { harvestingIncomeTool } from './tools/symbol_harvesting_income.js';
 import { harvestingStatusTool } from './tools/symbol_harvesting_status.js';
+import { holdingsValueTool } from './tools/symbol_holdings_value.js';
 import { mosaicGetTool } from './tools/symbol_mosaic_get.js';
 import { namespaceGetTool } from './tools/symbol_namespace_get.js';
 import { networkCompareTool } from './tools/symbol_network_compare.js';
@@ -74,6 +75,8 @@ export const TOOLS: readonly AnyToolDefinition[] = [
   harvesterWatchTool,
   // 0.6.0
   accountRankTool,
+  // 0.7.0
+  holdingsValueTool,
 ];
 
 /** Same rule as TOOLS: append only, never reorder, so `prompts/list` is deterministic. */
