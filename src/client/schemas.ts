@@ -163,6 +163,13 @@ export const AccountInfoSchema = z.object({
 });
 export type AccountInfo = z.infer<typeof AccountInfoSchema>;
 
+/** `GET /accounts` search (symbol-openapi AccountPage: `data: AccountInfoDTO[]`, `pagination`). */
+export const AccountPageSchema = z.object({
+  data: z.array(AccountInfoSchema),
+  pagination: z.object({ pageNumber: z.number().int(), pageSize: z.number().int() }),
+});
+export type AccountPage = z.infer<typeof AccountPageSchema>;
+
 export const MosaicInfoSchema = z.object({
   id: z.string().optional(),
   mosaic: z

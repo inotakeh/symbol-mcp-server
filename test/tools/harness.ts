@@ -3,6 +3,7 @@
  * a custom fetch, and the server's outbound `fetch` to the Symbol node is replaced by a fake
  * that serves fixtures and records every URL it was asked for.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +13,7 @@ import { vi } from 'vitest';
 import { RestClient } from '../../src/client/rest.js';
 import { type Config, loadConfig, resolveNetwork } from '../../src/config.js';
 import { AppContext } from '../../src/context.js';
+import { base32AddressToHex, publicKeyToAddress } from '../../src/domain/address.js';
 import { createServer } from '../../src/server.js';
 
 const FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
@@ -54,6 +56,86 @@ export function jsonResponse(body: unknown, status = 200, headers: Record<string
     status,
     headers: { 'content-type': 'application/json', ...headers },
   });
+}
+
+/** Synthetic value rule of test/fixtures/README.md: SHA3-256 of a label, upper-case hex. */
+export const H = (label: string) =>
+  createHash('sha3-256').update(label, 'utf8').digest('hex').toUpperCase();
+
+export const XYM_MOSAIC_ID = '6BED913FA20223F8';
+/** The main fixture account's XYM balance (account-voting.json) and its row in the holder list. */
+export const FIXTURE_XYM_BALANCE = 4_321_000_000_000n;
+export const FIXTURE_HOLDER_RANK = 157;
+/** Balance step between neighbouring holders (1,000 XYM), so balances are strictly descending. */
+export const HOLDER_BALANCE_STEP = 1_000_000_000n;
+export const SYNTHETIC_HOLDER_COUNT = 300;
+
+export interface HolderRow {
+  readonly id: string;
+  readonly account: Record<string, unknown> & { address: string; mosaics: MosaicEntry[] };
+}
+interface MosaicEntry {
+  readonly id: string;
+  readonly amount: string;
+}
+
+/**
+ * `count` AccountInfoDTO rows ordered by descending balance of `mosaicId`. Row n has
+ * FIXTURE_XYM_BALANCE + (157 - n) x HOLDER_BALANCE_STEP; row 157 is the main fixture account
+ * itself, every other row is a synthetic holder with public key H("fixture:holder-NNN") and the
+ * mainnet address derived from it (see test/fixtures/README.md).
+ */
+export function syntheticHolders(count: number, mosaicId = XYM_MOSAIC_ID): HolderRow[] {
+  const main = fixture<{ account: { address: string; publicKey: string } }>(
+    'mainnet/account-voting.json',
+  ).account;
+  const rows: HolderRow[] = [];
+  for (let n = 1; n <= count; n++) {
+    const amount = FIXTURE_XYM_BALANCE + BigInt(FIXTURE_HOLDER_RANK - n) * HOLDER_BALANCE_STEP;
+    const label = String(n).padStart(3, '0');
+    const isMain = n === FIXTURE_HOLDER_RANK;
+    const publicKey = isMain ? main.publicKey : H(`fixture:holder-${label}`);
+    const address = isMain ? main.address : base32AddressToHex(publicKeyToAddress(publicKey, 104));
+    rows.push({
+      id: H(`fixture:holder-doc-${label}`).slice(0, 24),
+      account: {
+        version: 1,
+        address,
+        addressHeight: '1',
+        publicKey,
+        publicKeyHeight: '1',
+        accountType: isMain ? 1 : 0,
+        supplementalPublicKeys: {},
+        activityBuckets: [],
+        mosaics: [{ id: mosaicId, amount: amount.toString() }],
+        importance: '0',
+        importanceHeight: '0',
+      },
+    });
+  }
+  return rows;
+}
+
+/**
+ * Serves `rows` the way `GET /accounts?mosaicId=&orderBy=balance&order=desc` does: only rows
+ * holding the requested mosaic, `pageSize` per page. Any other orderBy/order is a 409 like the
+ * node's InvalidArgument, so a wrong query cannot pass by accident.
+ */
+export function accountSearchRoute(rows: readonly HolderRow[]): RouteHandler {
+  return (_request, url) => {
+    const q = url.searchParams;
+    if (q.get('orderBy') !== 'balance' || q.get('order') !== 'desc' || !q.get('mosaicId')) {
+      return jsonResponse({ code: 'InvalidArgument', message: 'unexpected query' }, 409);
+    }
+    const mosaicId = (q.get('mosaicId') ?? '').toUpperCase();
+    const pageSize = Number(q.get('pageSize') ?? '10');
+    const pageNumber = Number(q.get('pageNumber') ?? '1');
+    const holders = rows.filter((r) =>
+      r.account.mosaics.some((m) => m.id.toUpperCase() === mosaicId),
+    );
+    const data = holders.slice((pageNumber - 1) * pageSize, pageNumber * pageSize);
+    return jsonResponse({ data, pagination: { pageNumber, pageSize } });
+  };
 }
 
 /** Default mainnet routes built from the captured fixtures. Keys are `METHOD /path`. */
@@ -110,6 +192,8 @@ export function mainnetRoutes(): Routes {
       const known = fixture<Array<{ hash: string }>>('mainnet/transaction-status.json');
       return jsonResponse(known.filter((s) => wanted.has(s.hash.toUpperCase())));
     },
+    // 0.6.0: synthetic holder list for symbol_account_rank (300 rows, main account at rank 157).
+    'GET /accounts': accountSearchRoute(syntheticHolders(SYNTHETIC_HOLDER_COUNT)),
     // Synthetic finalization proof for epoch 4010 (keys derived, see test/fixtures/README.md).
     'GET /finalization/proof/epoch/4010': fixture('mainnet/finalization-proof-epoch.json'),
     // Shape of the real epoch 4027 proof: the prevote stage split into two message groups at one
@@ -198,6 +282,7 @@ export const SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown
   ['symbol_version_drift', {}],
   // No SYMBOL_STATE_DIR in the default harness, so the smoke call never touches the disk.
   ['symbol_harvester_watch', { mode: 'compare' }],
+  ['symbol_account_rank', { top: 5 }],
 ];
 
 /**
