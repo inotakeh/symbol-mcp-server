@@ -88,6 +88,7 @@ describe('account arguments given as a namespace name', () => {
       ['symbol_delegation_diagnose', { account: ALIAS_NAMESPACE_NAME }],
       ['symbol_transaction_search', { address: ALIAS_NAMESPACE_NAME }],
       ['symbol_account_rank', { account: ALIAS_NAMESPACE_NAME }],
+      ['symbol_holdings_value', { account: ALIAS_NAMESPACE_NAME, unitPrice: '1', currency: 'JPY' }],
     ];
     for (const [name, args] of calls) {
       const result = await server.callTool(name, args);
