@@ -100,7 +100,8 @@ export const transactionSearchTool = defineTool({
     UNTRUSTED_TEXT_NOTE,
   inputSchema,
   outputSchema,
-  run: async (ctx, { address, type, pageSize, pageNumber, order, format }) => {
+  untrustedText: true,
+  run: async (ctx, { address, type, pageSize, pageNumber, order, format }, text) => {
     const { classified, resolution } = await resolveAccountInput(ctx, address);
     const base32 =
       classified.kind === 'publicKey'
@@ -129,10 +130,11 @@ export const transactionSearchTool = defineTool({
       ctx.rest.get(`/transactions/confirmed?${params.toString()}`, TransactionPageSchema),
       ctx.getNetworkData(),
     ]);
-    const opts = await buildSummarizeOptions(ctx, page.data);
+    const opts = await buildSummarizeOptions(ctx, page.data, text);
     const full = page.data.map((info) => summarizeTransaction(info, opts));
     const transactions = format === 'concise' ? full.map(conciseRow) : full;
-    const currencyLabel = currency.alias ?? currency.mosaicId;
+    // Called only for a fee shown in the summary lines, so an unshown alias is not counted.
+    const currencyLabel = () => text.useOrNull(currency.alias) ?? currency.mosaicId;
 
     const hasMore = page.data.length >= pageSize;
     const nextPageNumber = hasMore ? pageNumber + 1 : null;

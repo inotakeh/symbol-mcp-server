@@ -65,14 +65,15 @@ export const namespaceGetTool = defineTool({
     'Describe a Symbol namespace by name (e.g. symbol.xym) or hex id: owner address, root or sub namespace, every level with its name, alias target (mosaic id or address), start and end height, and the estimated expiry date and remaining blocks (root namespaces registered forever report unlimited).',
   inputSchema,
   outputSchema,
-  run: async (ctx, { namespace }) => {
+  untrustedText: true,
+  run: async (ctx, { namespace }, text) => {
     const resolved = resolveNamespaceInput(namespace);
     const info = await fetchNamespace(ctx, resolved);
     const ns = info.namespace;
     const levelIds = namespaceLevels(info);
     const names = await ctx.resolveNamespaceNames(levelIds);
-    const levels = levelIds.map((id) => ({ id, name: names.get(id) ?? null }));
-    const fullName = names.get(resolved.id) ?? resolved.name ?? null;
+    const levels = levelIds.map((id) => ({ id, name: text.useOrNull(names.get(id)) }));
+    const fullName = text.useOrNull(names.get(resolved.id)) ?? resolved.name ?? null;
 
     const aliasType = ALIAS_TYPES[ns.alias.type as 0 | 1 | 2] ?? 'none';
     const alias = {

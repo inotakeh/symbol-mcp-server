@@ -483,12 +483,14 @@ MAILTO=you@example.com
   an argument, so a model cannot redirect requests. There is no telemetry.
 - **Untrusted chain data.** Transfer messages, metadata values, alias names and what a node reports
   about itself (friendly name, host name, status and version strings) are written by third parties.
-  They are exposed under names that make this obvious (`messageText`), every control and invisible
-  format character is stripped (zero-width and bidi characters, soft hyphens, line separators, and
-  the tag characters U+E0000 to U+E007F that people cannot see but models can read), and length is
-  capped without splitting a character. Variation selectors are kept, so emoji and ideograph variants
-  survive; emoji joined by a zero-width joiner come out as separate emoji. Treat all of it as data,
-  not instructions.
+  They are exposed under names that make this obvious (`messageText`) and made one line: tabs and
+  line breaks become a space, so words stay apart, and runs of spaces become one. Every other
+  control and invisible format character is stripped (zero-width and bidi characters, soft hyphens,
+  and the tag characters U+E0000 to U+E007F that people cannot see but models can read), and length
+  is capped without splitting a character. Variation selectors are kept, so emoji and ideograph variants
+  survive; emoji joined by a zero-width joiner come out as separate emoji. The 17 tools that show such
+  text report in `invisibleCharactersRemoved` how many characters were removed from it, and when any
+  were, the summary ends with a line saying so. Treat all of it as data, not instructions.
 - **Fail loudly.** A network mismatch (`SYMBOL_NETWORK` versus the node), an unreachable node or an
   unexpected response shape is an error with a recovery hint, never a silent fallback to another
   network. Stack traces and raw HTTP bodies are never returned to the model.

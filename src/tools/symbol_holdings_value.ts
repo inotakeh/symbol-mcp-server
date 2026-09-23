@@ -23,7 +23,6 @@ import {
   roundingRule,
 } from '../domain/price.js';
 import { mosaicBalanceOf } from '../domain/rank.js';
-import { sanitizeUntrusted } from '../domain/sanitize.js';
 import { ACCOUNT_ARG_FORMS, AccountResolutionSchema, withResolutionPrefix } from './_accounts.js';
 import { resolveMosaicInput } from './_mosaics.js';
 import { defineTool, nullable, ToolInputError } from './_shared.js';
@@ -156,9 +155,11 @@ export const holdingsValueTool = defineTool({
     'Value an account\'s balance of a mosaic (XYM by default) at a unit price the CALLER supplies: "at 12.34 JPY per XYM, what are these holdings worth". This tool only multiplies; it never fetches or checks prices. Obtain the price first (a web search, another price MCP server, or the user) and pass it as a decimal string with its currency code, optionally with where and when it was observed (priceSource, priceAsOf) so the answer states its provenance. Returns the balance, the normalised price, the exact product, and the product rounded half up to the currency\'s digits as Intl (Unicode CLDR) knows them (JPY 0, USD 2, KWD 3) or to `decimals`. A code Intl does not know (BTC, USDT) is not rounded, nor is a non-zero value that would round to 0; value.decimalsSource says which rule applied. All computed in integer arithmetic.',
   inputSchema,
   outputSchema,
+  untrustedText: true,
   run: async (
     ctx,
     { account, unitPrice, currency, priceSource, priceAsOf, mosaic, decimals, format },
+    text,
   ) => {
     // Inputs the caller can get wrong are checked before any request, with a hint each.
     let price: ReturnType<typeof parseDecimalString>;
@@ -173,10 +174,11 @@ export const holdingsValueTool = defineTool({
       throw err;
     }
     // Provenance strings are untrusted text: strip control characters before validating / echoing.
+    // Nothing left after cleaning counts as not given (what was removed still counts).
     const source =
-      priceSource === undefined ? null : sanitizeUntrusted(priceSource, MAX_PRICE_SOURCE_LENGTH);
+      priceSource === undefined ? null : text.clean(priceSource, MAX_PRICE_SOURCE_LENGTH) || null;
     const asOf =
-      priceAsOf === undefined ? null : sanitizeUntrusted(priceAsOf, MAX_PRICE_AS_OF_LENGTH);
+      priceAsOf === undefined ? null : text.clean(priceAsOf, MAX_PRICE_AS_OF_LENGTH) || null;
     if (asOf !== null && Number.isNaN(Date.parse(asOf))) {
       throw new ToolInputError(
         `priceAsOf "${asOf}" is not a date. Pass an ISO 8601 timestamp such as 2026-09-22T21:00:00+09:00, or omit it.`,
@@ -192,16 +194,16 @@ export const holdingsValueTool = defineTool({
     if (mosaic === undefined) {
       mosaicId = networkCurrency.mosaicId;
       divisibility = networkCurrency.divisibility;
-      alias = networkCurrency.alias;
+      alias = text.useOrNull(networkCurrency.alias);
     } else {
       const resolved = await resolveMosaicInput(ctx, mosaic);
       mosaicId = resolved.mosaicId;
       divisibility = resolved.info.mosaic.divisibility;
       if (mosaicId === networkCurrency.mosaicId) {
-        alias = networkCurrency.alias ?? resolved.aliasFromName ?? null;
+        alias = text.useOrNull(networkCurrency.alias) ?? resolved.aliasFromName ?? null;
       } else {
         const aliases = await ctx.resolveMosaicAliases([mosaicId]);
-        alias = aliases.get(mosaicId) ?? resolved.aliasFromName ?? null;
+        alias = text.useOrNull(aliases.get(mosaicId)) ?? resolved.aliasFromName ?? null;
       }
     }
     const isNetworkCurrency = mosaicId === networkCurrency.mosaicId;

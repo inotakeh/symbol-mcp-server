@@ -4,11 +4,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  cleanUntrusted,
   DEFAULT_MAX_UNTRUSTED_LENGTH,
+  joinCleaned,
   sanitizeUntrusted,
   stripUnsafeCharacters,
   toSingleLine,
   truncateText,
+  UntrustedText,
 } from '../../src/domain/sanitize.js';
 
 const cp = (...codePoints: number[]) => String.fromCodePoint(...codePoints);
@@ -111,10 +114,34 @@ describe('toSingleLine', () => {
     expect(toSingleLine(`  two ${cp(0x0d, 0x0a)}  lines\n\nhere  `)).toBe('two lines here');
   });
 
-  it('removes the other unsafe characters and keeps ordinary spaces', () => {
+  it('removes the other unsafe characters and collapses runs of spaces', () => {
     expect(toSingleLine(`a${cp(0x1b)}[2Jb${cp(0x9b)}c${cp(0x200b)}d${cp(0xe0041)}  e`)).toBe(
-      'a[2Jbcd  e',
+      'a[2Jbcd e',
     );
+    // A removed character between two spaces leaves one space, not two.
+    expect(toSingleLine(`a ${cp(0x200b)} b`)).toBe('a b');
+  });
+
+  it('makes CRLF one space and drops the spaces at both ends', () => {
+    expect(toSingleLine(`${cp(0x0a)}hello${cp(0x0d, 0x0a)}`)).toBe('hello');
+    expect(toSingleLine(`one${cp(0x0d, 0x0a)}two${cp(0x09, 0x09)}three`)).toBe('one two three');
+  });
+
+  it('keeps ideographic and no-break spaces as written: only U+0020 is collapsed or trimmed', () => {
+    const ideographic = cp(0x3000);
+    const noBreak = cp(0xa0);
+    expect(toSingleLine(`${ideographic}全角${ideographic}${ideographic}空白`)).toBe(
+      `${ideographic}全角${ideographic}${ideographic}空白`,
+    );
+    expect(toSingleLine(`a${noBreak}${noBreak}b${noBreak}`)).toBe(
+      `a${noBreak}${noBreak}b${noBreak}`,
+    );
+  });
+
+  it('leaves text that is already one clean line unchanged', () => {
+    for (const text of ['symbol.xym', 'ハーベスト報酬 ありがとう', `rocket ${cp(0x1f680)} ok`]) {
+      expect(toSingleLine(text)).toBe(text);
+    }
   });
 });
 
@@ -137,6 +164,13 @@ describe('truncateText', () => {
 });
 
 describe('sanitizeUntrusted', () => {
+  it('turns line breaks and tabs into one space, so the words of a message stay apart', () => {
+    expect(sanitizeUntrusted(`first line${cp(0x0a)}second${cp(0x09)}column`)).toBe(
+      'first line second column',
+    );
+    expect(sanitizeUntrusted(`a${cp(0x0a)}${cp(0x200b)}${cp(0x0a)}b`)).toBe('a b');
+  });
+
   it('removes before it truncates, so hidden characters do not use up the length', () => {
     expect(sanitizeUntrusted(`${cp(0x200b).repeat(300)}visible`, 10)).toBe('visible');
   });
@@ -151,5 +185,111 @@ describe('sanitizeUntrusted', () => {
     for (let max = 0; max <= 20; max++) {
       expect(hasLoneSurrogate(sanitizeUntrusted(text, max)), `maxLength ${max}`).toBe(false);
     }
+  });
+});
+
+describe('cleanUntrusted', () => {
+  it('counts what it removes, but not the line breaks it turns into spaces or what the cap cuts', () => {
+    expect(cleanUntrusted(`a${cp(0x200b)}b${cp(0x0d, 0x0a)}c${cp(0x1b)}`)).toEqual({
+      text: 'ab c',
+      removed: 2,
+    });
+    expect(cleanUntrusted(`${cp(0x200b)}${'a'.repeat(20)}`, 5)).toEqual({
+      text: 'aaaaa…',
+      removed: 1,
+    });
+    expect(cleanUntrusted(`${cp(0x09)} spaced   out ${cp(0x2028)}`)).toEqual({
+      text: 'spaced out',
+      removed: 0,
+    });
+    expect(cleanUntrusted('plain')).toEqual({ text: 'plain', removed: 0 });
+  });
+
+  it('counts each tag character and each lone surrogate as one', () => {
+    expect(cleanUntrusted(`ok${tagged('hidden')}`)).toEqual({ text: 'ok', removed: 8 });
+    expect(cleanUntrusted(`x${unit(0xd800)}y${unit(0xdc00)}`)).toEqual({ text: 'xy', removed: 2 });
+    expect(cleanUntrusted(cp(0x1f600))).toEqual({ text: cp(0x1f600), removed: 0 });
+  });
+});
+
+describe('UntrustedText', () => {
+  it('adds up what clean removes over one call', () => {
+    const text = new UntrustedText();
+    expect(text.clean(`a${cp(0x200b)}`)).toBe('a');
+    expect(text.clean(`b${cp(0x1b, 0x9b)}`)).toBe('b');
+    expect(text.removed).toBe(3);
+  });
+
+  it('counts a value cleaned earlier once per call, however often it is used', () => {
+    const cached = cleanUntrusted(`symbol.xym${cp(0x200b)}`);
+    const first = new UntrustedText();
+    expect(first.use(cached)).toBe('symbol.xym');
+    first.use(cached);
+    expect(first.removed).toBe(1);
+    const second = new UntrustedText();
+    second.use(cached);
+    expect(second.removed).toBe(1);
+  });
+
+  it('counts each piece of a joined name once', () => {
+    const root = cleanUntrusted(`sym${cp(0x200b)}bol`);
+    const leaf = cleanUntrusted(`xym${cp(0x200b, 0x200b)}`);
+    const full = joinCleaned([root, leaf], '.');
+    expect(full).toMatchObject({ text: 'symbol.xym', removed: 3 });
+    const text = new UntrustedText();
+    text.use(root);
+    text.use(full);
+    expect(text.removed).toBe(3);
+  });
+
+  it('passes null through useOrNull without counting', () => {
+    const text = new UntrustedText();
+    expect(text.useOrNull(null)).toBeNull();
+    expect(text.useOrNull(undefined)).toBeNull();
+    expect(text.removed).toBe(0);
+  });
+
+  it('gives null from useOrNull when nothing is left, so the fallback applies, and still counts', () => {
+    const text = new UntrustedText();
+    expect(text.useOrNull(cleanUntrusted(cp(0x200b, 0x200b)))).toBeNull();
+    expect(text.removed).toBe(2);
+  });
+
+  it('counts two values of one source once, even when fetched separately', () => {
+    const first = cleanUntrusted(`symbol.xym${cp(0x200b)}`, 128, 'mosaic-alias:6BED913FA20223F8');
+    const again = cleanUntrusted(`symbol.xym${cp(0x200b)}`, 128, 'mosaic-alias:6BED913FA20223F8');
+    const other = cleanUntrusted(`symbol.xym${cp(0x200b)}`, 128, 'mosaic-alias:66BAE04E8758599E');
+    const text = new UntrustedText();
+    text.use(first);
+    text.use(again);
+    expect(text.removed).toBe(1);
+    text.use(other);
+    expect(text.removed).toBe(2);
+  });
+});
+
+describe('joinCleaned', () => {
+  it('has no text when a piece has nothing left, so a name with a missing level is not shown', () => {
+    const empty = cleanUntrusted(cp(0x2066));
+    const leaf = cleanUntrusted('alice');
+    const joined = joinCleaned([empty, leaf], '.');
+    expect(joined.text).toBe('');
+    const text = new UntrustedText();
+    expect(text.useOrNull(joined)).toBeNull();
+    expect(text.removed).toBe(1);
+  });
+});
+
+describe('the length cap and the count', () => {
+  it('drops the space right before the ellipsis of a cut', () => {
+    expect(truncateText('name more', 5)).toBe('name…');
+    expect(sanitizeUntrusted(`name${cp(0x0a)}more`, 5)).toBe('name…');
+  });
+
+  it('counts hidden characters over the whole value, also in a part the cap then cuts off', () => {
+    expect(cleanUntrusted(`${'a'.repeat(10)}${cp(0x200b)}tail`, 5)).toEqual({
+      text: 'aaaaa…',
+      removed: 1,
+    });
   });
 });

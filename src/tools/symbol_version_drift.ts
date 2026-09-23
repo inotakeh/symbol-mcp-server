@@ -7,7 +7,6 @@ import {
   ServerInfoSchema,
 } from '../client/schemas.js';
 import type { AppContext } from '../context.js';
-import { sanitizeUntrusted } from '../domain/sanitize.js';
 import {
   decodeVersion,
   deriveVersionDriftVerdict,
@@ -102,12 +101,13 @@ export const versionDriftTool = defineTool({
     "Tell whether the configured Symbol node's software version is behind the version most of the network runs. For the node's own version and sync state without a comparison, use symbol_node_status; for whether its services are healthy, symbol_node_health; for how many blocks it trails other nodes, symbol_network_compare. Reads the node's own version (/node/info) and REST version (/node/server), collects the versions of the peers the node knows (/node/peers) and of the reference nodes in SYMBOL_REFERENCE_NODES, and reports the version distribution, the majority version, the share of the sample running something newer, and a verdict: ok (same as or newer than the majority), behind (older than the majority, or newer versions hold at least half the sample), far_behind (newer versions hold at least 75%: peers may start refusing connections), or unknown (no peers). Peer hosts and keys are never reported. Key check after a node OS or tooling migration.",
   inputSchema,
   outputSchema,
-  run: async (ctx: AppContext, { format }) => {
+  untrustedText: true,
+  run: async (ctx: AppContext, { format }, text) => {
     const seed = ctx.network.generationHashSeed;
     const [info, serverInfo, rawPeers, references] = await Promise.all([
       ctx.rest.get('/node/info', NodeInfoSchema),
       ctx.rest.get('/node/server', ServerInfoSchema).then(
-        (s) => sanitizeUntrusted(s.serverInfo.restVersion, MAX_REST_VERSION_LENGTH),
+        (s) => text.clean(s.serverInfo.restVersion, MAX_REST_VERSION_LENGTH),
         (err: unknown) => {
           if (err instanceof RestError) return null;
           throw err;

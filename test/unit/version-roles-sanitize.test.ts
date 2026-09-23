@@ -35,11 +35,11 @@ describe('decodeRoles', () => {
 });
 
 describe('sanitizeUntrusted', () => {
-  it('strips control and bidi characters', () => {
+  it('strips control and bidi characters, and turns line breaks and tabs into spaces', () => {
     expect(sanitizeUntrusted('NO\u0007DE\u001b[31m')).toBe('NODE[31m');
     expect(sanitizeUntrusted('peer\u202Etwo\u200B')).toBe('peertwo');
-    expect(sanitizeUntrusted('line1\nline2\ttab\u007F')).toBe('line1line2tab');
-    expect(sanitizeUntrusted('bom\uFEFFless\u2028sep')).toBe('bomlesssep');
+    expect(sanitizeUntrusted('line1\nline2\ttab\u007F')).toBe('line1 line2 tab');
+    expect(sanitizeUntrusted('bom\uFEFFless\u2028sep')).toBe('bomless sep');
   });
   it('keeps ordinary unicode', () => {
     expect(sanitizeUntrusted('ノード 🚀 café')).toBe('ノード 🚀 café');

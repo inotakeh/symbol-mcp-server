@@ -14,13 +14,16 @@ import {
 } from './client/schemas.js';
 import { type Config, loadConfig, type ResolvedNetwork, resolveNetwork } from './config.js';
 import { type NetworkProperties, parseNetworkProperties } from './domain/properties.js';
-import { sanitizeUntrusted } from './domain/sanitize.js';
+import { type CleanedText, cleanUntrusted, joinCleaned } from './domain/sanitize.js';
 import { formatInstant, type Instant } from './domain/time.js';
 
 export interface CurrencyInfo {
   readonly mosaicId: string;
-  /** Namespace alias such as "symbol.xym" (untrusted, sanitized) or null when none is set. */
-  readonly alias: string | null;
+  /**
+   * Namespace alias such as "symbol.xym" or null when none is set. Untrusted and cleaned once
+   * per process; a tool that shows it passes it through its call's UntrustedText (`use`).
+   */
+  readonly alias: CleanedText | null;
   readonly divisibility: number;
 }
 
@@ -132,47 +135,55 @@ export class AppContext {
     return info;
   }
 
-  /** Resolves mosaic ids to their first alias name via `POST /namespaces/mosaic/names`. */
-  async resolveMosaicAliases(mosaicIds: readonly string[]): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
+  /**
+   * Resolves mosaic ids to their first alias name via `POST /namespaces/mosaic/names`. The names
+   * are untrusted and come back cleaned; a tool shows them through its call's UntrustedText.
+   */
+  async resolveMosaicAliases(mosaicIds: readonly string[]): Promise<Map<string, CleanedText>> {
+    const out = new Map<string, CleanedText>();
     if (mosaicIds.length === 0) return out;
     const res = await this.rest.post('/namespaces/mosaic/names', { mosaicIds }, MosaicNamesSchema);
     for (const entry of res.mosaicNames) {
       const first = entry.names[0];
-      if (first) out.set(entry.mosaicId.toUpperCase(), sanitizeUntrusted(first, 128));
+      const id = entry.mosaicId.toUpperCase();
+      if (first) out.set(id, cleanUntrusted(first, 128, `mosaic-alias:${id}`));
     }
     return out;
   }
 
   /**
    * Resolves namespace ids to their full dotted names ("symbol.xym") via `POST /namespaces/names`.
-   * The response lists parents alongside children; names are chained through `parentId`.
+   * The response lists parents alongside children; names are chained through `parentId`. Each
+   * level is keyed by its namespace id, so a parent shared by several names, or fetched twice in
+   * one call, is counted once per call.
    */
-  async resolveNamespaceNames(namespaceIds: readonly string[]): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
+  async resolveNamespaceNames(namespaceIds: readonly string[]): Promise<Map<string, CleanedText>> {
+    const out = new Map<string, CleanedText>();
     if (namespaceIds.length === 0) return out;
     const entries = await this.rest.post(
       '/namespaces/names',
       { namespaceIds: [...namespaceIds] },
       NamespaceNamesSchema,
     );
-    const byId = new Map<string, { name: string; parentId: string | undefined }>();
+    const byId = new Map<string, { name: CleanedText; parentId: string | undefined }>();
     for (const e of entries) {
-      byId.set(e.id.toUpperCase(), {
-        name: sanitizeUntrusted(e.name, 64),
+      const id = e.id.toUpperCase();
+      byId.set(id, {
+        name: cleanUntrusted(e.name, 64, `namespace:${id}`),
         parentId: e.parentId?.toUpperCase(),
       });
     }
-    const fullName = (id: string, depth: number): string | undefined => {
+    /** The levels of a name, root first. */
+    const levels = (id: string, depth: number): CleanedText[] | undefined => {
       const entry = byId.get(id);
       if (!entry || depth > 3) return undefined;
-      if (!entry.parentId) return entry.name;
-      const parent = fullName(entry.parentId, depth + 1);
-      return parent ? `${parent}.${entry.name}` : entry.name;
+      if (!entry.parentId) return [entry.name];
+      const parent = levels(entry.parentId, depth + 1);
+      return parent ? [...parent, entry.name] : [entry.name];
     };
     for (const id of byId.keys()) {
-      const name = fullName(id, 0);
-      if (name) out.set(id, name);
+      const name = levels(id, 0);
+      if (name) out.set(id, joinCleaned(name, '.'));
     }
     return out;
   }

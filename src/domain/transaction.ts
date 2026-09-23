@@ -9,6 +9,7 @@ import { hexAddressToBase32, hexToBytes, publicKeyToAddress } from './address.js
 import { formatAmount } from './amount.js';
 import { parseHeight } from './epoch.js';
 import { type DecodedMessage, decodeMessage } from './message.js';
+import type { CleanedText, UntrustedText } from './sanitize.js';
 import { formatInstant, type Instant, networkTimestampToDate } from './time.js';
 import { extractTransactionDetails, type TransactionDetails } from './txdetails.js';
 import { describeTransactionType, type TransactionTypeInfo } from './txtype.js';
@@ -26,8 +27,13 @@ export interface SummarizeOptions {
   readonly timeZone?: string | undefined;
   /** Upper-case mosaic id -> alias/divisibility (null when unknown). */
   readonly mosaicMeta: ReadonlyMap<string, MosaicMeta>;
-  /** Upper-case namespace id -> full dotted name, for alias recipients. */
-  readonly namespaceNames: ReadonlyMap<string, string>;
+  /**
+   * Upper-case namespace id -> full dotted name, for alias recipients. Cleaned but not yet counted:
+   * a name is counted through `untrusted` when a recipient shows it.
+   */
+  readonly namespaceNames: ReadonlyMap<string, CleanedText>;
+  /** The call's untrusted text: messages and transaction details are cleaned through it. */
+  readonly untrusted: UntrustedText;
 }
 
 export interface MosaicSummary {
@@ -113,7 +119,9 @@ function summarizeRecipient(
   return {
     address: null,
     namespaceId,
-    namespaceName: namespaceId ? (opts.namespaceNames.get(namespaceId) ?? null) : null,
+    namespaceName: namespaceId
+      ? opts.untrusted.useOrNull(opts.namespaceNames.get(namespaceId))
+      : null,
   };
 }
 
@@ -158,8 +166,8 @@ export function summarizeEmbedded(
     },
     recipient: summarizeRecipient(tx.recipientAddress, opts),
     mosaics: summarizeMosaics(tx.mosaics, opts),
-    message: hasMessage ? decodeMessage(tx.message) : null,
-    details: extractTransactionDetails(tx),
+    message: hasMessage ? decodeMessage(tx.message, opts.untrusted) : null,
+    details: extractTransactionDetails(tx, opts.untrusted),
   };
 }
 
@@ -191,7 +199,7 @@ export function summarizeTransaction(
     },
     recipient: summarizeRecipient(tx.recipientAddress, opts),
     mosaics: summarizeMosaics(tx.mosaics, opts),
-    message: hasMessage ? decodeMessage(tx.message) : null,
+    message: hasMessage ? decodeMessage(tx.message, opts.untrusted) : null,
     fee: {
       maxFee: tx.maxFee !== undefined ? formatAmount(tx.maxFee, feeDivisibility) : null,
       rawMaxFee: tx.maxFee ?? null,
@@ -200,7 +208,7 @@ export function summarizeTransaction(
       feeMultiplier,
       sizeBytes: size,
     },
-    details: extractTransactionDetails(tx),
+    details: extractTransactionDetails(tx, opts.untrusted),
     innerTransactions: (tx.transactions ?? []).map((inner) => summarizeEmbedded(inner, opts)),
     cosignatureCount: tx.cosignatures?.length ?? 0,
   };

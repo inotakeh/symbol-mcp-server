@@ -404,8 +404,9 @@ export const harvestingIncomeTool = defineTool({
     'The rewards are the HarvestFee receipts of the network currency, totalled on the server with exact integer arithmetic: receipt count and XYM total, split into harvester (blocks the account harvested), beneficiary (blocks others harvested with this account as beneficiary) and unknown. Period is a date range (YYYY-MM-DD, resolved to heights from block timestamps) or a height range. granularity=daily gives per-day buckets, granularity=monthly per-calendar-month buckets (yearly questions), granularity=receipt lists each receipt; output=csv returns the same rows as CSV text for a spreadsheet. Periods of a year or more are fine: the range is read in chunks internally. Read-only; no fiat conversion.',
   inputSchema,
   outputSchema,
+  untrustedText: true,
   renderText: (out) => out.csv ?? undefined,
-  run: async (ctx, input) => {
+  run: async (ctx, input, text) => {
     const period = resolvePeriod(input);
     const { granularity, format, output } = input;
     const timeZone = ctx.config.timeZone;
@@ -505,7 +506,8 @@ export const harvestingIncomeTool = defineTool({
       timeZone,
     });
     const div = currency.divisibility;
-    const label = currency.alias ?? currency.mosaicId;
+    const alias = text.useOrNull(currency.alias);
+    const label = alias ?? currency.mosaicId;
     const totals = flatTotals(aggregate.totals, div);
 
     const truncationReasons: Array<'pageLimit' | 'receiptList'> = [];
@@ -624,7 +626,7 @@ export const harvestingIncomeTool = defineTool({
       network: ctx.network.name,
       accountResolution: resolution,
       address: base32,
-      currency: { id: currency.mosaicId, alias: currency.alias, divisibility: div },
+      currency: { id: currency.mosaicId, alias, divisibility: div },
       period: {
         kind: period.kind,
         fromDate: period.kind === 'dates' ? formatCalendarDate(period.from) : null,

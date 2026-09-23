@@ -123,7 +123,8 @@ export const nodeHealthTool = defineTool({
     'Check whether the services of the configured Symbol node (SYMBOL_NODE_URL) are running healthily right now: API node, database, storage, clock and finalization lag, as one verdict. For whether the node is in sync, its version and its peer count, use symbol_node_status; for whether its version is behind the network, symbol_version_drift; for how many blocks it trails other nodes, symbol_network_compare. Six checks in a fixed order, each ok/warn/fail/unknown with a hint: API node and database status from /node/health (a 503 answer is read, not treated as a failure), node database block count versus chain height, node clock versus the local clock, finalization lag in blocks and minutes, and the node roles (is it a voting node). The verdict is healthy, degraded (a warning, or a check that could not be made) or unhealthy. Thresholds come from the network properties.',
   inputSchema,
   outputSchema,
-  run: async (ctx: AppContext, { format }) => {
+  untrustedText: true,
+  run: async (ctx: AppContext, { format }, text) => {
     const host = ctx.rest.host;
     const [{ properties }, health, storage, time, chain, info] = await Promise.all([
       ctx.getNetworkData(),
@@ -143,8 +144,8 @@ export const nodeHealthTool = defineTool({
 
     // 1-2. api_node, db
     if (health.ok) {
-      const apiNode = serviceStatus(health.value.status.apiNode);
-      const db = serviceStatus(health.value.status.db);
+      const apiNode = serviceStatus(health.value.status.apiNode, text);
+      const db = serviceStatus(health.value.status.db, text);
       checks.push(
         apiNode === 'up'
           ? check({

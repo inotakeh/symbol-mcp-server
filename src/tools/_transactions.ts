@@ -10,6 +10,7 @@ import {
   type TransactionInfo,
 } from '../client/schemas.js';
 import type { AppContext } from '../context.js';
+import type { UntrustedText } from '../domain/sanitize.js';
 import {
   collectMosaicIds,
   collectRecipientNamespaceIds,
@@ -99,12 +100,16 @@ export const TransactionSummarySchema = z.object({
 export async function resolveMosaicMeta(
   ctx: AppContext,
   ids: readonly string[],
+  text: UntrustedText,
 ): Promise<Map<string, MosaicMeta>> {
   const { currency } = await ctx.getNetworkData();
   const out = new Map<string, MosaicMeta>();
   const unique = [...new Set(ids.map((id) => id.toUpperCase()))];
   if (unique.includes(currency.mosaicId)) {
-    out.set(currency.mosaicId, { alias: currency.alias, divisibility: currency.divisibility });
+    out.set(currency.mosaicId, {
+      alias: text.useOrNull(currency.alias),
+      divisibility: currency.divisibility,
+    });
   }
   const others = unique.filter((id) => id !== currency.mosaicId);
   if (others.length === 0) return out;
@@ -120,7 +125,7 @@ export async function resolveMosaicMeta(
   for (const id of others) {
     const divisibility = divisibilityById.get(id);
     if (divisibility === undefined) missing.push(id);
-    else out.set(id, { alias: aliases.get(id) ?? null, divisibility });
+    else out.set(id, { alias: text.useOrNull(aliases.get(id)), divisibility });
   }
   if (missing.length === 0) return out;
 
@@ -151,11 +156,11 @@ export async function resolveMosaicMeta(
   for (const id of missing) {
     const target = aliased.find((n) => n.id === id)?.target;
     if (target === undefined) {
-      out.set(id, { alias: aliases.get(id) ?? null, divisibility: null });
+      out.set(id, { alias: text.useOrNull(aliases.get(id)), divisibility: null });
       continue;
     }
     out.set(id, {
-      alias: names.get(id) ?? null,
+      alias: text.useOrNull(names.get(id)),
       divisibility:
         target === currency.mosaicId
           ? currency.divisibility
@@ -165,16 +170,21 @@ export async function resolveMosaicMeta(
   return out;
 }
 
-/** Builds the pure summariser options for a batch of transactions (one round of lookups). */
+/**
+ * Builds the pure summariser options for a batch of transactions (one round of lookups). The
+ * alias and namespace names looked up here, and the messages and details cleaned later by the
+ * summariser, go through the call's `text`.
+ */
 export async function buildSummarizeOptions(
   ctx: AppContext,
   infos: readonly TransactionInfo[],
+  text: UntrustedText,
 ): Promise<SummarizeOptions> {
   const { properties, currency } = await ctx.getNetworkData();
   const mosaicIds = [...new Set(infos.flatMap(collectMosaicIds))];
   const namespaceIds = [...new Set(infos.flatMap(collectRecipientNamespaceIds))];
   const [mosaicMeta, namespaceNames] = await Promise.all([
-    resolveMosaicMeta(ctx, mosaicIds),
+    resolveMosaicMeta(ctx, mosaicIds, text),
     ctx.resolveNamespaceNames(namespaceIds),
   ]);
   return {
@@ -183,6 +193,8 @@ export async function buildSummarizeOptions(
     currencyDivisibility: currency.divisibility,
     timeZone: ctx.config.timeZone,
     mosaicMeta,
+    // Counted by the summariser when a recipient shows the name, not here.
     namespaceNames,
+    untrusted: text,
   };
 }

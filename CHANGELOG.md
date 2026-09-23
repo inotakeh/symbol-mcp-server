@@ -9,6 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `invisibleCharactersRemoved`, the last output field of the 17 tools that show text written by
+  others (node strings, alias and namespace names, transfer messages, metadata values,
+  `priceSource` and `priceAsOf`): how many control, format, lone surrogate and tag characters were
+  removed from that text in this answer. When it is above 0 the summary ends with a line saying so.
+  A value used several times, such as the currency alias, counts once per call, and text that the
+  answer does not show is not counted. Tabs and line breaks turned into spaces are not counted
+  either; hidden characters are counted over the whole value, also where a length limit then cuts
+  the text. The other five tools (`symbol_address_parse`, `symbol_finality_participation`,
+  `symbol_time_convert`, `symbol_network_compare`, `symbol_harvester_watch`) show no such text and
+  have no such field. The published output schemas do not allow extra fields, and MCP clients
+  check results against the tool list they cached, so restart the MCP host after upgrading.
 - `docs/RELEASING.md`: the release procedure (release PR, tag, approval, the `publish` and
   `github-release` jobs, checking the release, the MCP Registry, what to do when a step fails),
   backfilling an older GitHub Release, and where to read the OpenSSF Scorecard results. The
@@ -26,6 +37,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Tabs and line breaks in untrusted text (transfer messages, metadata values, names, what a node
+  reports about itself, `priceSource` and `priceAsOf`) now become one space instead of being
+  removed, so the words on either side no longer run together: `a<LF>b` was `ab` and is now
+  `a b`. Runs of spaces become one space and the ends lose their spaces; ideographic and no-break
+  spaces are kept as written. This covers TAB, LF, VT, FF, CR (a CRLF pair gives one space), NEL
+  and the line and paragraph separators. A `/node/health` status is still judged after cleaning,
+  so `up` followed by a line break is still up. A value cut to a length limit no longer ends with
+  a space before the "…".
 - What is distributed or documented no longer names real nodes or transactions: `--help` points to
   https://nodewatch.symbol.tools/ and `https://<node-host>:3001` instead of listing two public
   nodes, the `transactionHash` argument of `symbol_transaction_get` describes the format instead of
@@ -73,6 +92,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A mosaic alias or namespace name made only of characters the untrusted-text filter removes no
+  longer shows as an empty label (`Currency  = mosaic …`) or as a name with an empty level
+  (`.xym`): the mosaic id, or the name the caller typed, is shown instead. A `priceSource` or
+  `priceAsOf` of such characters only counts as not given, instead of printing an empty
+  provenance in the `symbol_holdings_value` summary.
 - Bodies that are not read, from an error answer, a redirect or an answer whose `Content-Length`
   is over the 5 MB cap, are discarded at once instead of holding the connection until garbage
   collection. A body over the cap is still refused unread, and a streamed one is cut off as soon as

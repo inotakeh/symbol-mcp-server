@@ -136,7 +136,8 @@ export const accountRankTool = defineTool({
     "Rank an account by its holdings of a mosaic (XYM by default) and list the top holders, like an explorer rich list: the account's balance, share of supply and rank (holders are scanned 100 per request, down to maxRank), the top N holders with balances and shares, and the combined share of the top N. Omit account to get the top list only. The node orders holders by balance (ties are node-dependent); no labels such as exchange or foundation are attached.",
   inputSchema,
   outputSchema,
-  run: async (ctx, { account, mosaic, top, maxRank, format }) => {
+  untrustedText: true,
+  run: async (ctx, { account, mosaic, top, maxRank, format }, text) => {
     const { currency } = await ctx.getNetworkData();
 
     // Mosaic: default currency, or the given id / alias name.
@@ -149,17 +150,17 @@ export const accountRankTool = defineTool({
       const info = await ctx.rest.get(`/mosaics/${mosaicId}`, MosaicInfoSchema);
       divisibility = info.mosaic.divisibility;
       supplyRaw = BigInt(info.mosaic.supply);
-      alias = currency.alias;
+      alias = text.useOrNull(currency.alias);
     } else {
       const resolved = await resolveMosaicInput(ctx, mosaic);
       mosaicId = resolved.mosaicId;
       divisibility = resolved.info.mosaic.divisibility;
       supplyRaw = BigInt(resolved.info.mosaic.supply);
       if (mosaicId === currency.mosaicId) {
-        alias = currency.alias ?? resolved.aliasFromName ?? null;
+        alias = text.useOrNull(currency.alias) ?? resolved.aliasFromName ?? null;
       } else {
         const aliases = await ctx.resolveMosaicAliases([mosaicId]);
-        alias = aliases.get(mosaicId) ?? resolved.aliasFromName ?? null;
+        alias = text.useOrNull(aliases.get(mosaicId)) ?? resolved.aliasFromName ?? null;
       }
     }
     const label = alias ?? mosaicId;
