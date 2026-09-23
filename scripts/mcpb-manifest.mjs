@@ -17,6 +17,7 @@ import { pathToFileURL } from 'node:url';
 /** Placeholder the prompt templates use for their only argument (src/prompts/_shared.ts). */
 export const PROMPT_ACCOUNT_TOKEN = '{account}';
 /** The same argument in MCPB manifest syntax. */
+// biome-ignore lint/suspicious/noTemplateCurlyInString: MCPB manifest placeholder syntax, not a JavaScript template
 export const MANIFEST_ACCOUNT_TOKEN = '${arguments.account}';
 
 const ABBREVIATIONS = /(?:^|[\s(])(?:e\.g|i\.e|etc|vs)$/i;
