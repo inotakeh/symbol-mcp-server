@@ -17,10 +17,10 @@ jobs:
       contents: read
       id-token: write   # OIDC for npm trusted publishing (no NPM_TOKEN anywhere)
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -40,3 +40,22 @@ jobs:
           fi
       - name: Publish
         run: npm publish --access public --provenance
+
+  # GitHub Release for the tag, with the CHANGELOG.md section of that version as notes. Runs only
+  # after publish (and therefore the npm-publish approval) succeeded. If it fails, the package is
+  # already on npm; rerun this job or create the release by hand with the same two commands.
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Release notes from CHANGELOG.md
+        run: node scripts/release-notes.mjs "${GITHUB_REF_NAME#v}" > notes.md
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag --title "$GITHUB_REF_NAME"
