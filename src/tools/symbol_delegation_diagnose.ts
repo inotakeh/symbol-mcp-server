@@ -25,6 +25,7 @@ import { parseHeight } from '../domain/epoch.js';
 import { classifyHarvestReceipts } from '../domain/harvesting.js';
 import { isPersistentDelegationMessage } from '../domain/message.js';
 import { receiptTypeCode } from '../domain/receipttype.js';
+import type { CleanedText } from '../domain/sanitize.js';
 import { formatInstantText, type Instant, networkTimestampToDate } from '../domain/time.js';
 import { parseTransactionType } from '../domain/txtype.js';
 import { AccountResolutionSchema, resolveAccountInput, withResolutionPrefix } from './_accounts.js';
@@ -288,7 +289,8 @@ export const delegationDiagnoseTool = defineTool({
     "Diagnose whether an account's delegated harvesting is active and, if not, where it stops. For the list of harvesters unlocked on the configured node, use symbol_harvesting_status; for how that list changed, symbol_harvester_watch; for the rewards the account earned, symbol_harvesting_income. The checks: account exists, balance within minHarvesterBalance/maxHarvesterBalance, importance above zero (or blocks until the next recalculation), linked/VRF/node keys registered, node key equal to the configured node's nodePublicKey, remote key unlocked on the configured node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Each check is ok/warn/fail/unknown with a hint; the verdict is active, not_active or cannot_verify. Node-side checks are possible only when the account delegates to the configured node; no other node is contacted. Read-only.",
   inputSchema,
   outputSchema,
-  run: async (ctx, { account, recentDays, format }) => {
+  untrustedText: true,
+  run: async (ctx, { account, recentDays, format }, text) => {
     const { classified, resolution } = await resolveAccountInput(ctx, account);
 
     const [accountInfo, { properties, currency }, chain, nodeInfo, unlockedKeys] =
@@ -317,14 +319,14 @@ export const delegationDiagnoseTool = defineTool({
     const harvestingMosaicId =
       properties.harvestingMosaicId !== '' ? properties.harvestingMosaicId : currency.mosaicId;
     let harvestingDivisibility = currency.divisibility;
-    let harvestingLabel = currency.alias ?? currency.mosaicId;
+    let harvestingAlias: CleanedText | null = currency.alias;
     if (harvestingMosaicId !== currency.mosaicId) {
       const [info, aliases] = await Promise.all([
         ctx.rest.get(`/mosaics/${harvestingMosaicId}`, MosaicInfoSchema),
         ctx.resolveMosaicAliases([harvestingMosaicId]),
       ]);
       harvestingDivisibility = info.mosaic.divisibility;
-      harvestingLabel = aliases.get(harvestingMosaicId) ?? harvestingMosaicId;
+      harvestingAlias = aliases.get(harvestingMosaicId) ?? null;
     }
 
     if (accountInfo === null) {
@@ -374,6 +376,7 @@ export const delegationDiagnoseTool = defineTool({
     const rawBalance = BigInt(
       acct.mosaics.find((m) => m.id.toUpperCase() === harvestingMosaicId)?.amount ?? '0',
     );
+    const harvestingLabel = text.useOrNull(harvestingAlias) ?? harvestingMosaicId;
     const balanceText = `${formatAmount(rawBalance, harvestingDivisibility)} ${harvestingLabel}`;
     const minText = `${formatAmount(properties.minHarvesterBalance, harvestingDivisibility)} ${harvestingLabel}`;
     const maxText = `${formatAmount(properties.maxHarvesterBalance, harvestingDivisibility)} ${harvestingLabel}`;

@@ -20,7 +20,7 @@
  */
 import * as z from 'zod/v4';
 import { hexAddressToBase32, hexToBytes } from './address.js';
-import { sanitizeUntrusted } from './sanitize.js';
+import { cleanUntrusted, type UntrustedText } from './sanitize.js';
 
 const Hex16 = z.string().regex(/^[0-9A-Fa-f]{16}$/);
 const Hex48 = z.string().regex(/^[0-9A-Fa-f]{48}$/);
@@ -242,7 +242,8 @@ const votingKeyLink = z.object({
 });
 const namespaceRegistration = z.object({
   id: upperHex16,
-  name: z.string().transform((v) => sanitizeUntrusted(v, 64)),
+  // Untrusted: cleaned after parsing, through the call's UntrustedText (not in the schema).
+  name: z.string(),
   registrationType,
   duration: Uint64.optional(),
   parentId: upperHex16.optional(),
@@ -307,7 +308,8 @@ const metadata = z.object({
   targetNamespaceId: upperHex16.optional(),
   valueSizeDelta: z.number().int(),
   valueSize: z.number().int(),
-  value: z.string().transform((v) => sanitizeUntrusted(v, 2048)),
+  // Untrusted: cleaned after parsing, through the call's UntrustedText (not in the schema).
+  value: z.string(),
 });
 /** An account restriction value: an address, a mosaic id or a transaction type code. */
 const restrictionValue = z.union([Hex48, Hex16, z.number().int()]);
@@ -339,7 +341,10 @@ function restrictionItem(value: string | number): string {
   return value.length === 48 ? addressText(value) : value.toUpperCase();
 }
 
-function otherDetails(tx: Readonly<Record<string, unknown>>): TransactionDetails {
+function otherDetails(
+  tx: Readonly<Record<string, unknown>>,
+  text: UntrustedText,
+): TransactionDetails {
   const skip = new Set([
     'signature',
     'signerPublicKey',
@@ -361,20 +366,26 @@ function otherDetails(tx: Readonly<Record<string, unknown>>): TransactionDetails
     if (fields.size >= MAX_OTHER_FIELDS) break;
     // The body DTO is loose, so the field names are the node's text as much as the values are.
     // Two names that clean to the same text keep the first, so a look-alike cannot replace it.
-    const key = sanitizeUntrusted(rawKey, MAX_OTHER_FIELD_NAME_LENGTH);
-    if (key === '' || skip.has(key) || fields.has(key)) continue;
-    if (typeof value === 'string') fields.set(key, sanitizeUntrusted(value));
+    // Only names and values that reach the output are counted.
+    const key = cleanUntrusted(rawKey, MAX_OTHER_FIELD_NAME_LENGTH);
+    if (key.text === '' || skip.has(key.text) || fields.has(key.text)) continue;
+    if (typeof value === 'string') fields.set(text.use(key), text.clean(value));
     else if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
-      fields.set(key, value);
+      fields.set(text.use(key), value);
     }
   }
   // fromEntries defines own properties, so a name such as "__proto__" stays an ordinary field.
   return { kind: 'other', fields: Object.fromEntries(fields) };
 }
 
-/** Extracts typed details from a raw catapult-rest transaction object by its type code. */
+/**
+ * Extracts typed details from a raw catapult-rest transaction object by its type code. The text
+ * written by others (namespace names, metadata values, unknown fields) is cleaned through the
+ * call's `text`, which counts what it lost.
+ */
 export function extractTransactionDetails(
   tx: Readonly<Record<string, unknown>> & { readonly type: number },
+  text: UntrustedText,
 ): TransactionDetails {
   const parse = <T>(schema: z.ZodType<T>): T | undefined => {
     const r = schema.safeParse(tx);
@@ -390,11 +401,11 @@ export function extractTransactionDetails(
     case 0x4243: {
       // VrfKeyLink
       const d = parse(keyLink);
-      return d ? { kind: 'keyLink', ...d } : otherDetails(tx);
+      return d ? { kind: 'keyLink', ...d } : otherDetails(tx, text);
     }
     case 0x4143: {
       const d = parse(votingKeyLink);
-      return d ? { kind: 'votingKeyLink', ...d } : otherDetails(tx);
+      return d ? { kind: 'votingKeyLink', ...d } : otherDetails(tx, text);
     }
     case 0x414e: {
       const d = parse(namespaceRegistration);
@@ -402,12 +413,12 @@ export function extractTransactionDetails(
         ? {
             kind: 'namespaceRegistration',
             id: d.id,
-            name: d.name,
+            name: text.clean(d.name, 64),
             registrationType: d.registrationType,
             duration: d.registrationType === 'root' ? (d.duration ?? null) : null,
             parentId: d.registrationType === 'child' ? (d.parentId ?? null) : null,
           }
-        : otherDetails(tx);
+        : otherDetails(tx, text);
     }
     case 0x414d: {
       const d = parse(mosaicDefinition);
@@ -426,45 +437,45 @@ export function extractTransactionDetails(
             divisibility: d.divisibility,
             duration: d.duration,
           }
-        : otherDetails(tx);
+        : otherDetails(tx, text);
     }
     case 0x424d: {
       const d = parse(mosaicSupplyChange);
-      return d ? { kind: 'mosaicSupplyChange', ...d } : otherDetails(tx);
+      return d ? { kind: 'mosaicSupplyChange', ...d } : otherDetails(tx, text);
     }
     case 0x434d: {
       const d = parse(mosaicSupplyRevocation);
-      return d ? { kind: 'mosaicSupplyRevocation', ...d } : otherDetails(tx);
+      return d ? { kind: 'mosaicSupplyRevocation', ...d } : otherDetails(tx, text);
     }
     case 0x424e: {
       const d = parse(addressAlias);
-      return d ? { kind: 'addressAlias', ...d } : otherDetails(tx);
+      return d ? { kind: 'addressAlias', ...d } : otherDetails(tx, text);
     }
     case 0x434e: {
       const d = parse(mosaicAlias);
-      return d ? { kind: 'mosaicAlias', ...d } : otherDetails(tx);
+      return d ? { kind: 'mosaicAlias', ...d } : otherDetails(tx, text);
     }
     case 0x4148: {
       const d = parse(hashLock);
-      return d ? { kind: 'hashLock', ...d } : otherDetails(tx);
+      return d ? { kind: 'hashLock', ...d } : otherDetails(tx, text);
     }
     case 0x4152: {
       const d = parse(secretLock);
-      return d ? { kind: 'secretLock', ...d } : otherDetails(tx);
+      return d ? { kind: 'secretLock', ...d } : otherDetails(tx, text);
     }
     case 0x4252: {
       const d = parse(secretProof);
-      return d ? { kind: 'secretProof', ...d } : otherDetails(tx);
+      return d ? { kind: 'secretProof', ...d } : otherDetails(tx, text);
     }
     case 0x4155: {
       const d = parse(multisig);
-      return d ? { kind: 'multisigAccountModification', ...d } : otherDetails(tx);
+      return d ? { kind: 'multisigAccountModification', ...d } : otherDetails(tx, text);
     }
     case 0x4144:
     case 0x4244:
     case 0x4344: {
       const d = parse(metadata);
-      if (!d) return otherDetails(tx);
+      if (!d) return otherDetails(tx, text);
       const metadataType =
         tx.type === 0x4144 ? 'account' : tx.type === 0x4244 ? 'mosaic' : 'namespace';
       return {
@@ -476,14 +487,14 @@ export function extractTransactionDetails(
         targetNamespaceId: d.targetNamespaceId ?? null,
         valueSizeDelta: d.valueSizeDelta,
         valueSize: d.valueSize,
-        value: d.value,
+        value: text.clean(d.value, 2048),
       };
     }
     case 0x4150:
     case 0x4250:
     case 0x4350: {
       const d = parse(accountRestriction);
-      if (!d) return otherDetails(tx);
+      if (!d) return otherDetails(tx, text);
       const flags = d.restrictionFlags;
       const restrictionType =
         (flags & 0x0004) !== 0
@@ -503,13 +514,13 @@ export function extractTransactionDetails(
     }
     case 0x4251: {
       const d = parse(mosaicAddressRestriction);
-      return d ? { kind: 'mosaicAddressRestriction', ...d } : otherDetails(tx);
+      return d ? { kind: 'mosaicAddressRestriction', ...d } : otherDetails(tx, text);
     }
     case 0x4151: {
       const d = parse(mosaicGlobalRestriction);
-      return d ? { kind: 'mosaicGlobalRestriction', ...d } : otherDetails(tx);
+      return d ? { kind: 'mosaicGlobalRestriction', ...d } : otherDetails(tx, text);
     }
     default:
-      return otherDetails(tx);
+      return otherDetails(tx, text);
   }
 }

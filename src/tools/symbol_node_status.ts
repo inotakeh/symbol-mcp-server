@@ -10,7 +10,6 @@ import { parseHeight } from '../domain/epoch.js';
 import { findNetworkBySeed } from '../domain/network.js';
 import { serviceStatus } from '../domain/nodehealth.js';
 import { decodeRoles } from '../domain/roles.js';
-import { sanitizeUntrusted } from '../domain/sanitize.js';
 import { networkTimestampToDate } from '../domain/time.js';
 import { decodeVersion } from '../domain/version.js';
 import { defineTool, formatInteger, nullable } from './_shared.js';
@@ -62,7 +61,8 @@ export const nodeStatusTool = defineTool({
     'Report whether the configured Symbol node (SYMBOL_NODE_URL) is in sync, and what it is: friendly name, host, roles (Peer/API/Voting), software version, network, current and finalized height, finalization epoch and peer count. For whether its services are healthy (database, storage, clock, finalization lag, as one verdict), use symbol_node_health; for whether its version is behind the network, symbol_version_drift; for how many blocks it trails other nodes, symbol_network_compare. The node counts as not synced when its latest block is older than 5 minutes. Also shows the API node and database status from /node/health. Takes no arguments.',
   inputSchema: undefined,
   outputSchema,
-  run: async (ctx) => {
+  untrustedText: true,
+  run: async (ctx, _input, text) => {
     const [info, health, chain, peers, { properties }] = await Promise.all([
       ctx.rest.get('/node/info', NodeInfoSchema),
       // catapult-rest answers 503 with the same body when a service is down; read it.
@@ -81,15 +81,15 @@ export const nodeStatusTool = defineTool({
     );
     const ageSeconds = Math.round((now.getTime() - latestBlockDate.getTime()) / 1000);
     const synced = ageSeconds <= SYNC_THRESHOLD_SECONDS;
-    const apiNode = serviceStatus(health.status.apiNode);
-    const db = serviceStatus(health.status.db);
+    const apiNode = serviceStatus(health.status.apiNode, text);
+    const db = serviceStatus(health.status.db, text);
     const healthy = apiNode === 'up' && db === 'up';
 
     const nodeNetwork = findNetworkBySeed(info.networkGenerationHashSeed);
     const matchesConfiguredNetwork = nodeNetwork?.name === ctx.network.name;
 
-    const friendlyName = sanitizeUntrusted(info.friendlyName ?? '');
-    const host = sanitizeUntrusted(info.host ?? '');
+    const friendlyName = text.clean(info.friendlyName ?? '');
+    const host = text.clean(info.host ?? '');
     const roles = decodeRoles(info.roles);
     const version = decodeVersion(info.version);
 

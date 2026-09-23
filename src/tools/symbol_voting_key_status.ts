@@ -87,7 +87,8 @@ export const votingKeyStatusTool = defineTool({
     'For a Symbol voting node account, list every registered voting key with its start/end epoch and status (expired, active, future), and for active or upcoming keys compute the remaining epochs, blocks and days, the estimated expiry date/time, and a recommended renewal window (7 to 3 days before expiry). Also reports the current finalization epoch, network limits (max keys per account, min/max key lifetime, free slots), whether the balance meets minVoterBalance, and warnings when no key is active or a key expires within 30 days.',
   inputSchema,
   outputSchema,
-  run: async (ctx, { account }) => {
+  untrustedText: true,
+  run: async (ctx, { account }, text) => {
     const [{ info, resolution }, chain, { properties, currency }] = await Promise.all([
       fetchAccount(ctx, account),
       ctx.rest.get('/chain/info', ChainInfoSchema),
@@ -124,7 +125,7 @@ export const votingKeyStatusTool = defineTool({
       balanceRaw,
       minVoterBalance: properties.minVoterBalance,
       currencyDivisibility: currency.divisibility,
-      currencyAlias: currency.alias,
+      currencyAlias: text.useOrNull(currency.alias),
     });
 
     const active = report.votingKeys.filter((k) => k.status === 'active');

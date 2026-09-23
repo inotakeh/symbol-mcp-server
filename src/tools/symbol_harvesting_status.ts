@@ -70,26 +70,29 @@ export const harvestingStatusTool = defineTool({
     "List the delegated harvester keys unlocked on the configured node right now (/node/unlockedaccount) and the network's harvesting limits; with an account, also tell whether its linked key is among them. For whether an account's delegated harvesting works and where it stops, use symbol_delegation_diagnose; for how the unlocked list changed since the last check, symbol_harvester_watch; for harvesting rewards, symbol_harvesting_income. The limits are minHarvesterBalance, maxHarvesterBalance and harvestBeneficiaryPercentage. With an account, the tool also checks that the balance is at least minHarvesterBalance and the importance above zero, and lists warnings.",
   inputSchema,
   outputSchema,
-  run: async (ctx, { account }) => {
+  untrustedText: true,
+  run: async (ctx, { account }, text) => {
     const [unlocked, { properties, currency }] = await Promise.all([
       ctx.rest.get('/node/unlockedaccount', UnlockedAccountSchema),
       ctx.getNetworkData(),
     ]);
     const unlockedKeys = unlocked.unlockedAccount.map((k) => k.toUpperCase());
 
-    let harvestingMosaic = {
-      id: properties.harvestingMosaicId,
-      alias: currency.alias,
-      divisibility: currency.divisibility,
-    };
-    if (properties.harvestingMosaicId !== currency.mosaicId) {
+    let harvestingMosaic: { id: string; alias: string | null; divisibility: number };
+    if (properties.harvestingMosaicId === currency.mosaicId) {
+      harvestingMosaic = {
+        id: properties.harvestingMosaicId,
+        alias: text.useOrNull(currency.alias),
+        divisibility: currency.divisibility,
+      };
+    } else {
       const [info, aliases] = await Promise.all([
         ctx.rest.get(`/mosaics/${properties.harvestingMosaicId}`, MosaicInfoSchema),
         ctx.resolveMosaicAliases([properties.harvestingMosaicId]),
       ]);
       harvestingMosaic = {
         id: properties.harvestingMosaicId,
-        alias: aliases.get(properties.harvestingMosaicId) ?? null,
+        alias: text.useOrNull(aliases.get(properties.harvestingMosaicId)),
         divisibility: info.mosaic.divisibility,
       };
     }

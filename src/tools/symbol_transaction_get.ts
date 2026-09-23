@@ -33,7 +33,14 @@ function messagePreview(text: string): string {
   return truncateText(text, SUMMARY_MESSAGE_PREVIEW);
 }
 
-export function describeTransactionLine(t: TransactionSummary, currencyLabel: string): string {
+/**
+ * One line about a transaction. `currencyLabel` is called only when a fee is shown, so an alias
+ * that the line does not show is not counted as shown untrusted text.
+ */
+export function describeTransactionLine(
+  t: TransactionSummary,
+  currencyLabel: () => string,
+): string {
   const parts: string[] = [];
   if (t.recipient) {
     const to =
@@ -57,8 +64,8 @@ export function describeTransactionLine(t: TransactionSummary, currencyLabel: st
       `${t.innerTransactions.length} inner transaction${t.innerTransactions.length === 1 ? '' : 's'} (${t.innerTransactions.map((i) => i.type.name).join(', ')})`,
     );
   }
-  if (t.fee.paidFee) parts.push(`fee ${t.fee.paidFee} ${currencyLabel} (max ${t.fee.maxFee})`);
-  else if (t.fee.maxFee) parts.push(`max fee ${t.fee.maxFee} ${currencyLabel}`);
+  if (t.fee.paidFee) parts.push(`fee ${t.fee.paidFee} ${currencyLabel()} (max ${t.fee.maxFee})`);
+  else if (t.fee.maxFee) parts.push(`max fee ${t.fee.maxFee} ${currencyLabel()}`);
   return parts.join('; ');
 }
 
@@ -70,7 +77,8 @@ export const transactionGetTool = defineTool({
     UNTRUSTED_TEXT_NOTE,
   inputSchema,
   outputSchema,
-  run: async (ctx, { transactionHash }) => {
+  untrustedText: true,
+  run: async (ctx, { transactionHash }, text) => {
     const hash = transactionHash.trim().toUpperCase();
     if (!/^[0-9A-F]{64}$/.test(hash)) {
       throw new ToolInputError(
@@ -78,7 +86,6 @@ export const transactionGetTool = defineTool({
       );
     }
     const { currency } = await ctx.getNetworkData();
-    const currencyLabel = currency.alias ?? currency.mosaicId;
 
     for (const group of GROUPS) {
       const info = await ctx.rest.getOrNull(
@@ -86,8 +93,9 @@ export const transactionGetTool = defineTool({
         TransactionInfoSchema,
       );
       if (!info) continue;
-      const opts = await buildSummarizeOptions(ctx, [info]);
+      const opts = await buildSummarizeOptions(ctx, [info], text);
       const transaction = summarizeTransaction(info, opts);
+      const currencyLabel = () => text.useOrNull(currency.alias) ?? currency.mosaicId;
       const where =
         group === 'confirmed' && transaction.height !== null
           ? `confirmed at height ${formatInteger(transaction.height)}${transaction.timestamp ? ` (${formatInstantText(transaction.timestamp)})` : ''}`

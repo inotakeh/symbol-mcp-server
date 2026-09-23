@@ -41,19 +41,21 @@ export const networkInfoTool = defineTool({
     'Describe the Symbol network the configured node belongs to: network name and identifier, generation hash seed, current and finalized block height, finalization epoch, block target time, voting set grouping, epoch adjustment, the native currency mosaic (XYM) id/alias/divisibility, and current transaction fee multipliers. Takes no arguments; the node is fixed by SYMBOL_NODE_URL.',
   inputSchema: undefined,
   outputSchema,
-  run: async (ctx) => {
+  untrustedText: true,
+  run: async (ctx, _input, text) => {
     const [{ properties, currency }, chain, fees] = await Promise.all([
       ctx.getNetworkData(),
       ctx.rest.get('/chain/info', ChainInfoSchema),
       ctx.rest.get('/network/fees/transaction', TransactionFeesSchema),
     ]);
+    const alias = text.useOrNull(currency.alias);
     const height = parseHeight(chain.height);
     const finalizedHeight = parseHeight(chain.latestFinalizedBlock.height);
     const epochAdjustmentUtc = new Date(properties.epochAdjustmentSeconds * 1000).toISOString();
 
     const summary = [
       `Symbol ${ctx.network.name} (identifier ${ctx.network.identifier}) via ${ctx.rest.host}: height ${formatInteger(height)}, finalized ${formatInteger(finalizedHeight)} (epoch ${chain.latestFinalizedBlock.finalizationEpoch}).`,
-      `Currency ${currency.alias ?? currency.mosaicId} = mosaic ${currency.mosaicId}, divisibility ${currency.divisibility}; block target ${properties.blockGenerationTargetTimeMs / 1000}s, voting set grouping ${properties.votingSetGrouping}.`,
+      `Currency ${alias ?? currency.mosaicId} = mosaic ${currency.mosaicId}, divisibility ${currency.divisibility}; block target ${properties.blockGenerationTargetTimeMs / 1000}s, voting set grouping ${properties.votingSetGrouping}.`,
       `Fee multipliers: min ${fees.minFeeMultiplier}, average ${fees.averageFeeMultiplier}, median ${fees.medianFeeMultiplier}, highest ${fees.highestFeeMultiplier}.`,
     ].join('\n');
 
@@ -75,7 +77,7 @@ export const networkInfoTool = defineTool({
       epochAdjustment: { seconds: properties.epochAdjustmentSeconds, utc: epochAdjustmentUtc },
       currency: {
         mosaicId: currency.mosaicId,
-        alias: currency.alias,
+        alias,
         divisibility: currency.divisibility,
       },
       fees: {

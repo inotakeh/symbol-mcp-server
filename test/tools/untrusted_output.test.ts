@@ -11,6 +11,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TOOLS } from '../../src/server.js';
+import { removedCharactersLine } from '../../src/tools/_shared.js';
 import {
   fixture,
   jsonResponse,
@@ -132,26 +133,13 @@ function hostileArgs(name: string, args: Record<string, unknown>): Record<string
   };
 }
 
-/** The tools whose output carries text written by others (the others show none). */
-const TOOLS_WITH_UNTRUSTED_TEXT = [
-  'symbol_network_info',
-  'symbol_node_status',
-  'symbol_account_get',
-  'symbol_voting_key_status',
-  'symbol_transaction_get',
-  'symbol_transaction_search',
-  'symbol_mosaic_get',
-  'symbol_namespace_get',
-  'symbol_fee_estimate',
-  'symbol_harvesting_status',
-  'symbol_harvesting_income',
-  'symbol_transaction_status',
-  'symbol_delegation_diagnose',
-  'symbol_node_health',
-  'symbol_version_drift',
-  'symbol_account_rank',
-  'symbol_holdings_value',
-];
+/**
+ * The tools that declare they show text written by others (untrustedText; the list itself is
+ * pinned in test/tools/invisible_characters.test.ts). The others must show none.
+ */
+const TOOLS_WITH_UNTRUSTED_TEXT = new Set<string>(
+  TOOLS.filter((t) => t.untrustedText === true).map((t) => t.name),
+);
 
 let server: TestServer | undefined;
 afterEach(async () => {
@@ -187,10 +175,20 @@ describe('every tool against a node whose free-text fields are hostile', () => {
       const result = await server.callTool(name, hostileArgs(name, args));
       expect(result.isError, result.text).toBe(false);
       expectCleanToolResult(result, MARKER);
-      // The poison reaches the output of these tools, cleaned, so the check above is not vacuous;
-      // the other tools show no text written by others at all.
-      if (TOOLS_WITH_UNTRUSTED_TEXT.includes(name)) expect(result.text).toContain(MARKER);
-      else expect(result.text).not.toContain(MARKER);
+      // A cleaned value that went into a template as an object would show as this.
+      expect(result.text).not.toContain('[object Object]');
+      // The poison reaches the output of these tools, cleaned, so the check above is not vacuous,
+      // and they count what they removed; the other tools show no text written by others at all.
+      if (TOOLS_WITH_UNTRUSTED_TEXT.has(name)) {
+        expect(result.text).toContain(MARKER);
+        const removed = result.structuredContent?.invisibleCharactersRemoved;
+        expect(removed).toBeGreaterThan(0);
+        const summary = String(result.structuredContent?.summary);
+        expect(summary.split('\n').at(-1)).toBe(removedCharactersLine(Number(removed)));
+      } else {
+        expect(result.text).not.toContain(MARKER);
+        expect(result.structuredContent).not.toHaveProperty('invisibleCharactersRemoved');
+      }
     });
   }
 });

@@ -144,7 +144,8 @@ export const accountGetTool = defineTool({
     'Get what a Symbol account holds and how it is set up, by address, public key or namespace name (alice, alice.pay; resolved to its address alias and reported in accountResolution): balances, importance, keys and multisig settings. For whether its delegated harvesting actually works, use symbol_delegation_diagnose; for its harvesting rewards, symbol_harvesting_income. Returns the address in base32 and hex, public key, account type, all mosaic balances (with alias names and divisibility-adjusted amounts), importance, supplemental keys (linked/node/vrf/voting), whether delegated harvesting is configured (the linked and VRF keys are both registered; whether a node has unlocked the key is not checked), and multisig settings if the account is a multisig account.',
   inputSchema,
   outputSchema,
-  run: async (ctx, { account, format }) => {
+  untrustedText: true,
+  run: async (ctx, { account, format }, text) => {
     const [{ info, resolution }, { currency }] = await Promise.all([
       fetchAccount(ctx, account),
       ctx.getNetworkData(),
@@ -168,7 +169,7 @@ export const accountGetTool = defineTool({
       const divisibility = divisibilities.get(id) ?? null;
       return {
         id,
-        alias: aliases.get(id) ?? null,
+        alias: text.useOrNull(aliases.get(id)),
         amount: divisibility === null ? m.amount : formatAmount(m.amount, divisibility),
         rawAmount: m.amount,
         divisibility,
@@ -184,9 +185,10 @@ export const accountGetTool = defineTool({
     const delegatedConfigured = linked !== null && vrf !== null;
 
     const currencyEntry = mosaics.find((m) => m.id === currency.mosaicId);
-    const balanceText = currencyEntry
-      ? `${currencyEntry.amount} ${currency.alias ?? currency.mosaicId}`
-      : `0 ${currency.alias ?? currency.mosaicId}`;
+    // The alias of a listed currency entry is already counted; otherwise use the cached one.
+    const currencyLabel =
+      currencyEntry?.alias ?? text.useOrNull(currency.alias) ?? currency.mosaicId;
+    const balanceText = `${currencyEntry ? currencyEntry.amount : '0'} ${currencyLabel}`;
 
     const summary = [
       `${base32} on ${ctx.network.name}: ${balanceText}, ${allMosaics.length} mosaic${allMosaics.length === 1 ? '' : 's'}${truncated ? ` (showing ${CONCISE_MOSAIC_LIMIT}; use format=detailed for all)` : ''}.`,

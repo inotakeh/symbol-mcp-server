@@ -62,7 +62,8 @@ export const mosaicGetTool = defineTool({
     'Describe a Symbol mosaic (token) by hex id or alias name such as symbol.xym: alias, total supply (divisibility-adjusted and raw), divisibility, flags (supplyMutable, transferable, restrictable, revokable), owner address, start height, and duration with the estimated expiry date (duration 0 means unlimited).',
   inputSchema,
   outputSchema,
-  run: async (ctx, { mosaic }) => {
+  untrustedText: true,
+  run: async (ctx, { mosaic }, text) => {
     const { mosaicId, info, aliasFromName } = await resolveMosaicInput(ctx, mosaic);
 
     const m = info.mosaic;
@@ -70,7 +71,7 @@ export const mosaicGetTool = defineTool({
       ctx.resolveMosaicAliases([mosaicId]),
       ctx.getNetworkData(),
     ]);
-    const alias = aliases.get(mosaicId) ?? aliasFromName ?? null;
+    const alias = text.useOrNull(aliases.get(mosaicId)) ?? aliasFromName ?? null;
     const startHeight = parseHeight(m.startHeight);
     const durationBlocks = Number(
       BigInt(m.duration) > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : m.duration,

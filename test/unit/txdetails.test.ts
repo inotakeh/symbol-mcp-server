@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { UntrustedText } from '../../src/domain/sanitize.js';
 import {
   extractTransactionDetails,
   MAX_OTHER_FIELDS,
@@ -13,8 +14,8 @@ const ALIAS_ADDRESS = `69EEAFF441BA994BE7${'0'.repeat(30)}`;
 const KEY = 'AB7F7D44A60051C5657932A8FBB4C2D81D0764236E84A0F3398AEDEBB6BC2BC2';
 
 /** Every result must validate against the published schema. */
-function details(tx: Record<string, unknown> & { type: number }) {
-  const d = extractTransactionDetails(tx);
+function details(tx: Record<string, unknown> & { type: number }, text = new UntrustedText()) {
+  const d = extractTransactionDetails(tx, text);
   expect(TransactionDetailsSchema.safeParse(d).success, JSON.stringify(d)).toBe(true);
   return d;
 }
@@ -390,9 +391,57 @@ describe('extractTransactionDetails', () => {
     const parsed = JSON.parse('{"type":39321,"__proto__":7}') as Record<string, unknown> & {
       type: number;
     };
-    const proto = extractTransactionDetails(parsed);
+    const proto = extractTransactionDetails(parsed, new UntrustedText());
     const protoFields = proto.kind === 'other' ? proto.fields : {};
     expect(Object.hasOwn(protoFields, '__proto__')).toBe(true);
     expect(Object.getPrototypeOf(protoFields)).toBe(Object.prototype);
+  });
+
+  it('counts what it removes from the text it outputs, and only that', () => {
+    const at = (codePoint: number) => String.fromCodePoint(codePoint);
+    const nameCount = new UntrustedText();
+    const registration = details(
+      {
+        type: 0x414e,
+        id: 'a95f1f8a96159516',
+        name: `sym${at(0x200b)}bol${at(0x0a)}`,
+        registrationType: 0,
+        duration: '2102400',
+      },
+      nameCount,
+    );
+    expect(registration).toMatchObject({ kind: 'namespaceRegistration', name: 'symbol' });
+    expect(nameCount.removed).toBe(1); // the zero-width space; the line break is not counted
+
+    const valueCount = new UntrustedText();
+    const metadata = details(
+      {
+        type: 0x4144,
+        targetAddress: HEX_ADDRESS,
+        scopedMetadataKey: '00000000000000A1',
+        valueSizeDelta: 3,
+        valueSize: 3,
+        value: `ab${at(0x1b)}c${at(0xe0041)}${at(0xe0042)}`,
+      },
+      valueCount,
+    );
+    expect(metadata).toMatchObject({ kind: 'metadata', value: 'abc' });
+    expect(valueCount.removed).toBe(3);
+
+    // Unknown fields: a skipped name, a non-scalar value and a name that cleans to one already
+    // shown are left out of the output, so what was removed from them is not counted.
+    const otherCount = new UntrustedText();
+    details(
+      {
+        type: 0x9999,
+        [`sig${at(0x200b)}nature`]: 'skipped',
+        [`ob${at(0x200b)}j`]: { nested: true },
+        amount: '1',
+        [`amo${at(0x200b)}unt`]: '2',
+        [`no${at(0x200b)}te`]: `hi${at(0x200c)}`,
+      },
+      otherCount,
+    );
+    expect(otherCount.removed).toBe(2);
   });
 });

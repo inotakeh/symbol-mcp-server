@@ -4,7 +4,7 @@
  * epochAdjustment); nothing network-specific is hard-coded here.
  */
 import type { CheckStatus } from './delegation.js';
-import { sanitizeUntrusted } from './sanitize.js';
+import type { UntrustedText } from './sanitize.js';
 import { networkTimestampToDate, roundTo } from './time.js';
 
 /**
@@ -21,8 +21,8 @@ export const EMPTY_SERVICE_STATUS = '(empty)';
  * Judging the cleaned value keeps the verdict and the text shown next to it consistent; a node that
  * hides characters in a status gains nothing it could not get by sending "up" outright.
  */
-export function serviceStatus(value: string): string {
-  return sanitizeUntrusted(value, MAX_SERVICE_STATUS_LENGTH) || EMPTY_SERVICE_STATUS;
+export function serviceStatus(value: string, text: UntrustedText): string {
+  return text.clean(value, MAX_SERVICE_STATUS_LENGTH) || EMPTY_SERVICE_STATUS;
 }
 
 /** Wall-clock window whose worth of blocks the node database may lag the chain height. */

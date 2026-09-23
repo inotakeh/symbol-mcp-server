@@ -53,7 +53,8 @@ export const feeEstimateTool = defineTool({
     'Estimate the fee for a Symbol transaction of a given size from the current fee multipliers of the configured node (fee = size in bytes x multiplier). Returns slow (minimum accepted by this node), average, median and fast (highest recent) tiers in XYM and raw units. Nothing is signed or sent.',
   inputSchema,
   outputSchema,
-  run: async (ctx, { transactionSizeBytes }) => {
+  untrustedText: true,
+  run: async (ctx, { transactionSizeBytes }, text) => {
     const [fees, { currency }] = await Promise.all([
       ctx.rest.get('/network/fees/transaction', TransactionFeesSchema),
       ctx.getNetworkData(),
@@ -64,7 +65,7 @@ export const feeEstimateTool = defineTool({
         ? `Representative transfer: 128-byte header + 32-byte transfer body + 1 mosaic (16 bytes) + 20-character plain message (21 bytes) = ${DEFAULT_TRANSFER_SIZE_BYTES} bytes.`
         : `Size supplied by the caller: ${sizeBytes} bytes.`;
     const estimate = estimateFees(sizeBytes, fees, currency.divisibility);
-    const label = currency.alias ?? currency.mosaicId;
+    const label = text.useOrNull(currency.alias) ?? currency.mosaicId;
 
     const summary = [
       `Fee estimate on ${ctx.network.name} for a ${sizeBytes}-byte transaction (multipliers from ${ctx.rest.host}):`,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TransactionInfoSchema } from '../../src/client/schemas.js';
+import { cleanUntrusted, UntrustedText } from '../../src/domain/sanitize.js';
 import {
   collectMosaicIds,
   collectRecipientNamespaceIds,
@@ -15,7 +16,8 @@ const OPTS: SummarizeOptions = {
   currencyDivisibility: 6,
   timeZone: 'Asia/Tokyo',
   mosaicMeta: new Map([['6BED913FA20223F8', { alias: 'symbol.xym', divisibility: 6 }]]),
-  namespaceNames: new Map([['E74B99BA41F4AFEE', 'symbol.xym']]),
+  namespaceNames: new Map([['E74B99BA41F4AFEE', cleanUntrusted('symbol.xym')]]),
+  untrusted: new UntrustedText(),
 };
 
 describe('parseUnresolvedAddress', () => {

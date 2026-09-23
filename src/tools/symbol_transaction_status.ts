@@ -2,7 +2,6 @@ import * as z from 'zod/v4';
 import { RestError } from '../client/rest.js';
 import { type TransactionStatus, TransactionStatusListSchema } from '../client/schemas.js';
 import { parseHeight } from '../domain/epoch.js';
-import { sanitizeUntrusted } from '../domain/sanitize.js';
 import { formatInstantText, type Instant, networkTimestampToDate } from '../domain/time.js';
 import { describeTransactionStatusCode, TRANSACTION_GROUPS } from '../domain/txstatus.js';
 import { defineTool, formatInteger, maskIdentifier, nullable, ToolInputError } from './_shared.js';
@@ -95,7 +94,8 @@ export const transactionStatusTool = defineTool({
     "Track where one or more Symbol transactions stand right now, by hash: confirmed (in a block, with the height), unconfirmed (in the mempool), partial (aggregate bonded waiting for cosignatures), failed (with the node's validation code and its meaning) or not_found. For what a transaction contains, use symbol_transaction_get. Use this tool right after announcing a transaction, for example a voting/VRF/node key link, to see whether it went through, and to learn why a transaction failed; the node the transaction was announced to has the most detailed result. Up to 20 hashes per call.",
   inputSchema,
   outputSchema,
-  run: async (ctx, { transactionHashes }) => {
+  untrustedText: true,
+  run: async (ctx, { transactionHashes }, text) => {
     if (transactionHashes.length === 0) {
       throw new ToolInputError(`transactionHashes is empty. ${HASH_HINT}`);
     }
@@ -140,7 +140,7 @@ export const transactionStatusTool = defineTool({
       }
       // Cleaned before it is looked up, so the meaning always belongs to the code that is shown;
       // nothing left after cleaning counts as no code reported.
-      const code = sanitizeUntrusted(s.code ?? '', MAX_STATUS_CODE_LENGTH) || null;
+      const code = text.clean(s.code ?? '', MAX_STATUS_CODE_LENGTH) || null;
       const height = s.height === undefined ? 0 : parseHeight(s.height);
       return {
         hash,

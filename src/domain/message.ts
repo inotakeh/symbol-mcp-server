@@ -8,7 +8,7 @@
  * Message text is written by third parties (DESIGN-BRIEF §2-8): it is sanitised and exposed under
  * the `messageText` name so consumers know it is untrusted.
  */
-import { sanitizeUntrusted } from './sanitize.js';
+import type { UntrustedText } from './sanitize.js';
 
 export type MessageKind =
   | 'empty'
@@ -55,7 +55,8 @@ export function isPersistentDelegationMessage(hex: string | undefined): boolean 
   );
 }
 
-export function decodeMessage(hex: string | undefined): DecodedMessage {
+/** Decodes a message; plain text is cleaned through the call's `text`, which counts what it lost. */
+export function decodeMessage(hex: string | undefined, text: UntrustedText): DecodedMessage {
   const clean = (hex ?? '').trim();
   if (clean.length === 0) return { kind: 'empty', sizeBytes: 0 };
   if (clean.length % 2 !== 0 || !/^[0-9A-Fa-f]+$/.test(clean)) {
@@ -68,7 +69,7 @@ export function decodeMessage(hex: string | undefined): DecodedMessage {
     case 0x00:
       return {
         kind: 'plain',
-        messageText: sanitizeUntrusted(body.toString('utf8'), MAX_MESSAGE_TEXT_LENGTH),
+        messageText: text.clean(body.toString('utf8'), MAX_MESSAGE_TEXT_LENGTH),
         sizeBytes: bytes.length,
       };
     case 0x01:
