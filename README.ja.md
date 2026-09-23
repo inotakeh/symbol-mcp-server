@@ -21,6 +21,51 @@
 先頭に 1〜3 行の `summary` が付きます。金額は divisibility 適用後の値と生の整数の両方、日時は ISO 8601（UTC）で、
 `SYMBOL_TIMEZONE` を設定するとローカル時刻も併記されます。
 
+## 出力の例
+
+代表的な 2 つの呼び出しと、返る内容の抜粋です。値はテスト用フィクスチャ（合成したノードホストとアカウント）
+から取ったもので、実ノードの値ではありません。
+
+**「ノードは健全？」** → `symbol_node_health {}`
+
+```jsonc
+{
+  "summary": "node health: healthy (node.test:3001, mainnet).",
+  "network": "mainnet",
+  "verdict": "healthy",
+  "checks": [
+    { "id": "api_node", "status": "ok", "detail": "API node service is up.", "hint": null },
+    { "id": "db", "status": "ok", "detail": "Database service is up.", "hint": null },
+    {
+      "id": "clock_skew",
+      "status": "ok",
+      "detail": "Node clock is 1,000 ms behind this machine's clock (warn at 15,000 ms, fail at 30,000 ms).",
+      "hint": null
+    },
+    {
+      "id": "finalization_lag",
+      "status": "ok",
+      "detail": "Finalized height 5,763,656 is 19 blocks (about 9.5 min) behind height 5,763,675 (warn at 720, fail at 1,440 blocks).",
+      "hint": null
+    }
+    // … storage_consistent と roles、続いて node / storage / chain / time / notes
+  ]
+}
+```
+
+`ok` 以外のチェックには次の手順を書いた `hint` が付き、summary にも 1 行ずつ出ます。
+
+**「ハーベスト報酬を月ごとに知りたい」**
+→ `symbol_harvesting_income { "account": "NCV5HR…", "fromDate": "2026-09-01", "toDate": "2026-09-11", "granularity": "monthly" }`
+
+```
+NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY on mainnet, 2026-09-01 to 2026-09-11 (Asia/Tokyo; heights 5,736,305-5,767,984, 31,680 blocks): 20 harvest receipts totalling 662.574177 symbol.xym (harvester 461.240390 in 9 blocks, beneficiary 201.333787 in 11 blocks).
+2026-09: 20 receipts, 662.574177 symbol.xym (9 harvester / 11 beneficiary)
+```
+
+これが `summary` です。同じ数値が `totals` と `monthly[]` にも入り、金額はどれも 10 進文字列（`"662.574177"`）と
+生の整数（`"662574177"`）の両方で、サーバーが合算しています。
+
 ## 要件
 
 - Node.js 22 以上。
@@ -116,6 +161,60 @@ claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- nod
 }
 ```
 
+### その他のクライアント
+
+stdio サーバーを起動できる MCP ホストなら、同じ `npx` コマンドで動きます。設定ファイルの場所と形式は、
+各クライアントの公式ドキュメントに従っています。
+
+**Cursor:** 全プロジェクト共通なら `~/.cursor/mcp.json`、プロジェクト単位なら `.cursor/mcp.json`。
+
+```json
+{
+  "mcpServers": {
+    "symbol": {
+      "command": "npx",
+      "args": ["-y", "symbol-mcp-server"],
+      "env": { "SYMBOL_NODE_URL": "https://<node-host>:3001" }
+    }
+  }
+}
+```
+
+**VS Code:** ワークスペースの `.vscode/mcp.json`、またはコマンド **MCP: Open User Configuration** で開く
+ユーザー設定のファイル。最上位のキーは `mcpServers` ではなく `servers` です。
+
+```json
+{
+  "servers": {
+    "symbol": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "symbol-mcp-server"],
+      "env": { "SYMBOL_NODE_URL": "https://<node-host>:3001" }
+    }
+  }
+}
+```
+
+**Cline:** Cline のパネルで **MCP Servers → Configure → Configure MCP Servers** を開き、`mcpServers` の下に
+追加します（Cline CLI は同じ形式を `~/.cline/mcp.json` から読みます）。
+
+```json
+{
+  "mcpServers": {
+    "symbol": {
+      "command": "npx",
+      "args": ["-y", "symbol-mcp-server"],
+      "env": { "SYMBOL_NODE_URL": "https://<node-host>:3001" },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+Windows で `npx` を起動できないクライアントでは、`"command": "npx.cmd"` が必要な場合があります。
+
 ## 環境変数
 
 | 変数 | 必須 | 内容 |
@@ -126,6 +225,18 @@ claude mcp add symbol -s user -e SYMBOL_NODE_URL=https://<node-host>:3001 -- nod
 | `SYMBOL_REFERENCE_NODES` | 任意 | `symbol_network_compare` と `symbol_version_drift` の比較対象となる `https://` ノード URL のカンマ区切り。ここに無いホストへは一切通信しません。 |
 | `SYMBOL_REQUEST_TIMEOUT_MS` | 任意 | リクエストごとのタイムアウト（100〜600000）。既定 `10000`。 |
 | `SYMBOL_STATE_DIR` | 任意 | `symbol_harvester_watch` がノードごとのスナップショット（解錠中ハーベスターの公開鍵・高さ・時刻のみ。秘密情報なし）を置く絶対パスのディレクトリ。初回保存時に 0700 で作成。未設定なら比較なしで現在の一覧だけ返します。 |
+
+## ノードの選び方
+
+- **自分のノードが最適です。** 呼び出しのたびに、照会したアドレス・公開鍵・ハッシュ・ネームスペース名が
+  `SYMBOL_NODE_URL` に送られます。参照ノードに送るのは `/node/info` と `/chain/info` だけで、照会した識別子は送りません。
+- **公開ノードも使えますが、何を調べたかはそのノードの運営者に見えます。** アクセスログから、どのアカウント・
+  トランザクション・ネームスペースを、いつ、どの IP アドレスから照会したかが分かります。信頼できるノードを使うか、
+  知られたくない照会には自分のノードを使ってください。
+- **探し方:** https://nodewatch.symbol.tools/ に mainnet / testnet のノードが高さとバージョン付きで並んでいます。
+  現在の高さに追いついていて、多数派のバージョンで、`https://`（通常 3001 番ポート）で応答する API ノードを選んでください。
+  `SYMBOL_NETWORK` を設定すると、別ネットワークのノードだった場合に起動が失敗します。動作確認は
+  `SYMBOL_NODE_URL=https://<node-host>:3001 npx -y symbol-mcp-server check` でできます。
 
 ## ツール
 
@@ -325,8 +436,27 @@ MAILTO=you@example.com
   モデルに返しません。
 - **リクエスト衛生。** リクエストごとのタイムアウト、`User-Agent`、5 MB の応答サイズ上限、同時 4 リクエストまで、
   全応答のスキーマ検証。
+- **リポジトリの設定。** CodeQL のコードスキャン、Secret scanning と push protection、Dependabot（セキュリティ更新と、
+  グループ化した月次のバージョン更新）、`main` のブランチ保護（変更はすべて pull request 経由、線形履歴）、
+  Private vulnerability reporting を有効にしています。
 
 脆弱性の報告は [`SECURITY.md`](SECURITY.md) を参照してください。
+
+## リリースの完全性
+
+- **CI から provenance 付きで公開。** npm のリリースはすべて GitHub Actions のワークフロー
+  [`release.yml`](.github/workflows/release.yml) がビルドし、npm の Trusted Publishing（OIDC）で公開します。
+  npm トークンは保守者の手元にもリポジトリのシークレットにも存在しません。各バージョンには、ソースのコミットと
+  ビルドしたワークフロー実行に結び付く provenance（来歴証明）が付いています。
+- **自分で確認する方法。**
+  - [npmjs.com](https://www.npmjs.com/package/symbol-mcp-server) のパッケージページに **Provenance** 欄があり、
+    コミットとワークフロー実行へのリンクが表示されます。
+  - `npm view symbol-mcp-server dist.attestations` で、最新版の attestation の URL と provenance の predicate type が表示されます。
+  - インストールしたプロジェクトで `npm audit signatures` を実行すると、インストール済みパッケージのレジストリ署名と
+    provenance を検証できます。
+- **リリースできる人。** リリース用タグ（`v1.2.3`）を作れるのは保守者だけです。ワークフローはタグと `package.json` の
+  バージョンの一致を確認し、lint・typecheck・テストを実行したうえで、GitHub Environment `npm-publish` で保守者が
+  承認するまで待機します。
 
 ## 対応ネットワーク
 
@@ -376,6 +506,23 @@ MAILTO=you@example.com
 - **URL は指定どおりに使います。** ポートやスキームを勝手に変えません。http の 3000 番しか開いていないノードは
   localhost 以外では使えません。
 
+## トラブルシューティング
+
+起動時のエラーは `symbol-mcp-server failed to start:` で始まる 1 行として stderr に出ます。MCP ホストは stderr を
+ログに残します（Claude Desktop: macOS は `~/Library/Logs/Claude/mcp*.log`、Windows は `%APPDATA%\Claude\logs`）。
+同じコマンドをターミナルで実行しても表示されます。
+
+| 表示 | 原因と対処 |
+|---|---|
+| `SYMBOL_NODE_URL is required` | 変数がサーバーのプロセスに届いていません。ホスト設定の `env` に書いてください。シェルの `export` は、デスクトップアプリが起動するサーバーには届きません。 |
+| `SYMBOL_NODE_URL must use https://` または `SYMBOL_NODE_URL must start with https://` | ノードの `https://` の URL（通常 3001 番ポート）を指定してください。`http://` は `localhost` / `127.0.0.1` のみ使えます。 |
+| `SYMBOL_NETWORK=mainnet but node <host> is on testnet` | ノードが別のネットワークです。`SYMBOL_NODE_URL` を目的のネットワークのノードに変えるか、`SYMBOL_NETWORK` を直してください。 |
+| `Node <host> reports an unknown network` | ノードの generationHashSeed が Symbol の mainnet でも testnet でもありません（プライベートネットワークや NEM NIS1 のノード）。Symbol の mainnet / testnet のノードを使ってください。 |
+| 起動時の `<host> did not answer /node/info within 10000 ms` / `could not reach <host> for /node/info`、ツールの `Node <host> did not answer … within … ms` / `Could not connect to node <host>` | ノードが停止・過負荷か、ポートが違います（https は 3001）。nodewatch で別のノードを選ぶか、遅いノードなら `SYMBOL_REQUEST_TIMEOUT_MS`（最大 600000）で待ち時間を延ばしてください。 |
+| Claude Desktop に `symbol_*` ツールが出ない | Claude Desktop は起動時にしか設定を読みません。完全に終了して（ウィンドウを閉じるだけでは不十分）起動し直してください。それでも出なければ、上のログで `failed to start` の行を探し、JSON が正しいか確認してください。 |
+| `npm warn EBADENGINE Unsupported engine`（npm が出す警告） | Node.js が 22 より古いです。`node --version` で確認し、22 以上を入れてください（例 `nvm install 22`）。デスクトップアプリはシェルとは別の `PATH` で `node` / `npx` を探すことがあるので、必要なら `command` にフルパスを書いてください。 |
+| リリース後も古い版が動く | npx がキャッシュを使っています。`npx -y symbol-mcp-server@latest --version` を実行するか、`args` に `symbol-mcp-server@latest` と書いてください。 |
+
 ## 開発
 
 ```sh
@@ -390,6 +537,11 @@ node scripts/capture-fixtures.mjs https://<node-host>:3001   # test/fixtures/<ne
 ```
 
 設計メモ: [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md)。変更履歴: [`CHANGELOG.md`](CHANGELOG.md)。
+
+## コントリビューション
+
+バグ報告・機能要望・pull request を歓迎します。開発環境、ツールの追加手順、設計上の決まりは
+[`CONTRIBUTING.md`](CONTRIBUTING.md)（英語）を参照してください。セキュリティ上の問題は [`SECURITY.md`](SECURITY.md) の手順で報告してください。
 
 ## ライセンス
 

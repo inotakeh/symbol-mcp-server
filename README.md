@@ -24,6 +24,52 @@ JSON as text, with a one-to-three-line `summary` first. Amounts are returned bot
 applied and as the raw integer; timestamps are ISO 8601 UTC, with a local time added when
 `SYMBOL_TIMEZONE` is set.
 
+## What it looks like
+
+Two calls and excerpts of what they return. The values come from the test fixtures (a synthetic
+node host and account), not from a live node.
+
+**"Is my node healthy?"** → `symbol_node_health {}`
+
+```jsonc
+{
+  "summary": "node health: healthy (node.test:3001, mainnet).",
+  "network": "mainnet",
+  "verdict": "healthy",
+  "checks": [
+    { "id": "api_node", "status": "ok", "detail": "API node service is up.", "hint": null },
+    { "id": "db", "status": "ok", "detail": "Database service is up.", "hint": null },
+    {
+      "id": "clock_skew",
+      "status": "ok",
+      "detail": "Node clock is 1,000 ms behind this machine's clock (warn at 15,000 ms, fail at 30,000 ms).",
+      "hint": null
+    },
+    {
+      "id": "finalization_lag",
+      "status": "ok",
+      "detail": "Finalized height 5,763,656 is 19 blocks (about 9.5 min) behind height 5,763,675 (warn at 720, fail at 1,440 blocks).",
+      "hint": null
+    }
+    // … storage_consistent and roles, then node, storage, chain, time and notes
+  ]
+}
+```
+
+A check that is not `ok` carries a `hint` with the next step, and the summary lists it on its own
+line.
+
+**"How much did I earn from harvesting, month by month?"**
+→ `symbol_harvesting_income { "account": "NCV5HR…", "fromDate": "2026-09-01", "toDate": "2026-09-11", "granularity": "monthly" }`
+
+```
+NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY on mainnet, 2026-09-01 to 2026-09-11 (Asia/Tokyo; heights 5,736,305-5,767,984, 31,680 blocks): 20 harvest receipts totalling 662.574177 symbol.xym (harvester 461.240390 in 9 blocks, beneficiary 201.333787 in 11 blocks).
+2026-09: 20 receipts, 662.574177 symbol.xym (9 harvester / 11 beneficiary)
+```
+
+That is the `summary`; the same numbers are in `totals` and `monthly[]`, each amount both as a
+decimal string (`"662.574177"`) and as the raw integer (`"662574177"`), summed by the server.
+
 ## Requirements
 
 - Node.js 22 or newer.
@@ -120,6 +166,60 @@ Or commit a project-level `.mcp.json`:
 }
 ```
 
+### Other clients
+
+The same `npx` command works in any MCP host that starts stdio servers. File locations and formats
+below follow each client's own documentation.
+
+**Cursor:** `~/.cursor/mcp.json` for all projects, or `.cursor/mcp.json` in one project.
+
+```json
+{
+  "mcpServers": {
+    "symbol": {
+      "command": "npx",
+      "args": ["-y", "symbol-mcp-server"],
+      "env": { "SYMBOL_NODE_URL": "https://<node-host>:3001" }
+    }
+  }
+}
+```
+
+**VS Code:** `.vscode/mcp.json` in the workspace, or the user-level file opened with the command
+**MCP: Open User Configuration**. The top-level key is `servers`, not `mcpServers`.
+
+```json
+{
+  "servers": {
+    "symbol": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "symbol-mcp-server"],
+      "env": { "SYMBOL_NODE_URL": "https://<node-host>:3001" }
+    }
+  }
+}
+```
+
+**Cline:** in the Cline panel, open **MCP Servers → Configure → Configure MCP Servers** and add the
+server under `mcpServers` (the Cline CLI reads the same format from `~/.cline/mcp.json`).
+
+```json
+{
+  "mcpServers": {
+    "symbol": {
+      "command": "npx",
+      "args": ["-y", "symbol-mcp-server"],
+      "env": { "SYMBOL_NODE_URL": "https://<node-host>:3001" },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+On Windows, a client that cannot start `npx` may need `"command": "npx.cmd"`.
+
 ## Environment variables
 
 | Variable | Required | Meaning |
@@ -130,6 +230,20 @@ Or commit a project-level `.mcp.json`:
 | `SYMBOL_REFERENCE_NODES` | no | Comma-separated `https://` node URLs that `symbol_network_compare` and `symbol_version_drift` check against. No other host is ever contacted. |
 | `SYMBOL_REQUEST_TIMEOUT_MS` | no | Per-request timeout, 100 to 600000. Default `10000`. |
 | `SYMBOL_STATE_DIR` | no | Absolute directory where `symbol_harvester_watch` keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets). Created on first save with mode 0700. Unset: the tool reports the current list without a comparison. |
+
+## Choosing a node
+
+- **Your own node is the best choice.** Every call sends the addresses, public keys, hashes and
+  namespace names you ask about to `SYMBOL_NODE_URL`. The reference nodes only receive
+  `/node/info` and `/chain/info` requests, never your identifiers.
+- **A public node works, but its operator can see what you look up.** Its access logs can show
+  which accounts, transactions and namespaces were queried, when, and from which IP address. Use a
+  node you trust, or your own node for anything you would rather keep private.
+- **Finding one:** https://nodewatch.symbol.tools/ lists mainnet and testnet nodes with their height
+  and version. Pick an API node that is at the current height, runs the majority version and answers
+  over `https://` (usually port 3001). Set `SYMBOL_NETWORK` to make start-up fail if the node turns
+  out to be on the other network, and try it with
+  `SYMBOL_NODE_URL=https://<node-host>:3001 npx -y symbol-mcp-server check`.
 
 ## Tools
 
@@ -347,8 +461,29 @@ MAILTO=you@example.com
   network. Stack traces and raw HTTP bodies are never returned to the model.
 - **Request hygiene.** Per-request timeout, `User-Agent`, a 5 MB response cap, at most 4 concurrent
   requests, and schema validation of every response.
+- **Repository settings.** CodeQL code scanning, secret scanning with push protection, Dependabot
+  (security updates and grouped monthly version updates), branch protection on `main` (every change
+  lands through a pull request, with linear history) and private vulnerability reporting are enabled.
 
 Vulnerability reports: see [`SECURITY.md`](SECURITY.md).
+
+## Release integrity
+
+- **Published from CI, with provenance.** Every npm release is built and published by the GitHub
+  Actions workflow [`release.yml`](.github/workflows/release.yml) through npm trusted publishing
+  (OIDC). There is no npm token, neither on a maintainer's machine nor in the repository secrets.
+  Each version carries a provenance attestation that links it to the source commit and the workflow
+  run that built it.
+- **Check it yourself.**
+  - The package page on [npmjs.com](https://www.npmjs.com/package/symbol-mcp-server) shows a
+    **Provenance** section with the commit and the workflow run.
+  - `npm view symbol-mcp-server dist.attestations` prints the attestation URL and the provenance
+    predicate type of the latest version.
+  - In a project that installs it, `npm audit signatures` verifies the registry signatures and
+    provenance attestations of the installed packages.
+- **Who can release.** Only maintainers create release tags (`v1.2.3`). The workflow checks that
+  the tag matches `package.json`, runs lint, typecheck and tests, and then waits in the
+  `npm-publish` GitHub Environment until a maintainer approves the run.
 
 ## Supported networks
 
@@ -405,6 +540,23 @@ https://nodewatch.symbol.tools/.
 - **The URL is used as given.** The server does not switch ports or schemes on its own; if a node
   only serves port 3000 over http, it cannot be used unless it is on localhost.
 
+## Troubleshooting
+
+Start-up errors go to stderr as one line starting with `symbol-mcp-server failed to start:`. MCP
+hosts keep stderr in their logs (Claude Desktop: `~/Library/Logs/Claude/mcp*.log` on macOS,
+`%APPDATA%\Claude\logs` on Windows), and running the same command in a terminal prints it too.
+
+| You see | Cause and fix |
+|---|---|
+| `SYMBOL_NODE_URL is required` | The variable does not reach the server process. Put it in the `env` block of the host configuration; an `export` in your shell does not reach a server that a desktop app starts. |
+| `SYMBOL_NODE_URL must use https://` or `SYMBOL_NODE_URL must start with https://` | Use the node's `https://` URL (usually port 3001). `http://` is accepted only for `localhost` / `127.0.0.1`. |
+| `SYMBOL_NETWORK=mainnet but node <host> is on testnet` | The node is on the other network. Point `SYMBOL_NODE_URL` at a node of the network you want, or correct `SYMBOL_NETWORK`. |
+| `Node <host> reports an unknown network` | The node's generation hash seed is neither Symbol mainnet nor testnet (a private network, or a NEM NIS1 node). Use a Symbol mainnet or testnet node. |
+| `<host> did not answer /node/info within 10000 ms` or `could not reach <host> for /node/info` at start-up; `Node <host> did not answer … within … ms` or `Could not connect to node <host>` from a tool | The node is down, overloaded, or the port is wrong (3001 for https). Try another node from nodewatch, or give a slow node more time with `SYMBOL_REQUEST_TIMEOUT_MS` (up to 600000). |
+| Claude Desktop lists no `symbol_*` tools | Claude Desktop reads its configuration at start-up only. Quit it completely (closing the window is not enough) and reopen it. If the tools are still missing, look for a `failed to start` line in the log above and check that the JSON is valid. |
+| `npm warn EBADENGINE Unsupported engine` (printed by npm) | Node.js is older than 22. Check `node --version` and install 22 or newer (for example `nvm install 22`). A desktop app may find a different `node` / `npx` on its `PATH` than your shell does; give the full path in `command` if needed. |
+| An older version keeps running after a release | npx reuses its cache. Run `npx -y symbol-mcp-server@latest --version`, or put `symbol-mcp-server@latest` in `args`. |
+
 ## Development
 
 ```sh
@@ -419,6 +571,12 @@ node scripts/capture-fixtures.mjs https://<node-host>:3001   # refresh test/fixt
 ```
 
 Design notes: [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md). Changes: [`CHANGELOG.md`](CHANGELOG.md).
+
+## Contributing
+
+Bug reports, feature requests and pull requests are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+for the development setup, how to add a tool and the design rules; security problems go through
+[`SECURITY.md`](SECURITY.md).
 
 ## License
 

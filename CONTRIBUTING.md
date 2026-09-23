@@ -1,0 +1,113 @@
+# Contributing to symbol-mcp-server
+
+Thanks for your interest. Bug reports and feature requests go through the issue forms; security
+problems go through private vulnerability reporting (see [`SECURITY.md`](SECURITY.md)), never a
+public issue. Pull requests are welcome; for anything larger than a fix, open an issue first so the
+question the change answers can be agreed on.
+
+## Development setup
+
+- **Node.js 22 or newer.** With [nvm](https://github.com/nvm-sh/nvm): `nvm install 22 && nvm use 22`.
+- **Install from the lockfile, without install scripts:**
+
+  ```sh
+  git clone https://github.com/inotakeh/symbol-mcp-server.git
+  cd symbol-mcp-server
+  npm ci --ignore-scripts
+  ```
+
+  The repository's `.npmrc` also sets `ignore-scripts=true`. Adding a dependency needs a
+  maintainer's approval; say in the issue or PR which package, why, and who maintains it.
+
+## Build and test
+
+```sh
+npm run lint        # biome
+npm run typecheck   # tsc --noEmit
+npm test            # vitest: unit, tool-layer (in-process MCP client) and evals
+npm run build       # tsc -> dist/
+```
+
+Run `npm run lint && npm run typecheck && npm test` before every commit; CI runs the same on
+Node 22 and 24.
+
+Manual checks against a real node:
+
+```sh
+npm run build
+npx @modelcontextprotocol/inspector node dist/index.js      # set SYMBOL_NODE_URL in the Inspector
+SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<testnet-node>:3001 npm test
+SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<node-host>:3001 SYMBOL_INTEGRATION_ACCOUNT=<address> npm test
+```
+
+The integration tests (`test/integration/`) only run with `SYMBOL_INTEGRATION=1` and never in CI.
+They treat the node as a read-only REST endpoint.
+
+## Test fixtures
+
+The tool-layer tests serve JSON from `test/fixtures/` through a fake `fetch`. Fixtures may contain
+**synthetic values only** for anything that identifies a person or an operator: no real account
+addresses, public keys, node hosts or friendly names. Public chain data that identifies nobody
+(network properties, the XYM mosaic, block heights) can stay verbatim. How each file was made and
+which values were replaced is recorded in [`test/fixtures/README.md`](test/fixtures/README.md);
+follow the same rules and add a row there for a new file. Synthetic keys and hashes come from
+`H("fixture:<label>")` in `test/tools/harness.ts`.
+
+## Adding a tool
+
+Tools answer a question a person asks; they do not mirror one REST endpoint each.
+
+1. Add `src/tools/symbol_<resource>_<action>.ts`, one tool per file, with a `title`, a
+   `description`, explicit `annotations` (`readOnlyHint: true`), an `inputSchema` (`z.object`, every
+   argument `.describe()`d) and an `outputSchema`. The result is `structuredContent` plus the same
+   JSON as text, and its first field is `summary`. Put pure logic in `src/domain/` with unit tests.
+2. Register it by **appending** it to `TOOLS` in `src/server.ts`. Never reorder: `tools/list` must
+   stay deterministic.
+3. Add tests: unit tests for the domain logic, and tool-layer tests in `test/tools/` (output schema,
+   error results with a hint, no request to any host other than `SYMBOL_NODE_URL`). Add the tool to
+   the smoke calls in `test/tools/harness.ts`.
+4. Update the documentation:
+   - `README.md` **and** `README.ja.md`: the tool table and an example question;
+   - `evals/cases.json`: at least one case (the evals test fails if a registered tool has none);
+   - `docs/DESIGN-BRIEF.md` §5.2: the specification;
+   - `CHANGELOG.md` under `[Unreleased]`.
+
+## Design rules
+
+The full design is in [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md) (Japanese). In short:
+
+- **Read-only.** No argument accepts a private key, mnemonic or token; nothing is signed or
+  announced. The only disk write is `symbol_harvester_watch`'s snapshot under `SYMBOL_STATE_DIR`.
+- **Fixed destinations.** Requests go to `SYMBOL_NODE_URL` and, for the comparison tools,
+  `SYMBOL_REFERENCE_NODES` only. Tools never take a URL as an argument. No telemetry.
+- **The server does the arithmetic.** Amounts, totals, shares and dates are computed on the server
+  (amounts as `BigInt`, never floating point) and returned both with divisibility applied and as raw
+  integers, so the model never has to add, multiply or round.
+- **Chain strings are untrusted.** Transfer messages, friendly names and namespace names are written
+  by third parties: sanitize them and expose them under names that say so (`messageText`).
+- **Network constants come from `/network/properties`** at run time. Only the generation hash seed
+  table is hard-coded.
+- **Errors are results, not exceptions**: `isError: true` with a recovery hint, never a stack trace
+  or a raw HTTP body. Log with `console.error` only; stdout is the protocol channel.
+
+## Commits and pull requests
+
+- Work on a branch (`feat/…`, `fix/…`, `docs/…`, `chore/…`); `main` is protected.
+- Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `test:`,
+  `docs:`, `chore:`.
+- Keep pull requests small. Fill in the template: what changes, how you verified it (commands and
+  results), and the checklist.
+- Releases are cut by maintainers: they bump the version and create the tag, and the release
+  workflow publishes to npm after an approval. Do not bump versions or create tags in a PR.
+
+## Files for AI agents
+
+This repository is also developed with AI coding agents. Human contributors can skip this section.
+
+- [`AGENTS.md`](AGENTS.md) holds the instructions shared by agents such as Codex and Claude Code.
+  [`CLAUDE.md`](CLAUDE.md) only imports it.
+- `.claude/` holds Claude Code's hooks and permission settings. They are guardrails that keep an
+  agent away from protected files, credentials and outbound network access.
+  [`GUARDRAILS.md`](GUARDRAILS.md) (Japanese) describes the model in detail.
+- These files, `.github/workflows/`, `SECURITY.md`, `server.json`, `LICENSE` and the lockfile are
+  edited by maintainers only.

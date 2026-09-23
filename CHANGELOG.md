@@ -7,6 +7,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `CONTRIBUTING.md`: development setup, tests, synthetic-only fixtures, how to add a tool, design
+  rules, commit conventions, and which files exist for AI agents.
+- Issue forms (bug report, feature request; blank issues disabled, security reports routed to
+  private vulnerability reporting) and a pull request template.
+- README (English and Japanese): "What it looks like" (fixture output of `symbol_node_health` and
+  of `symbol_harvesting_income` by month), configuration for Cursor, VS Code and Cline, "Choosing a
+  node" (a public node's operator sees what you query), "Troubleshooting" (start-up and connection
+  messages and their fixes), "Release integrity" (npm provenance and how to verify it), repository
+  security settings, and a link to `CONTRIBUTING.md`.
+
+### Changed
+
+- `server.json` lists all six environment variables the server reads, so MCP Registry clients now
+  also show `SYMBOL_NETWORK`, `SYMBOL_REQUEST_TIMEOUT_MS` and `SYMBOL_STATE_DIR`; the descriptions
+  follow the README.
+- `SECURITY.md` scope covers the snapshot file written under `SYMBOL_STATE_DIR` and names what
+  counts as a vulnerability.
+
 ## [0.7.0] - 2026-09-22
 
 ### Added
