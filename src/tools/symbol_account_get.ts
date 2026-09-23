@@ -141,7 +141,7 @@ export const accountGetTool = defineTool({
   name: 'symbol_account_get',
   title: 'Symbol account details',
   description:
-    'Get a Symbol account by address, public key or namespace name (alice, alice.pay; resolved to its address alias and reported in accountResolution): address in base32 and hex, public key, account type, all mosaic balances (with alias names and divisibility-adjusted amounts), importance, supplemental keys (linked/node/vrf/voting), whether delegated harvesting is configured, and multisig settings if the account is a multisig account.',
+    'Get what a Symbol account holds and how it is set up, by address, public key or namespace name (alice, alice.pay; resolved to its address alias and reported in accountResolution): balances, importance, keys and multisig settings. For whether its delegated harvesting actually works, use symbol_delegation_diagnose; for its harvesting rewards, symbol_harvesting_income. Returns the address in base32 and hex, public key, account type, all mosaic balances (with alias names and divisibility-adjusted amounts), importance, supplemental keys (linked/node/vrf/voting), whether delegated harvesting is configured (the linked and VRF keys are both registered; whether a node has unlocked the key is not checked), and multisig settings if the account is a multisig account.',
   inputSchema,
   outputSchema,
   run: async (ctx, { account, format }) => {

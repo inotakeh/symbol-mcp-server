@@ -401,7 +401,9 @@ prompt text contains no addresses, hosts, keys or dates of its own.
 | `monthly_health_check` | `symbol_node_status`, `symbol_node_health` (unhealthy goes first), `symbol_version_drift` (behind or far_behind goes first), `symbol_network_compare`, `symbol_harvester_watch` (delta against the previous snapshot; `symbol_harvesting_status` only on request), `symbol_voting_key_status` (warning first if a key expires within 30 days), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month. Reports on one screen as Action required / Attention / Normal. |
 
 The server also sends short `instructions` at initialize time (read-only, account formats, which
-tool answers harvest-income and voting-key questions, use the returned numbers as they are).
+tool answers the questions that are easy to mix up: harvest income, voting keys, node sync versus
+health versus version, whether a transaction went through; use the returned numbers as they are).
+Tools that answer neighbouring questions point to each other in their descriptions.
 
 ## CLI: monitoring from cron
 

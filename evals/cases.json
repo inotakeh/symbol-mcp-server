@@ -13,13 +13,13 @@
       "notes": "One call answers both halves: expiry epoch/height/date and the recommended renewal window (7 to 3 days before expiry). symbol_account_get also lists the keys but computes no dates."
     },
     {
-      "id": "node-sync-health",
+      "id": "node-in-sync",
       "audience": "node-operator",
-      "question": "Is my node healthy and in sync right now?",
-      "question_ja": "私のノードは今、健全で同期していますか。",
+      "question": "Is my node in sync right now?",
+      "question_ja": "私のノードは今、同期していますか。",
       "expectedTool": "symbol_node_status",
       "expectedArguments": {},
-      "notes": "\"My node\" is the node fixed by SYMBOL_NODE_URL; no argument is needed. The tool reports /node/health, the age of the latest block and a synced flag. For the service-level health (database, clock, storage, finalization lag) with a verdict, symbol_node_health is the tool; this case asks about sync."
+      "notes": "\"My node\" is the node fixed by SYMBOL_NODE_URL; no argument is needed. \"In sync\" is the synced flag (false when the latest block is older than 5 minutes) with the current and finalized heights, which symbol_node_status reports. Whether the node is healthy (database, clock, storage, finalization lag, with a verdict) is symbol_node_health (node-health-now); how many blocks it trails other nodes is symbol_network_compare (node-lagging-reference)."
     },
     {
       "id": "delegated-harvesting-unlocked",
@@ -39,7 +39,7 @@
       "question_ja": "私のノードは他のノードより遅れていますか。",
       "expectedTool": "symbol_network_compare",
       "expectedArguments": {},
-      "notes": "Compares SYMBOL_NODE_URL with SYMBOL_REFERENCE_NODES. Tools never accept node URLs as arguments; if no reference nodes are configured the tool says so instead of erroring."
+      "notes": "Compares SYMBOL_NODE_URL with SYMBOL_REFERENCE_NODES. Tools never accept node URLs as arguments; if no reference nodes are configured the tool says so instead of erroring. \"Behind\" here is block height; a version behind the network is symbol_version_drift (node-version-outdated)."
     },
     {
       "id": "network-parameters",
@@ -83,7 +83,7 @@
       "expectedArguments": {
         "transactionHash": "FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F"
       },
-      "notes": "A 64-hex value is a transaction hash, not a public key. The tool checks confirmed, unconfirmed and partial groups and reports the status; messages are decoded when plain and flagged when encrypted."
+      "notes": "A 64-hex value is a transaction hash, not a public key. The tool checks confirmed, unconfirmed and partial groups and reports the status; messages are decoded when plain and flagged when encrypted. Whether a transaction went through or failed, and why, is symbol_transaction_status (transaction-status-check, transaction-failed-why)."
     },
     {
       "id": "mosaic-supply",
@@ -275,6 +275,68 @@
         "currency": "JPY"
       },
       "notes": "The user named the price, so it is passed straight through: unitPrice is a decimal STRING (never a number) and currency is the ISO-style code (yen = JPY). The server never fetches prices; when the user asks \"how much is it worth now\" without a price, obtain the price first (web search, another MCP server, or ask the user) and then call this tool with priceSource / priceAsOf filled in. Do not call symbol_account_get and multiply the balance yourself: the product is computed on the server in integer arithmetic and rounded half up to the digits Intl (Unicode CLDR) gives the currency, JPY 0 here; decimals overrides that, and value.decimalsSource says which rule applied."
+    },
+    {
+      "id": "node-how-is-it-doing",
+      "audience": "node-operator",
+      "question": "How is my node doing?",
+      "question_ja": "ノードの調子はどう？",
+      "expectedTool": "symbol_node_health",
+      "expectedArguments": {},
+      "notes": "A vague \"how is it doing\" asks for the node's condition, which symbol_node_health answers in one call: six checks (API node, database, storage versus chain height, clock skew, finalization lag, roles) and one verdict. symbol_node_status answers \"is it in sync\" and \"which version, how many peers\" (node-in-sync, node-own-version); call it, or symbol_version_drift for an outdated version, when the user asks about those."
+    },
+    {
+      "id": "node-own-version",
+      "audience": "node-operator",
+      "question": "Which version is my node running?",
+      "question_ja": "うちのノードのバージョンは？",
+      "expectedTool": "symbol_node_status",
+      "expectedArguments": {},
+      "notes": "The node's own software version (decoded from a 4-byte integer, e.g. 1.0.3.9) is part of symbol_node_status, with the roles, heights and sync state. symbol_version_drift reads the same version but exists to compare it with the peers' versions; use it when the user asks whether the version is outdated or behind (node-version-outdated)."
+    },
+    {
+      "id": "transaction-failed-why",
+      "audience": "general",
+      "question": "My transfer 9539AD0F4441E381D08B69C63245364C385F5F09553AAF8A2E613AF476B6DBCB never arrived. Did it fail, and why?",
+      "question_ja": "送金 9539AD0F4441E381D08B69C63245364C385F5F09553AAF8A2E613AF476B6DBCB が届いていません。失敗した？理由は？",
+      "expectedTool": "symbol_transaction_status",
+      "expectedArguments": {
+        "transactionHashes": ["9539AD0F4441E381D08B69C63245364C385F5F09553AAF8A2E613AF476B6DBCB"]
+      },
+      "notes": "\"Did it fail, and why\" is a status question. A rejected transaction is in none of the groups symbol_transaction_get reads (confirmed, unconfirmed, partial), so that tool can only answer not_found; symbol_transaction_status answers failed with the node's validation code and its meaning (for example Failure_Core_Insufficient_Balance). The status is what the configured node knows; the node the transaction was announced to knows most. The hash is the synthetic failed row of test/fixtures/mainnet/transaction-status.json."
+    },
+    {
+      "id": "harvest-income-this-month",
+      "audience": "general",
+      "question": "How much have I harvested this month (September 2026)? My address is NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY.",
+      "question_ja": "今月（2026 年 9 月）のハーベストはいくら？（NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY）",
+      "expectedTool": "symbol_harvesting_income",
+      "expectedArguments": {
+        "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY",
+        "fromDate": "2026-09-01",
+        "toDate": "2026-09-30"
+      },
+      "notes": "\"How much have I harvested\" asks for harvest rewards, which are HarvestFee receipts: neither symbol_account_get (the balance now) nor symbol_transaction_search (transactions) nor a browser can total them. \"This month\" runs from the first to the last day of the current month; the tool leaves out the days after the latest block and says so. granularity keeps its default (daily); the first summary line is the month's total."
+    },
+    {
+      "id": "delegated-harvesting-enabled",
+      "audience": "general",
+      "question": "Is delegated harvesting enabled for NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY?",
+      "question_ja": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY は委任ハーベストが有効になってる？",
+      "expectedTool": "symbol_delegation_diagnose",
+      "expectedArguments": {
+        "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
+      },
+      "notes": "\"Enabled\", \"on\" or \"active\" is the diagnosis verdict (active, not_active or cannot_verify). symbol_account_get only reports delegatedHarvesting.configured, meaning the linked and VRF keys are registered, which does not show that a node has unlocked the key; symbol_harvesting_status only says whether the linked key is unlocked on the configured node, with the balance and importance limits."
+    },
+    {
+      "id": "delegator-count-now",
+      "audience": "node-operator",
+      "question": "How many delegators does my node have right now?",
+      "question_ja": "うちのノードの委任者は今何人？",
+      "expectedTool": "symbol_harvesting_status",
+      "expectedArguments": {},
+      "notes": "The current count is the unlocked list of the configured node (/node/unlockedaccount, one remote key per delegator), which symbol_harvesting_status reports with the harvesting limits; no account is needed. symbol_harvester_watch is for the change since the previous snapshot and by default also stores a new one; use it for \"decreased\" or \"came back\" (delegator-churn)."
     }
   ]
 }

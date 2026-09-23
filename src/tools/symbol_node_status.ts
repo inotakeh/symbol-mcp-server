@@ -59,7 +59,7 @@ export const nodeStatusTool = defineTool({
   name: 'symbol_node_status',
   title: 'Symbol node status',
   description:
-    'Report the health of the configured Symbol node (SYMBOL_NODE_URL): friendly name, host, roles (Peer/API/Voting), software version, network, API and database health, current and finalized height, finalization epoch, peer count, and whether the node is in sync (latest block older than 5 minutes means not synced). Takes no arguments.',
+    'Report whether the configured Symbol node (SYMBOL_NODE_URL) is in sync, and what it is: friendly name, host, roles (Peer/API/Voting), software version, network, current and finalized height, finalization epoch and peer count. For whether its services are healthy (database, storage, clock, finalization lag, as one verdict), use symbol_node_health; for whether its version is behind the network, symbol_version_drift; for how many blocks it trails other nodes, symbol_network_compare. The node counts as not synced when its latest block is older than 5 minutes. Also shows the API node and database status from /node/health. Takes no arguments.',
   inputSchema: undefined,
   outputSchema,
   run: async (ctx) => {

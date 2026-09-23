@@ -7,13 +7,9 @@
  */
 export const SERVER_INSTRUCTIONS = [
   'symbol-mcp-server is read-only: no tool accepts a private key or mnemonic; nothing is signed or announced.',
-  'An account is a 39-character base32 address, a 64-character hex public key, or a namespace name (alice) with an address alias.',
-  'Harvest rewards are receipts: for harvesting income use symbol_harvesting_income, never symbol_transaction_search.',
-  'For monthly totals or a spreadsheet, pass granularity "monthly" or output "csv".',
-  'For rank by holdings or a rich list, symbol_account_rank.',
-  'To value holdings in a currency, pass a unit price obtained elsewhere (web search, another MCP, the user) to symbol_holdings_value; never multiply balance by price yourself.',
-  'For voting key expiry, symbol_voting_key_status; for whether it signed finalization votes, symbol_finality_participation.',
-  'If delegated harvesting is not working, symbol_delegation_diagnose; for delegator increase or decrease, symbol_harvester_watch.',
-  'For node health, symbol_node_health; for a version behind the network, symbol_version_drift.',
+  'Accounts: a 39-character base32 address, a 64-character hex public key, or a namespace name (alice) with an address alias.',
+  'Harvest rewards are receipts: for harvesting income use symbol_harvesting_income, never symbol_transaction_search; for monthly totals or a spreadsheet, pass granularity "monthly" or output "csv".',
+  'To value holdings, pass a unit price obtained elsewhere (web search, another MCP, the user) to symbol_holdings_value; never multiply balance by price yourself.',
+  'Route by question: rank or rich list, symbol_account_rank; voting key expiry, symbol_voting_key_status; finalization votes signed, symbol_finality_participation; delegated harvesting not working, symbol_delegation_diagnose; delegators gained or lost, symbol_harvester_watch; node services healthy, symbol_node_health; node in sync, symbol_node_status; version behind the network, symbol_version_drift; blocks behind other nodes, symbol_network_compare; transaction went through or failed, symbol_transaction_status.',
   'Every amount, date and count is server-computed; report values as returned, never recompute, round or sum them.',
 ].join(' ');

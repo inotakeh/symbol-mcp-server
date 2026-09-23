@@ -120,7 +120,7 @@ export const nodeHealthTool = defineTool({
   name: 'symbol_node_health',
   title: 'Symbol node health',
   description:
-    'Check whether the configured Symbol node (SYMBOL_NODE_URL) is running healthily right now: API node and database status from /node/health (a 503 answer is read, not treated as a failure), node database block count versus chain height, node clock versus the local clock, finalization lag in blocks and minutes, and the node roles (is it a voting node). Six checks in a fixed order, each ok/warn/fail/unknown with a hint; verdict healthy, degraded (a warning, or a check that could not be made) or unhealthy. Thresholds come from the network properties. Complements symbol_node_status, which reports sync state, version and peer count.',
+    'Check whether the services of the configured Symbol node (SYMBOL_NODE_URL) are running healthily right now: API node, database, storage, clock and finalization lag, as one verdict. For whether the node is in sync, its version and its peer count, use symbol_node_status; for whether its version is behind the network, symbol_version_drift; for how many blocks it trails other nodes, symbol_network_compare. Six checks in a fixed order, each ok/warn/fail/unknown with a hint: API node and database status from /node/health (a 503 answer is read, not treated as a failure), node database block count versus chain height, node clock versus the local clock, finalization lag in blocks and minutes, and the node roles (is it a voting node). The verdict is healthy, degraded (a warning, or a check that could not be made) or unhealthy. Thresholds come from the network properties.',
   inputSchema,
   outputSchema,
   run: async (ctx: AppContext, { format }) => {

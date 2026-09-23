@@ -113,7 +113,7 @@ export const networkCompareTool = defineTool({
   name: 'symbol_network_compare',
   title: 'Symbol node comparison',
   description:
-    'Compare the configured node with the reference nodes listed in SYMBOL_REFERENCE_NODES: height, finalized height and finalization epoch of each, the best values seen, how far the own node is behind, and lagging flags (more than 10 blocks behind). Only the configured node and the listed reference nodes are ever contacted. Takes no arguments.',
+    'Measure how many blocks the configured node trails the reference nodes listed in SYMBOL_REFERENCE_NODES, comparing height, finalized height and finalization epoch. For whether the node is in sync on its own (the age of its latest block), use symbol_node_status; for whether its services are healthy, symbol_node_health; for whether its software version is behind, symbol_version_drift. Reports the values of each node, the best values seen, how far the own node is behind, and lagging flags (more than 10 blocks behind). Only the configured node and the listed reference nodes are ever contacted. Takes no arguments.',
   inputSchema: undefined,
   outputSchema,
   run: async (ctx) => {

@@ -14,13 +14,19 @@ describe('server instructions', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/39-character base32 address/);
     expect(SERVER_INSTRUCTIONS).toMatch(/64-character hex public key/);
     expect(SERVER_INSTRUCTIONS).toMatch(/namespace name/);
-    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_harvesting_income/);
+    expect(SERVER_INSTRUCTIONS).toMatch(
+      /use symbol_harvesting_income, never symbol_transaction_search/,
+    );
     expect(SERVER_INSTRUCTIONS).toMatch(/granularity "monthly" or output "csv"/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_account_rank/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_voting_key_status/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_finality_participation/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_delegation_diagnose/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_node_health/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_node_status/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_version_drift/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_network_compare/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_transaction_status/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_harvester_watch/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_holdings_value/);
     expect(SERVER_INSTRUCTIONS).toMatch(/never multiply balance by price/);
