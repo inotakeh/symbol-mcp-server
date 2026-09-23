@@ -2,6 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/symbol-mcp-server)](https://www.npmjs.com/package/symbol-mcp-server)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/inotakeh/symbol-mcp-server/badge)](https://scorecard.dev/viewer/?uri=github.com/inotakeh/symbol-mcp-server)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14763/badge)](https://www.bestpractices.dev/projects/14763)
 
 > **Symbol 専用です。** このサーバーは [Symbol](https://docs.symbol.dev/)（catapult）ノードと通信します。
 > 別チェーンで API も異なる NEM NIS1（XEM）には対応していません。
@@ -455,6 +456,20 @@ MAILTO=you@example.com
   - `npm view symbol-mcp-server dist.attestations` で、最新版の attestation の URL と provenance の predicate type が表示されます。
   - インストールしたプロジェクトで `npm audit signatures` を実行すると、インストール済みパッケージのレジストリ署名と
     provenance を検証できます。
+- **GitHub Release にも同じパッケージ。** 各 GitHub Release には 2 つのファイルを添付しています。
+  `symbol-mcp-server-<version>.tgz` は npm が配布している tarball とバイト単位で同一のもの（SHA-512 をレジストリの
+  `dist.integrity` と照合済み）、`symbol-mcp-server-<version>.tgz.sigstore.json` はその tarball に対する npm の
+  SLSA provenance を Sigstore バンドルにしたもの（subject がその tarball の SHA-512 であることを照合済み）です。
+  どちらも [`scripts/release-assets.sh`](scripts/release-assets.sh) が集めます。ダウンロードした 2 つのファイルは
+  [GitHub CLI](https://cli.github.com/manual/gh_attestation_verify) で検証できます:
+
+  ```sh
+  gh attestation verify symbol-mcp-server-<version>.tgz \
+    --bundle symbol-mcp-server-<version>.tgz.sigstore.json \
+    --repo inotakeh/symbol-mcp-server --digest-alg sha512
+  ```
+
+  npm の provenance は tarball を SHA-512 で指定しているため、`--digest-alg sha512` が必要です。
 - **リリースできる人。** リリース用タグ（`v1.2.3`）を作れるのは保守者だけです。ワークフローはタグと `package.json` の
   バージョンの一致を確認し、lint・typecheck・テストを実行したうえで、GitHub Environment `npm-publish` で保守者が
   承認するまで待機します。
