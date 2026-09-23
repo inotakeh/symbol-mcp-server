@@ -45,6 +45,7 @@ PROTECTED = [
     "LICENSE",
     "LICENSE.*",
     "server.json",          # MCP Registry metadata (name/version/package identity)
+    "mcpb/manifest.json",   # .mcpb manifest template (entry point, env mapping, user_config)
     # Package manager control files
     ".npmrc",
     "package-lock.json",    # must only change through npm (install/ci), never by hand

