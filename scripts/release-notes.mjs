@@ -8,11 +8,12 @@
  * The section starts after the line `## [0.7.0] - YYYY-MM-DD` and ends before the next `## [`
  * heading or the link references at the end of the file. Exit codes: 0 printed, 1 no dated
  * section for that version (including [Unreleased]) or an empty one, 2 usage error.
+ * scripts/release-check.mjs uses extractSection to check the section before anything is published.
  * Development and CI only; the MCP server never loads this file.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CHANGELOG = join(REPO_ROOT, 'CHANGELOG.md');
@@ -25,7 +26,7 @@ function escapeRegExp(text) {
 }
 
 /** Lines of the section for `version`, trimmed of blank lines at both ends; null if absent. */
-function extractSection(markdown, version) {
+export function extractSection(markdown, version) {
   const heading = new RegExp(`^## \\[${escapeRegExp(version)}\\] - \\d{4}-\\d{2}-\\d{2}$`);
   const lines = markdown.split(/\r?\n/);
   const start = lines.findIndex((line) => heading.test(line));
@@ -61,4 +62,6 @@ function main(args) {
   return 0;
 }
 
-process.exitCode = main(process.argv.slice(2));
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  process.exitCode = main(process.argv.slice(2));
+}
