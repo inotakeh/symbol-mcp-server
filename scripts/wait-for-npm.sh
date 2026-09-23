@@ -12,7 +12,8 @@
 # Used by scripts/release-assets.sh (the provenance URL) and by the registry job of
 # .github/workflows/release.yml (the mcpName that the MCP Registry compares with server.json's
 # name before it accepts a version). Needs bash and npm. Exit: 0 shown (the value on stdout),
-# 1 not shown within the limit, or a different value, 2 usage.
+# 1 not shown within the limit, or a different value, 2 usage (arguments, or NPM_WAIT that is not
+# a whole number of seconds).
 set -euo pipefail
 
 usage() {
@@ -31,7 +32,10 @@ expected="${3-}"
 [ -n "$spec" ] && [ -n "$field" ] || usage
 [ "$#" -eq 2 ] || [ -n "$expected" ] || usage
 limit="${NPM_WAIT:-300}"
-[[ "$limit" =~ ^[0-9]+$ ]] || usage
+if ! [[ "$limit" =~ ^[0-9]+$ ]]; then
+  echo "wait-for-npm: NPM_WAIT must be a whole number of seconds, not '$limit'." >&2
+  exit 2
+fi
 
 waited=0
 while :; do

@@ -1,4 +1,4 @@
-/** Types for scripts/release-check.mjs, so the TypeScript tests can import it. */
+/** Types for scripts/release-files.mjs, so the TypeScript tests can import it. */
 
 export interface ReleaseFiles {
   /** Parsed package.json. */
@@ -14,5 +14,7 @@ export interface ReleaseFiles {
   /** The text of CHANGELOG.md. */
   changelog: string;
 }
+
+export declare function extractSection(markdown: string, version: string): string[] | null;
 
 export declare function releaseProblems(version: string, files: ReleaseFiles): string[];

@@ -124,11 +124,18 @@ describe.skipIf(process.platform === 'win32')('scripts/wait-for-npm.sh', () => {
     ]) {
       const result = wait([NAME], args);
       expect(result.status).toBe(2);
+      expect(result.stderr).toMatch(/^usage: /);
       expect(result.calls).toEqual([]);
     }
-    for (const limit of ['soon', '-1', '1.5']) {
+  });
+
+  it('names NPM_WAIT when it is not a whole number of seconds', () => {
+    for (const limit of ['soon', '-1', '1.5', '5m']) {
       const result = wait([NAME], [SPEC, 'mcpName'], { NPM_WAIT: limit });
       expect(result.status).toBe(2);
+      expect(result.stderr).toBe(
+        `wait-for-npm: NPM_WAIT must be a whole number of seconds, not '${limit}'.\n`,
+      );
       expect(result.calls).toEqual([]);
     }
   });

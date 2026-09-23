@@ -31,6 +31,9 @@ version="${1#v}"
 outdir="$2"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage
 [ -n "$outdir" ] || usage
+wait_total="${RELEASE_ASSETS_WAIT:-300}"
+[[ "$wait_total" =~ ^[0-9]+$ ]] ||
+  fail "RELEASE_ASSETS_WAIT must be a whole number of seconds, not '$wait_total'."
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 name="$(node -p 'require(process.argv[1]).name' "$script_dir/../package.json")"
@@ -38,7 +41,7 @@ spec="$name@$version"
 mkdir -p "$outdir"
 
 # 1. The registry can lag behind a publish that just finished: wait for the attestations URL.
-attestations_url="$(NPM_WAIT="${RELEASE_ASSETS_WAIT:-300}" bash "$script_dir/wait-for-npm.sh" "$spec" dist.attestations.url)" ||
+attestations_url="$(NPM_WAIT="$wait_total" bash "$script_dir/wait-for-npm.sh" "$spec" dist.attestations.url)" ||
   fail "$spec has no dist.attestations.url (not published, or published without provenance)."
 
 # 2. The tarball exactly as published, checked against the registry's integrity string.

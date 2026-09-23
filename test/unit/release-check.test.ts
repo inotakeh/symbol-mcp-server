@@ -1,23 +1,45 @@
 /**
- * scripts/release-check.mjs: the pure check on synthetic release files, one broken field at a
- * time, and the command as the release workflow runs it on the repository's own files.
+ * The release files check: releaseProblems (scripts/release-files.mjs) on synthetic release files,
+ * one broken field at a time, and scripts/release-check.mjs as the release workflow runs it on the
+ * repository's own files, also when it is started through a symlinked path.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmdirSync, symlinkSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { type ReleaseFiles, releaseProblems } from '../../scripts/release-check.mjs';
+import { type ReleaseFiles, releaseProblems } from '../../scripts/release-files.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = join(ROOT, 'scripts', 'release-check.mjs');
 const VERSION = (
   JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string }
 ).version;
+const SERVER_PACKAGES = (
+  JSON.parse(readFileSync(join(ROOT, 'server.json'), 'utf8')) as { packages: unknown[] }
+).packages;
 
 function run(...args: string[]) {
-  const result = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' });
+  return runScript(SCRIPT, args);
+}
+
+function runScript(script: string, args: string[]) {
+  const result = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+/** Runs `use` with the repository reachable through a symlink, then removes the link. */
+function throughSymlink<T>(use: (linkedRoot: string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), 'release-check-'));
+  const link = join(dir, 'repo');
+  symlinkSync(ROOT, link, 'dir');
+  try {
+    return use(link);
+  } finally {
+    unlinkSync(link);
+    rmdirSync(dir);
+  }
 }
 
 const CHANGELOG = [
@@ -191,7 +213,9 @@ describe('scripts/release-check.mjs', () => {
       `release-check: package-lock.json version is ${VERSION}, not 0.0.1.`,
       `release-check: package-lock.json packages[""].version is ${VERSION}, not 0.0.1.`,
       `release-check: server.json version is ${VERSION}, not 0.0.1.`,
-      `release-check: server.json packages[0].version is ${VERSION}, not 0.0.1.`,
+      ...SERVER_PACKAGES.map(
+        (_, i) => `release-check: server.json packages[${i}].version is ${VERSION}, not 0.0.1.`,
+      ),
       'release-check: CHANGELOG.md has no "## [0.0.1] - YYYY-MM-DD" section.',
     ]);
   });
@@ -200,5 +224,19 @@ describe('scripts/release-check.mjs', () => {
     expect(run().status).toBe(2);
     expect(run('').status).toBe(2);
     expect(run(VERSION, VERSION).status).toBe(2);
+  });
+
+  // Node gives a module started through a symlink the URL of the real file, so a main guard that
+  // compares that URL with argv would skip the check and exit 0. The scripts must always run.
+  it.skipIf(process.platform === 'win32')('checks when started through a symlinked path', () => {
+    throughSymlink((linkedRoot) => {
+      const checker = join(linkedRoot, 'scripts', 'release-check.mjs');
+      expect(runScript(checker, ['0.0.1']).status).toBe(1);
+      expect(runScript(checker, [VERSION]).status).toBe(0);
+
+      const notes = runScript(join(linkedRoot, 'scripts', 'release-notes.mjs'), [VERSION]);
+      expect(notes.status).toBe(0);
+      expect(notes.stdout).toMatch(/^### /);
+    });
   });
 });
