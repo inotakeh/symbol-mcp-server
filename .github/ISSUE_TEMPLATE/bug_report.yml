@@ -1,0 +1,96 @@
+name: Bug report
+description: A tool, the check command or start-up does not behave as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Security problems go to private vulnerability
+        reporting (linked on the previous page), not to a public issue.
+
+        **Never paste a private key or mnemonic.** This server never needs one.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you asked the model or ran, in order.
+      placeholder: |
+        1. Start the server with SYMBOL_NODE_URL set to a mainnet node
+        2. Ask "When does my voting key expire?"
+        3. The model calls symbol_voting_key_status and gets ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: symbol-mcp-server version
+      description: Output of `npx symbol-mcp-server --version`, or `npm ls symbol-mcp-server`.
+      placeholder: 0.7.0
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Output of `node --version`.
+      placeholder: v22.12.0
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client
+      options:
+        - Claude Desktop
+        - Claude Code
+        - Cursor
+        - VS Code
+        - Cline
+        - MCP Inspector
+        - CLI (symbol-mcp-server check)
+        - Other (name it in the steps above)
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: Network
+      options:
+        - mainnet
+        - testnet
+    validations:
+      required: true
+  - type: textarea
+    id: tool-input
+    attributes:
+      label: Tool name and input
+      description: |
+        The tool and the arguments it was called with, e.g.
+        `symbol_voting_key_status { "account": "..." }`. For the CLI, the full command line.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output or error
+      description: The tool result (summary and the relevant fields) or the error text, and what you expected instead.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: node-url
+    attributes:
+      label: Node URL (optional)
+      description: Only if you are comfortable making it public. Leave it out for your own node if you prefer.
+    validations:
+      required: false
+  - type: textarea
+    id: identifiers
+    attributes:
+      label: Addresses, public keys or hashes involved (optional)
+      description: |
+        Only what you are comfortable making public. They are on-chain data, but posting them here
+        links them to you. Never a private key.
+    validations:
+      required: false

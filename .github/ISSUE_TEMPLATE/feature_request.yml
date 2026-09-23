@@ -1,0 +1,49 @@
+name: Feature request
+description: A question about Symbol that the server cannot answer yet.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tools here answer questions instead of mirroring REST endpoints, so please describe the
+        request as the question you want answered.
+
+        **Out of scope:** anything that writes to the chain (building, signing or announcing
+        transactions), accepts private keys, mnemonics or tokens, or contacts a host other than the
+        configured node and reference nodes (price APIs, explorers, telemetry). The server is
+        read-only and talks to `SYMBOL_NODE_URL` only, by design; such requests will be closed.
+  - type: textarea
+    id: question
+    attributes:
+      label: The question you want answered
+      description: Phrase it the way you would ask it, e.g. "How many of my delegators left this month?"
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Who asks it, and when
+      description: Account holder or node operator, and the situation (monthly check, after a migration, before renewing a key, ...).
+    validations:
+      required: false
+  - type: textarea
+    id: today
+    attributes:
+      label: How you answer it today
+      description: Existing tools, REST endpoints, explorers or manual steps, and what is missing.
+    validations:
+      required: false
+  - type: textarea
+    id: answer
+    attributes:
+      label: What a good answer contains
+      description: The summary line or fields you would expect back.
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: The answer can be computed from the configured Symbol node's REST API alone, without keys, signing or other hosts.
+          required: true
