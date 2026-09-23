@@ -64,6 +64,30 @@ describe('symbol_account_get', () => {
     expect(result.structuredContent?.summary).toMatch(/not a multisig account/);
   });
 
+  // Whether delegated harvesting works is symbol_delegation_diagnose's question (tool routing);
+  // symbol_harvesting_status only lists what the configured node has unlocked.
+  it('points to symbol_delegation_diagnose in the delegated harvesting note', async () => {
+    server = await startTestServer();
+    const configured = await server.callTool('symbol_account_get', { account: ADDRESS });
+    expect(configured.structuredContent?.delegatedHarvesting).toEqual({
+      configured: true,
+      note: 'The linked and VRF keys are both set. Whether delegated harvesting actually works (node key, the unlocked list of the node, balance limits, importance, recent blocks) is checked by symbol_delegation_diagnose.',
+    });
+    await server.close();
+    server = undefined;
+
+    const account = fixture<{ account: Record<string, unknown> }>('mainnet/account-voting.json');
+    account.account.supplementalPublicKeys = {};
+    server = await startTestServer({
+      routes: { ...mainnetRoutes(), [`GET /accounts/${ADDRESS}`]: account },
+    });
+    const bare = await server.callTool('symbol_account_get', { account: ADDRESS });
+    expect(bare.structuredContent?.delegatedHarvesting).toEqual({
+      configured: false,
+      note: 'Delegated harvesting needs both a linked (remote) key and a VRF key; symbol_delegation_diagnose shows which step is missing.',
+    });
+  });
+
   it('accepts hex addresses and public keys and hits the configured node only', async () => {
     server = await startTestServer();
     const byHex = await server.callTool('symbol_account_get', { account: HEX_ADDRESS });

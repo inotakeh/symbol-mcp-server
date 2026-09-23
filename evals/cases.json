@@ -152,7 +152,7 @@
         "toDate": "2026-08-31",
         "granularity": "daily"
       },
-      "notes": "\"Last month\" becomes a fromDate/toDate pair (inclusive, in SYMBOL_TIMEZONE or UTC); the server resolves the dates to heights and sums the HarvestFee receipts itself, so the model must not add amounts. Use fromHeight/toHeight instead of dates only when the user names heights. symbol_harvesting_status says whether the account can harvest; it reports no income."
+      "notes": "\"Last month\" becomes a fromDate/toDate pair (inclusive, in SYMBOL_TIMEZONE or UTC); the server resolves the dates to heights and sums the HarvestFee receipts itself, so the model must not add amounts. Use fromHeight/toHeight instead of dates only when the user names heights. Whether the account's harvesting works is symbol_delegation_diagnose; symbol_harvesting_status lists the keys the configured node has unlocked. Neither reports income."
     },
     {
       "id": "transaction-status-check",

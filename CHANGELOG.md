@@ -58,9 +58,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - What is distributed or documented no longer names real nodes or transactions: `--help` points to
   https://nodewatch.symbol.tools/ and `https://<node-host>:3001` instead of listing two public
   nodes, the `transactionHash` argument of `symbol_transaction_get` describes the format instead of
-  quoting a hash, and the README and DESIGN-BRIEF examples use placeholders. The tests (fixtures,
-  harness and the usage comment of the live integration test) and the evaluation cases keep their
-  public data.
+  quoting a hash, and the README, DESIGN-BRIEF and live integration test usage examples use
+  placeholders. The test fixtures and harness and the evaluation cases keep their public data.
 - The descriptions of the tools that are easy to mix up now start with the question each one
   answers and name the tool for each neighbouring question in their second sentence:
   `symbol_node_status` (sync), `symbol_node_health` (service health), `symbol_version_drift`
@@ -71,6 +70,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   model to use it for every harvest income question and not `symbol_transaction_search` or a
   browser. The server instructions now also route node sync, blocks behind other nodes and
   transaction status. Tool names, arguments and outputs are unchanged.
+- The `delegatedHarvesting.note` of `symbol_account_get`, and the summary of
+  `symbol_harvesting_income` for a period without receipts, send the question whether an account's
+  harvesting works to `symbol_delegation_diagnose`, as the tool descriptions do. They pointed to
+  `symbol_harvesting_status`, which only lists what the configured node has unlocked.
 - `symbol_holdings_value` rounds to the digits Intl (Unicode CLDR, as bundled with the Node.js that
   runs the server) gives the currency, instead of 0 for JPY and KRW and 2 for everything else:
   KWD and BHD now keep 3 decimals and CLF 4. A code Intl does not know (BTC, USDT, ETH) is no
@@ -102,6 +105,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `symbol_harvesting_status` no longer says that a balance above `maxHarvesterBalance` is capped.
+  Such an account cannot harvest at all: catapult accepts a block only from a harvester whose
+  balance is from `minHarvesterBalance` to `maxHarvesterBalance`, both inclusive, and nodes drop
+  other delegated harvesters from their unlocked list. `balanceWithinLimits` now checks both limits
+  (it checked only the minimum), so `canHarvestHere` is false above the maximum, and the warning
+  says to move the excess. `symbol_delegation_diagnose` already failed this case; its hint now adds
+  that nodes drop such accounts from their unlocked list, and its hint for a balance below the
+  minimum says the minimum itself is enough (it said importance is assigned only above it). Both
+  tools now apply one shared rule.
 - A mosaic alias or namespace name made only of characters the untrusted-text filter removes no
   longer shows as an empty label (`Currency  = mosaic …`) or as a name with an empty level
   (`.xym`): the mosaic id, or the name the caller typed, is shown instead. A `priceSource` or

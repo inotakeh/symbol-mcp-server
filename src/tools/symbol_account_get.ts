@@ -230,8 +230,8 @@ export const accountGetTool = defineTool({
       delegatedHarvesting: {
         configured: delegatedConfigured,
         note: delegatedConfigured
-          ? 'linked and vrf keys are both set; use symbol_harvesting_status to check whether the node has this account unlocked.'
-          : 'Delegated harvesting requires both a linked (remote) key and a vrf key.',
+          ? 'The linked and VRF keys are both set. Whether delegated harvesting actually works (node key, the unlocked list of the node, balance limits, importance, recent blocks) is checked by symbol_delegation_diagnose.'
+          : 'Delegated harvesting needs both a linked (remote) key and a VRF key; symbol_delegation_diagnose shows which step is missing.',
       },
       multisig: multisig
         ? {

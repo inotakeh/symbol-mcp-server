@@ -212,6 +212,11 @@ describe('symbol_delegation_diagnose', () => {
     expect(out.checks.find((c) => c.id === 'balance_in_range')?.detail).toMatch(
       /5\.000000 symbol\.xym is below minHarvesterBalance 10000\.000000 symbol\.xym/,
     );
+    // The minimum itself is enough (catapult: balance >= MinHarvesterBalance), as the ranges of
+    // this tool and symbol_harvesting_status say.
+    expect(out.checks.find((c) => c.id === 'balance_in_range')?.hint).toBe(
+      'Hold at least 10000.000000 symbol.xym on the main account; importance is only assigned to balances at or above that threshold.',
+    );
   });
 
   it('fails balance_in_range above maxHarvesterBalance', async () => {
@@ -224,6 +229,9 @@ describe('symbol_delegation_diagnose', () => {
     expect(out.checks.find((c) => c.id === 'balance_in_range')).toMatchObject({
       status: 'fail',
       detail: expect.stringMatching(/exceeds maxHarvesterBalance/),
+      hint: expect.stringMatching(
+        /cannot harvest, and nodes drop them from their unlocked list; move the excess/,
+      ),
     });
   });
 

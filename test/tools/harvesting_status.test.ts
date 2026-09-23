@@ -39,8 +39,9 @@ describe('symbol_harvesting_status', () => {
     expect(keys[0]).toBe(LINKED);
     expect(result.structuredContent?.summary).toMatch(/15 delegated harvesters unlocked/);
     expect(result.structuredContent?.summary).toMatch(
-      /10000\.000000 to 50000000\.000000 symbol\.xym/,
+      /a balance from 10000\.000000 to 50000000\.000000 symbol\.xym \(both inclusive\)/,
     );
+    expect(result.structuredContent?.summary).not.toMatch(/capped/);
     expect(server.requests.some((u) => u.pathname === '/node/unlockedaccount')).toBe(true);
     expect(new Set(server.requests.map((u) => u.host))).toEqual(new Set([TEST_NODE_HOST]));
   });
@@ -61,7 +62,53 @@ describe('symbol_harvesting_status', () => {
       warnings: [],
     });
     expect(result.structuredContent?.summary).toMatch(/is unlocked on this node/);
+    expect(result.structuredContent?.summary).toMatch(/\(within the limits\)/);
     expect(result.structuredContent?.summary).toMatch(/can harvest on this node/);
+  });
+
+  // catapult's ImportanceView::canHarvest requires minHarvesterBalance <= balance <=
+  // maxHarvesterBalance: above the maximum an account cannot harvest at all.
+  it('reports that an account above maxHarvesterBalance cannot harvest', async () => {
+    const account = fixture<{ account: Record<string, unknown> }>('mainnet/account-voting.json');
+    account.account.mosaics = [{ id: '6BED913FA20223F8', amount: '50000000000001' }];
+    server = await startTestServer({
+      routes: { ...mainnetRoutes(), [`GET /accounts/${ADDRESS}`]: account },
+    });
+    const result = await server.callTool('symbol_harvesting_status', { account: ADDRESS });
+    expect(result.isError).toBe(false);
+    const report = result.structuredContent?.account as Record<string, unknown>;
+    expect(report).toMatchObject({
+      balance: '50000000.000001',
+      delegatedHarvestingConfigured: true,
+      unlockedOnThisNode: true,
+      importanceNonZero: true,
+      balanceWithinLimits: false,
+      canHarvestHere: false,
+      warnings: [
+        'Balance 50000000.000001 symbol.xym exceeds maxHarvesterBalance 50000000.000000: an account above it cannot harvest, and nodes drop it from their unlocked list. Move the excess to another account.',
+      ],
+    });
+    expect(result.structuredContent?.summary).toMatch(/\(above the maximum\)/);
+    expect(result.structuredContent?.summary).toMatch(/cannot currently harvest/);
+    expect(result.structuredContent?.summary).not.toMatch(/only that amount counts/);
+  });
+
+  it('counts both limits as within the range', async () => {
+    for (const amount of ['10000000000', '50000000000000']) {
+      const account = fixture<{ account: Record<string, unknown> }>('mainnet/account-voting.json');
+      account.account.mosaics = [{ id: '6BED913FA20223F8', amount }];
+      server = await startTestServer({
+        routes: { ...mainnetRoutes(), [`GET /accounts/${ADDRESS}`]: account },
+      });
+      const result = await server.callTool('symbol_harvesting_status', { account: ADDRESS });
+      expect(result.structuredContent?.account).toMatchObject({
+        balanceWithinLimits: true,
+        canHarvestHere: true,
+        warnings: [],
+      });
+      await server.close();
+      server = undefined;
+    }
   });
 
   it('warns when the account is not delegated, not unlocked, or under-funded', async () => {
@@ -87,6 +134,7 @@ describe('symbol_harvesting_status', () => {
     expect(warnings.some((w) => /not unlocked on/.test(w))).toBe(true);
     expect(warnings.some((w) => /below minHarvesterBalance/.test(w))).toBe(true);
     expect(warnings.some((w) => /Importance is zero/.test(w))).toBe(true);
+    expect(result.structuredContent?.summary).toMatch(/\(below the minimum\)/);
     expect(result.structuredContent?.summary).toMatch(/cannot currently harvest/);
   });
 
