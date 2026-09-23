@@ -7,8 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `symbol_holdings_value`: optional argument `decimals` (an integer from 0 to 12) to round
+  `value.amount` to, and the outputs `value.roundingDecimals` (the decimals used, or null when not
+  rounded) and `value.decimalsSource` (`caller`, `currency`, `none` or `rounds_to_zero`). The
+  summary gets a second line that says how the amount was rounded, or why it was not.
+
 ### Changed
 
+- `symbol_holdings_value` rounds to the digits Intl (Unicode CLDR, as bundled with the Node.js that
+  runs the server) gives the currency, instead of 0 for JPY and KRW and 2 for everything else:
+  KWD and BHD now keep 3 decimals and CLF 4. A code Intl does not know (BTC, USDT, ETH) is no
+  longer rounded to 2 decimals, so a small amount no longer shows as 0.00, and a non-zero value
+  that would still round to 0 (a small XAU amount at the 2 digits CLDR gives gold) is shown
+  unrounded as well. Rounding is still half up. CLDR differs from ISO 4217 for a few codes (HUF,
+  IDR, IQD and IRR have 0 digits in CLDR; ISO 4217 gives IQD 3 and the others 2), and the digits
+  come from the Node.js that runs the server; pass `decimals` to fix them.
 - Untrusted text (transfer messages, metadata values, namespace and alias names, and the strings a
   node reports about itself) is stripped of every Unicode control (Cc) and format (Cf) character,
   line and paragraph separators, lone surrogates and the whole tag block U+E0000 to U+E007F, whose

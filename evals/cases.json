@@ -274,7 +274,7 @@
         "unitPrice": "12.34",
         "currency": "JPY"
       },
-      "notes": "The user named the price, so it is passed straight through: unitPrice is a decimal STRING (never a number) and currency is the ISO-style code (yen = JPY). The server never fetches prices; when the user asks \"how much is it worth now\" without a price, obtain the price first (web search, another MCP server, or ask the user) and then call this tool with priceSource / priceAsOf filled in. Do not call symbol_account_get and multiply the balance yourself: the product is computed on the server in integer arithmetic and rounded to the currency's customary decimals."
+      "notes": "The user named the price, so it is passed straight through: unitPrice is a decimal STRING (never a number) and currency is the ISO-style code (yen = JPY). The server never fetches prices; when the user asks \"how much is it worth now\" without a price, obtain the price first (web search, another MCP server, or ask the user) and then call this tool with priceSource / priceAsOf filled in. Do not call symbol_account_get and multiply the balance yourself: the product is computed on the server in integer arithmetic and rounded half up to the digits Intl (Unicode CLDR) gives the currency, JPY 0 here; decimals overrides that, and value.decimalsSource says which rule applied."
     }
   ]
 }

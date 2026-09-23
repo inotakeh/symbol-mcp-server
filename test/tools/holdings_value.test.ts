@@ -38,9 +38,19 @@ type Output = {
   mosaic: { id: string; alias: string | null; divisibility: number };
   balance: { amount: string; raw: string };
   price: { unitPrice: string; currency: string; source: string | null; asOf: string | null };
-  value: { amount: string; exact: string; currency: string };
+  value: {
+    amount: string;
+    exact: string;
+    currency: string;
+    roundingDecimals: number | null;
+    decimalsSource: string;
+  };
   notes: string[];
 };
+
+/** The second summary line for a currency Intl rounds to its own digits. */
+const intlRounded = (decimals: string, currency: string) =>
+  `Rounded half up to ${decimals}, as Intl (Unicode CLDR) formats ${currency}.`;
 
 const outputSchema = TOOLS.find((t) => t.name === TOOL)?.outputSchema;
 
@@ -80,9 +90,18 @@ describe('symbol_holdings_value', () => {
       source: 'Zaif XYM/JPY last',
       asOf: '2026-09-22T21:00:00+09:00',
     });
-    expect(sc.value).toEqual({ amount: '53321140', exact: '53321140.00000000', currency: 'JPY' });
+    expect(sc.value).toEqual({
+      amount: '53321140',
+      exact: '53321140.00000000',
+      currency: 'JPY',
+      roundingDecimals: 0,
+      decimalsSource: 'currency',
+    });
     expect(sc.summary).toBe(
-      `${ADDRESS} holds 4,321,000.000000 symbol.xym; at 12.34 JPY per XYM that is 53,321,140 JPY (price supplied by the caller: Zaif XYM/JPY last, as of 2026-09-22T21:00:00+09:00).`,
+      [
+        `${ADDRESS} holds 4,321,000.000000 symbol.xym; at 12.34 JPY per XYM that is 53,321,140 JPY (price supplied by the caller: Zaif XYM/JPY last, as of 2026-09-22T21:00:00+09:00).`,
+        intlRounded('whole units', 'JPY'),
+      ].join('\n'),
     );
     for (const pattern of FIXED_NOTE_PATTERNS) {
       expect(
@@ -96,31 +115,72 @@ describe('symbol_holdings_value', () => {
     expectOnlyTestNode(server);
   });
 
-  it('rounds to 2 decimals for USD and 0 for KRW, and leaves out missing provenance', async () => {
+  it('rounds to the digits Intl gives USD, KRW and KWD, and leaves out missing provenance', async () => {
     server = await startTestServer();
     const usd = checkShape(
       await server.callTool(TOOL, { account: ADDRESS, unitPrice: '0.0312', currency: 'USD' }),
     );
     expect(usd.price).toEqual({ unitPrice: '0.0312', currency: 'USD', source: null, asOf: null });
-    expect(usd.value).toEqual({ amount: '134815.20', exact: '134815.2000000000', currency: 'USD' });
+    expect(usd.value).toEqual({
+      amount: '134815.20',
+      exact: '134815.2000000000',
+      currency: 'USD',
+      roundingDecimals: 2,
+      decimalsSource: 'currency',
+    });
     expect(usd.summary).toBe(
-      `${ADDRESS} holds 4,321,000.000000 symbol.xym; at 0.0312 USD per XYM that is 134,815.20 USD (price supplied by the caller).`,
+      [
+        `${ADDRESS} holds 4,321,000.000000 symbol.xym; at 0.0312 USD per XYM that is 134,815.20 USD (price supplied by the caller).`,
+        intlRounded('2 decimals', 'USD'),
+      ].join('\n'),
     );
 
     const krw = checkShape(
       await server.callTool(TOOL, { account: ADDRESS, unitPrice: '41.5', currency: 'KRW' }),
     );
-    expect(krw.value).toEqual({ amount: '179321500', exact: '179321500.0000000', currency: 'KRW' });
+    expect(krw.value).toMatchObject({ amount: '179321500', roundingDecimals: 0 });
+
+    // Three decimals, which a fixed 2 would have cut: 5,185.2 KWD.
+    const kwd = checkShape(
+      await server.callTool(TOOL, { account: ADDRESS, unitPrice: '0.0012', currency: 'KWD' }),
+    );
+    expect(kwd.value).toMatchObject({
+      amount: '5185.200',
+      roundingDecimals: 3,
+      decimalsSource: 'currency',
+    });
+    expect(kwd.summary.split('\n')[1]).toBe(intlRounded('3 decimals', 'KWD'));
   });
 
-  it('handles a small unit price such as BTC and shows the unrounded value when detailed', async () => {
+  it('shows the unrounded value on a third line when detailed', async () => {
+    server = await startTestServer();
+    const args = { account: ADDRESS, unitPrice: '0.0312', currency: 'USD' };
+    const concise = checkShape(await server.callTool(TOOL, args));
+    const detailed = checkShape(await server.callTool(TOOL, { ...args, format: 'detailed' }));
+    const lines = detailed.summary.split('\n');
+    expect(lines).toHaveLength(3);
+    expect(lines.slice(0, 2).join('\n')).toBe(concise.summary);
+    expect(lines[2]).toBe('Unrounded: 134,815.2000000000 USD.');
+    expect({ ...detailed, summary: '' }).toEqual({ ...concise, summary: '' });
+  });
+
+  it('does not round a code Intl does not know, such as BTC', async () => {
     server = await startTestServer();
     const concise = checkShape(
       await server.callTool(TOOL, { account: ADDRESS, unitPrice: '0.0000123', currency: 'BTC' }),
     );
-    expect(concise.value).toEqual({ amount: '53.15', exact: '53.1483000000000', currency: 'BTC' });
-    expect(concise.summary.split('\n')).toHaveLength(1);
-
+    expect(concise.value).toEqual({
+      amount: '53.1483',
+      exact: '53.1483000000000',
+      currency: 'BTC',
+      roundingDecimals: null,
+      decimalsSource: 'none',
+    });
+    expect(concise.summary.split('\n')).toEqual([
+      `${ADDRESS} holds 4,321,000.000000 symbol.xym; at 0.0000123 BTC per XYM that is 53.1483 BTC (price supplied by the caller).`,
+      'Not rounded: Intl (Unicode CLDR) does not know BTC, so this is the exact product.',
+    ]);
+    // Nothing was rounded, so detailed adds no "Unrounded" line.
     const detailed = checkShape(
       await server.callTool(TOOL, {
         account: ADDRESS,
@@ -129,12 +189,103 @@ describe('symbol_holdings_value', () => {
         format: 'detailed',
       }),
     );
-    const lines = detailed.summary.split('\n');
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toBe(concise.summary);
-    expect(lines[1]).toBe('Unrounded: 53.1483000000000 BTC.');
-    expect({ ...detailed, summary: '' }).toEqual({ ...concise, summary: '' });
+    expect(detailed.summary).toBe(concise.summary);
   });
+
+  it('keeps a small XAU value from showing as 0.00 and says so', async () => {
+    server = await startTestServer();
+    // Intl knows gold (XAU) and gives it the CLDR default of 2 digits: 43.21 XAU is rounded.
+    const large = checkShape(
+      await server.callTool(TOOL, { account: ADDRESS, unitPrice: '0.00001', currency: 'XAU' }),
+    );
+    expect(large.value).toMatchObject({
+      amount: '43.21',
+      roundingDecimals: 2,
+      decimalsSource: 'currency',
+    });
+    // 0.004321 XAU would be 0.00 at 2 digits: the exact value is kept.
+    const small = checkShape(
+      await server.callTool(TOOL, { account: ADDRESS, unitPrice: '0.000000001', currency: 'XAU' }),
+    );
+    expect(small.value).toEqual({
+      amount: '0.004321',
+      exact: '0.004321000000000',
+      currency: 'XAU',
+      roundingDecimals: null,
+      decimalsSource: 'rounds_to_zero',
+    });
+    expect(small.summary.split('\n')).toEqual([
+      `${ADDRESS} holds 4,321,000.000000 symbol.xym; at 0.000000001 XAU per XYM that is 0.004321 XAU (price supplied by the caller).`,
+      'Not rounded: rounding to 2 decimals as Intl (Unicode CLDR) formats XAU would show it as 0, so this is the exact product.',
+    ]);
+  });
+
+  it('rounds to the decimals the caller asks for, with the same safety net', async () => {
+    server = await startTestServer();
+    const usd = checkShape(
+      await server.callTool(TOOL, {
+        account: ADDRESS,
+        unitPrice: '0.0312',
+        currency: 'USD',
+        decimals: 4,
+      }),
+    );
+    expect(usd.value).toMatchObject({
+      amount: '134815.2000',
+      roundingDecimals: 4,
+      decimalsSource: 'caller',
+    });
+    expect(usd.summary.split('\n')[1]).toBe('Rounded half up to 4 decimals, as requested.');
+
+    const btc = checkShape(
+      await server.callTool(TOOL, {
+        account: ADDRESS,
+        unitPrice: '0.0000123',
+        currency: 'BTC',
+        decimals: 2,
+      }),
+    );
+    expect(btc.value).toMatchObject({
+      amount: '53.15',
+      roundingDecimals: 2,
+      decimalsSource: 'caller',
+    });
+
+    // 0.4321 USD at whole units would be 0: kept exact even though the caller asked for 0.
+    const tiny = checkShape(
+      await server.callTool(TOOL, {
+        account: ADDRESS,
+        unitPrice: '0.0000001',
+        currency: 'USD',
+        decimals: 0,
+      }),
+    );
+    expect(tiny.value).toMatchObject({
+      amount: '0.4321',
+      roundingDecimals: null,
+      decimalsSource: 'rounds_to_zero',
+    });
+    expect(tiny.summary.split('\n')[1]).toBe(
+      'Not rounded: rounding to whole units as requested would show it as 0, so this is the exact product.',
+    );
+  });
+
+  it.each([-1, 13, 1.5])(
+    'rejects decimals %j with a hint before contacting the node',
+    async (decimals) => {
+      server = await startTestServer();
+      const before = server.requests.length;
+      const result = await server.callTool(TOOL, {
+        account: ADDRESS,
+        unitPrice: '1',
+        currency: 'JPY',
+        decimals,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.text).toMatch(/integer from 0 to 12/);
+      expect(server.requests.length).toBe(before);
+    },
+  );
 
   it('normalises the unit price (leading and trailing zeros) and accepts a public key', async () => {
     server = await startTestServer();
@@ -143,7 +294,7 @@ describe('symbol_holdings_value', () => {
     );
     expect(sc.address).toBe(ADDRESS);
     expect(sc.price.unitPrice).toBe('12.34');
-    expect(sc.value).toEqual({ amount: '53321140', exact: '53321140.00000000', currency: 'JPY' });
+    expect(sc.value).toMatchObject({ amount: '53321140', exact: '53321140.00000000' });
     expect(sc.summary).toMatch(/at 12\.34 JPY per XYM/);
     // The public key never appears in the output.
     expect(JSON.stringify(sc)).not.toContain(PUBLIC_KEY);
@@ -168,9 +319,18 @@ describe('symbol_holdings_value', () => {
     );
     expect(sc.mosaic).toEqual({ id: OTHER_MOSAIC_ID, alias: null, divisibility: 0 });
     expect(sc.balance).toEqual({ amount: '1500', raw: '1500' });
-    expect(sc.value).toEqual({ amount: '3750', exact: '3750.0', currency: 'JPY' });
+    expect(sc.value).toEqual({
+      amount: '3750',
+      exact: '3750.0',
+      currency: 'JPY',
+      roundingDecimals: 0,
+      decimalsSource: 'currency',
+    });
     expect(sc.summary).toBe(
-      `${ADDRESS} holds 1,500 ${OTHER_MOSAIC_ID}; at 2.5 JPY per ${OTHER_MOSAIC_ID} that is 3,750 JPY (price supplied by the caller).`,
+      [
+        `${ADDRESS} holds 1,500 ${OTHER_MOSAIC_ID}; at 2.5 JPY per ${OTHER_MOSAIC_ID} that is 3,750 JPY (price supplied by the caller).`,
+        intlRounded('whole units', 'JPY'),
+      ].join('\n'),
     );
     expect(server.requests.some((u) => u.pathname === `/mosaics/${OTHER_MOSAIC_ID}`)).toBe(true);
     expectOnlyTestNode(server);
@@ -192,7 +352,14 @@ describe('symbol_holdings_value', () => {
     );
     expect(sc.mosaic).toEqual({ id: XYM_MOSAIC_ID, alias: 'symbol.xym', divisibility: 6 });
     expect(sc.balance).toEqual({ amount: '0.000000', raw: '0' });
-    expect(sc.value).toEqual({ amount: '0', exact: '0.00000000', currency: 'JPY' });
+    // A zero balance is 0 at the currency's digits, not an "unrounded" value.
+    expect(sc.value).toEqual({
+      amount: '0',
+      exact: '0.00000000',
+      currency: 'JPY',
+      roundingDecimals: 0,
+      decimalsSource: 'currency',
+    });
     expect(sc.summary).toMatch(/holds 0\.000000 symbol\.xym; at 12\.34 JPY per XYM that is 0 JPY/);
     expect(server.requests.some((u) => u.pathname === '/namespaces/E74B99BA41F4AFEE')).toBe(true);
     expectOnlyTestNode(server);
