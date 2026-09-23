@@ -15,6 +15,7 @@ import { formatAmount } from '../domain/amount.js';
 import {
   blocksUntilImportanceRecalculation,
   type CheckStatus,
+  classifyHarvesterBalance,
   type DiagnoseCheck,
   deriveVerdict,
   hasKey,
@@ -313,11 +314,10 @@ export const delegationDiagnoseTool = defineTool({
     // ChainPropertiesDTO: "Mosaic id used to provide harvesting ability"), not on
     // currencyMosaicId ("Mosaic id used as primary chain currency"). They are the same mosaic on
     // mainnet and testnet, but a network may separate them, and minHarvesterBalance /
-    // maxHarvesterBalance are counted in the harvesting mosaic. The property parser treats
-    // harvestingMosaicId as required (it is in the OpenAPI DTO), so the fallback below is only a
-    // guard against an empty value.
-    const harvestingMosaicId =
-      properties.harvestingMosaicId !== '' ? properties.harvestingMosaicId : currency.mosaicId;
+    // maxHarvesterBalance are counted in the harvesting mosaic. The property parser requires it
+    // (parseHexId: 16 hex digits, or reading /network/properties fails), as
+    // symbol_harvesting_status does.
+    const harvestingMosaicId = properties.harvestingMosaicId;
     let harvestingDivisibility = currency.divisibility;
     let harvestingAlias: CleanedText | null = currency.alias;
     if (harvestingMosaicId !== currency.mosaicId) {
@@ -393,19 +393,23 @@ export const delegationDiagnoseTool = defineTool({
       }),
     );
 
-    // 2. balance_in_range
-    const balanceOk =
-      rawBalance >= properties.minHarvesterBalance && rawBalance <= properties.maxHarvesterBalance;
-    if (rawBalance < properties.minHarvesterBalance) {
+    // 2. balance_in_range (the rule shared with symbol_harvesting_status: both bounds inclusive)
+    const balanceState = classifyHarvesterBalance(
+      rawBalance,
+      properties.minHarvesterBalance,
+      properties.maxHarvesterBalance,
+    );
+    const balanceOk = balanceState === 'within';
+    if (balanceState === 'below') {
       checks.push(
         check({
           id: 'balance_in_range',
           status: 'fail',
           detail: `Balance ${balanceText} is below minHarvesterBalance ${minText}.`,
-          hint: `Hold at least ${minText} on the main account; importance is only assigned above that threshold.`,
+          hint: `Hold at least ${minText} on the main account; importance is only assigned to balances at or above that threshold.`,
         }),
       );
-    } else if (rawBalance > properties.maxHarvesterBalance) {
+    } else if (balanceState === 'above') {
       checks.push(
         check({
           id: 'balance_in_range',
@@ -419,7 +423,7 @@ export const delegationDiagnoseTool = defineTool({
         check({
           id: 'balance_in_range',
           status: 'ok',
-          detail: `Balance ${balanceText} is within ${minText} to ${maxText}.`,
+          detail: `Balance ${balanceText} is within ${minText} to ${maxText} (both inclusive).`,
           hint: `Compared the ${harvestingLabel} balance with chain.minHarvesterBalance and chain.maxHarvesterBalance.`,
         }),
       );

@@ -111,7 +111,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   other delegated harvesters from their unlocked list. `balanceWithinLimits` now checks both limits
   (it checked only the minimum), so `canHarvestHere` is false above the maximum, and the warning
   says to move the excess. `symbol_delegation_diagnose` already failed this case; its hint now adds
-  that nodes drop such accounts from their unlocked list.
+  that nodes drop such accounts from their unlocked list, and its hint for a balance below the
+  minimum says the minimum itself is enough (it said importance is assigned only above it). Both
+  tools now apply one shared rule.
 - A mosaic alias or namespace name made only of characters the untrusted-text filter removes no
   longer shows as an empty label (`Currency  = mosaic …`) or as a name with an empty level
   (`.xym`): the mosaic id, or the name the caller typed, is shown instead. A `priceSource` or

@@ -26,6 +26,26 @@ export function deriveVerdict(checks: ReadonlyArray<{ readonly status: CheckStat
   return 'active';
 }
 
+export type HarvesterBalance = 'below' | 'within' | 'above';
+
+/**
+ * Where a balance of the harvesting mosaic stands against the harvesting limits, the one rule that
+ * symbol_harvesting_status and symbol_delegation_diagnose share. Both bounds are inclusive:
+ * catapult's ImportanceView::canHarvest (client/catapult/src/catapult/cache_core/ImportanceView.cpp)
+ * needs minHarvesterBalance <= balance <= maxHarvesterBalance, and an account outside that range
+ * cannot harvest at all; nothing is capped. Importance is only assigned from minHarvesterBalance
+ * up (HighValueAccounts.cpp: balance >= MinHarvesterBalance).
+ */
+export function classifyHarvesterBalance(
+  balance: bigint,
+  minHarvesterBalance: bigint,
+  maxHarvesterBalance: bigint,
+): HarvesterBalance {
+  if (balance < minHarvesterBalance) return 'below';
+  if (balance > maxHarvesterBalance) return 'above';
+  return 'within';
+}
+
 /** Height of the next importance recalculation: the next multiple of `importanceGrouping`. */
 export function nextImportanceRecalculationHeight(
   currentHeight: number,

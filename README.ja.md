@@ -282,7 +282,7 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 | `symbol_fee_estimate` | `transactionSizeBytes`（任意） | ノードの現在の乗数から算出した slow / average / median / fast の手数料目安（XYM）。署名も送信もしません。 |
 | `symbol_address_parse` | `value`（アドレス、公開鍵、またはネームスペース名） | オフライン検証: チェックサム、ネットワークバイト、base32 / hex / ハイフン区切り形式、公開鍵から導出したアドレス。ネームスペース名はノードでアドレスエイリアスに解決します。 |
 | `symbol_time_convert` | `height` / `epoch` / `timestamp` のいずれか 1 つ | 高さ、確定エポック、ネットワークタイムスタンプ、実時刻の相互変換。過去は実測、将来は推定（その旨を明記）。 |
-| `symbol_harvesting_status` | `account`（任意） | ノードで解錠中の委任ハーベスター、ハーベスティングの残高制限と受益者割合、指定アカウントの linked キーがこのノードで解錠されているか。 |
+| `symbol_harvesting_status` | `account`（任意） | ノードで解錠中の委任ハーベスター、ハーベスティングの残高制限と受益者割合。アカウントを指定すると、その linked キーがこのノードで解錠されているかと、残高が制限の範囲内か（`minHarvesterBalance` 以上 `maxHarvesterBalance` 以下。上限を超えるとハーベストできない）。 |
 | `symbol_network_compare` | なし | 自ノードと `SYMBOL_REFERENCE_NODES` の高さ・確定高さ、最良ノードとの差、`lagging` フラグ。参照ノード未設定時はその旨と対処を案内。 |
 | `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。`granularity: monthly` で暦月ごと（年次の質問向け）、`output: csv` で表計算向けの CSV テキスト（JSON も併せて返す）。1 年以上を 1 回で指定してよい（約 90 日分ずつに分割して取得。`fetch` にチャンク数・再試行数・ページ数）。 |
 | `symbol_transaction_status` | `transactionHashes`（配列、1〜20 件） | 各トランザクションの現在の状態: confirmed（高さ付き）/ unconfirmed / partial（署名待ち）/ failed（ノードのコードとその意味付き）/ not_found。バッチ全体を 1 リクエストで照会。 |

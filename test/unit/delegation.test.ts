@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   blocksUntilImportanceRecalculation,
+  classifyHarvesterBalance,
   deriveVerdict,
   hasKey,
   nextImportanceRecalculationHeight,
@@ -30,6 +31,22 @@ describe('deriveVerdict', () => {
   });
   it('treats an empty list as active (nothing contradicts it)', () => {
     expect(deriveVerdict([])).toBe('active');
+  });
+});
+
+describe('classifyHarvesterBalance', () => {
+  // mainnet: 10,000 to 50,000,000 XYM (6 decimals), both inclusive as in catapult's canHarvest.
+  const min = 10_000_000_000n;
+  const max = 50_000_000_000_000n;
+  it('is within the limits from the minimum to the maximum, both included', () => {
+    expect(classifyHarvesterBalance(min, min, max)).toBe('within');
+    expect(classifyHarvesterBalance(4_321_000_000_000n, min, max)).toBe('within');
+    expect(classifyHarvesterBalance(max, min, max)).toBe('within');
+  });
+  it('is below one unit under the minimum and above one unit over the maximum', () => {
+    expect(classifyHarvesterBalance(min - 1n, min, max)).toBe('below');
+    expect(classifyHarvesterBalance(0n, min, max)).toBe('below');
+    expect(classifyHarvesterBalance(max + 1n, min, max)).toBe('above');
   });
 });
 

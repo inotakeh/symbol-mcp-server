@@ -74,6 +74,7 @@ describe('symbol_account_get', () => {
       note: 'The linked and VRF keys are both set. Whether delegated harvesting actually works (node key, the unlocked list of the node, balance limits, importance, recent blocks) is checked by symbol_delegation_diagnose.',
     });
     await server.close();
+    server = undefined;
 
     const account = fixture<{ account: Record<string, unknown> }>('mainnet/account-voting.json');
     account.account.supplementalPublicKeys = {};

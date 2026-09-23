@@ -2,6 +2,7 @@ import * as z from 'zod/v4';
 import { MosaicInfoSchema, UnlockedAccountSchema } from '../client/schemas.js';
 import { hexAddressToBase32 } from '../domain/address.js';
 import { formatAmount } from '../domain/amount.js';
+import { classifyHarvesterBalance, type HarvesterBalance } from '../domain/delegation.js';
 import {
   type AccountResolution,
   AccountResolutionSchema,
@@ -66,6 +67,12 @@ const outputSchema = z.object({
 });
 
 const ZERO_KEY = '0'.repeat(64);
+
+const BALANCE_STATE_TEXT: Record<HarvesterBalance, string> = {
+  below: 'below the minimum',
+  within: 'within the limits',
+  above: 'above the maximum',
+};
 
 export const harvestingStatusTool = defineTool({
   name: 'symbol_harvesting_status',
@@ -132,12 +139,15 @@ export const harvestingStatusTool = defineTool({
       const delegatedConfigured = linked !== null && vrf !== null;
       const unlockedHere = linked !== null && unlockedKeys.includes(linked);
       const importanceNonZero = BigInt(acct.importance) > 0n;
-      // catapult's ImportanceView::canHarvest takes both bounds, inclusive: a block harvested by an
+      // Both bounds, inclusive, as in catapult's ImportanceView::canHarvest: a block harvested by an
       // account outside them is rejected (EligibleHarvesterValidator), and the harvesting extension
       // drops such delegated harvesters from the node's unlocked list (UnlockedAccountsUpdater).
-      const belowMin = rawBalance < properties.minHarvesterBalance;
-      const aboveMax = rawBalance > properties.maxHarvesterBalance;
-      const balanceWithinLimits = !belowMin && !aboveMax;
+      const balanceState = classifyHarvesterBalance(
+        rawBalance,
+        properties.minHarvesterBalance,
+        properties.maxHarvesterBalance,
+      );
+      const balanceWithinLimits = balanceState === 'within';
       const canHarvestHere =
         delegatedConfigured && unlockedHere && balanceWithinLimits && importanceNonZero;
 
@@ -152,12 +162,12 @@ export const harvestingStatusTool = defineTool({
           `The linked key ${linked.slice(0, 8)}… is not unlocked on ${ctx.rest.host}; the account may be delegated to a different node, or the node has not activated the delegation yet.`,
         );
       }
-      if (belowMin) {
+      if (balanceState === 'below') {
         warnings.push(
           `Balance ${formatAmount(rawBalance, div)} ${label} is below minHarvesterBalance ${limits.minHarvesterBalance}.`,
         );
       }
-      if (aboveMax) {
+      if (balanceState === 'above') {
         warnings.push(
           `Balance ${formatAmount(rawBalance, div)} ${label} exceeds maxHarvesterBalance ${limits.maxHarvesterBalance}: an account above it cannot harvest, and nodes drop it from their unlocked list. Move the excess to another account.`,
         );
@@ -184,7 +194,7 @@ export const harvestingStatusTool = defineTool({
         warnings,
       };
       lines.push(
-        `${address}: delegated harvesting ${delegatedConfigured ? 'configured' : 'NOT configured'}; linked key ${linked ? `${linked.slice(0, 8)}… is ${unlockedHere ? '' : 'NOT '}unlocked on this node` : 'absent'}; balance ${report.balance} ${label} (${belowMin ? 'below the minimum' : aboveMax ? 'above the maximum' : 'within the limits'}); importance ${formatInteger(acct.importance)}. ${canHarvestHere ? 'This account can harvest on this node.' : 'This account cannot currently harvest on this node.'}`,
+        `${address}: delegated harvesting ${delegatedConfigured ? 'configured' : 'NOT configured'}; linked key ${linked ? `${linked.slice(0, 8)}… is ${unlockedHere ? '' : 'NOT '}unlocked on this node` : 'absent'}; balance ${report.balance} ${label} (${BALANCE_STATE_TEXT[balanceState]}); importance ${formatInteger(acct.importance)}. ${canHarvestHere ? 'This account can harvest on this node.' : 'This account cannot currently harvest on this node.'}`,
       );
       if (warnings.length > 0) lines.push(`Warnings: ${warnings.join(' ')}`);
     }
