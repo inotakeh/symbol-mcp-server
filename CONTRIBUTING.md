@@ -104,8 +104,8 @@ The full design is in [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md) (Japanese).
 - Keep pull requests small. Fill in the template: what changes, how you verified it (commands and
   results), and the checklist.
 - Releases are cut by maintainers: they bump the version and create the tag, and the release
-  workflow publishes to npm after an approval. Do not bump versions or create tags in a PR. The
-  steps are in [`docs/RELEASING.md`](docs/RELEASING.md).
+  workflow publishes to npm, GitHub Releases and the MCP Registry after one approval. Do not bump
+  versions or create tags in a PR. The steps are in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Building the Claude Desktop bundle (.mcpb)
 
