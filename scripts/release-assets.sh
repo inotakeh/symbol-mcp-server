@@ -13,7 +13,8 @@
 #
 # Needs bash, node (>= 22, for fetch) and npm; no jq, curl or GNU coreutils, so it also runs on
 # macOS. Reads only public registry data; no token is used. Exit: 0 done, 1 failed, 2 usage.
-# RELEASE_ASSETS_WAIT (seconds, default 300) bounds the wait for a version that was just published.
+# RELEASE_ASSETS_WAIT (seconds, default 300) bounds the wait for a version that was just published
+# (scripts/wait-for-npm.sh, which the release workflow's registry job also uses).
 set -euo pipefail
 
 usage() {
@@ -37,17 +38,8 @@ spec="$name@$version"
 mkdir -p "$outdir"
 
 # 1. The registry can lag behind a publish that just finished: wait for the attestations URL.
-wait_total="${RELEASE_ASSETS_WAIT:-300}"
-waited=0
-attestations_url=""
-while :; do
-  attestations_url="$(npm view "$spec" dist.attestations.url 2>/dev/null || true)"
-  [ -n "$attestations_url" ] && break
-  [ "$waited" -ge "$wait_total" ] &&
-    fail "$spec has no dist.attestations.url after ${waited}s (not published, or published without provenance)."
-  sleep 15
-  waited=$((waited + 15))
-done
+attestations_url="$(NPM_WAIT="${RELEASE_ASSETS_WAIT:-300}" bash "$script_dir/wait-for-npm.sh" "$spec" dist.attestations.url)" ||
+  fail "$spec has no dist.attestations.url (not published, or published without provenance)."
 
 # 2. The tarball exactly as published, checked against the registry's integrity string.
 tarball_name="$(npm pack "$spec" --pack-destination "$outdir" --json |
