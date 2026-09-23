@@ -43,7 +43,7 @@ Run `npm run lint && npm run typecheck && npm test` before every commit.
 - Never run `curl | sh`, `eval`, `sudo`, or `sh -c` wrappers. Never print environment variables or read files under `~/.ssh`, `~/.aws`, `~/.npmrc`, `.env`.
 - New dependencies require human approval: the package must be listed in `.claude/allowed-packages.txt` before `npm install <pkg>`. To request one, state the package, version, why it is needed, and its weekly downloads/maintainer, then stop.
 - `npx <pkg>` is limited to `.claude/allowed-npx.txt`.
-- Protected files (edited by humans only): `.claude/**`, `CLAUDE.md`, `AGENTS.md`, `.github/workflows/**`, `CODEOWNERS`, `SECURITY.md`, `LICENSE`, `server.json`, `.npmrc`, lockfiles. Propose exact diffs in chat instead.
+- Protected files (edited by humans only): `.claude/**`, `CLAUDE.md`, `AGENTS.md`, `.github/workflows/**`, `CODEOWNERS`, `SECURITY.md`, `LICENSE`, `server.json`, `mcpb/manifest.json`, `.npmrc`, lockfiles. Propose exact diffs in chat instead.
 - Never `git push --force`, `--no-verify`, change remotes/config, or create tags.
 - If a guardrail blocks an action, explain what you were trying to do and ask. Do not look for another way to do the same thing.
 

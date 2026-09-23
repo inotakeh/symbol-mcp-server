@@ -53,14 +53,17 @@ jobs:
 
   # GitHub Release for the tag, with the CHANGELOG.md section of that version as notes and, as
   # assets, the tarball npm serves plus npm's provenance bundle for it (scripts/release-assets.sh,
-  # which maintainers also use to backfill older releases). Runs only after publish (and therefore
-  # the npm-publish approval) succeeded. If it fails, the package is already on npm; rerun this job
-  # or create the release by hand with the same commands.
+  # which maintainers also use to backfill older releases) and the Claude Desktop bundle built from
+  # that same tarball (scripts/build-mcpb.sh), which gets a GitHub build provenance attestation.
+  # Runs only after publish (and therefore the npm-publish approval) succeeded. If it fails, the
+  # package is already on npm; rerun this job or create the release by hand with the same commands.
   github-release:
     needs: publish
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write       # create the GitHub Release and upload its assets
+      id-token: write       # OIDC token for the Sigstore certificate of the .mcpb attestation
+      attestations: write   # store that attestation so `gh attestation verify` finds it
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,6 +76,14 @@ jobs:
         run: node scripts/release-notes.mjs "${GITHUB_REF_NAME#v}" > notes.md
       - name: Tarball and provenance bundle from npm
         run: bash scripts/release-assets.sh "${GITHUB_REF_NAME#v}" assets
+      # Built from that tarball and this commit's package-lock.json only (npm ci --omit=dev in a
+      # staging directory); the repository itself is not installed.
+      - name: Claude Desktop bundle (.mcpb) from that tarball
+        run: bash scripts/build-mcpb.sh "${GITHUB_REF_NAME#v}" "assets/symbol-mcp-server-${GITHUB_REF_NAME#v}.tgz" assets
+      - name: Build provenance for the .mcpb
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: assets/*.mcpb
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -80,7 +80,29 @@ decimal string (`"662.574177"`) and as the raw integer (`"662574177"`), summed b
 
 ## Install
 
-**From npm** (recommended):
+### Claude Desktop: one-click bundle (.mcpb)
+
+1. Download the latest `symbol-mcp-server-<version>.mcpb` from
+   [Releases](https://github.com/inotakeh/symbol-mcp-server/releases/latest).
+2. Double-click it, or open Claude Desktop's **Settings → Extensions** and install it there.
+3. In the settings form, enter the **Symbol node URL**, for example `https://<node-host>:3001` (your
+   own node is best, see [Choosing a node](#choosing-a-node)). Optionally set the time zone and a
+   state directory for `symbol_harvester_watch`; the other fields can stay empty.
+4. Enable the extension.
+
+The bundle holds the server built from the published npm package with its production
+dependencies and runs on the Node.js that ships with Claude Desktop. Use either the bundle or the
+`npx` configuration below, not both, or every tool appears twice. Claude Desktop may show the
+extension as unverified because the bundle is not signed with `mcpb sign`; its origin can be
+checked with the build provenance the release workflow attaches:
+
+```sh
+gh attestation verify symbol-mcp-server-<version>.mcpb --repo inotakeh/symbol-mcp-server
+```
+
+### npm and source
+
+**From npm** (recommended for every other MCP host):
 
 ```sh
 npx -y symbol-mcp-server --help
@@ -497,6 +519,12 @@ Vulnerability reports: see [`SECURITY.md`](SECURITY.md).
   ```
 
   `--digest-alg sha512` is needed because npm's provenance names the tarball by its SHA-512.
+- **The Claude Desktop bundle is built from that same tarball.** `symbol-mcp-server-<version>.mcpb`
+  is made by [`scripts/build-mcpb.sh`](scripts/build-mcpb.sh) from the checked npm tarball above plus
+  the production dependencies installed with `npm ci --omit=dev` from the lockfile of that release;
+  nothing else is compiled or downloaded. The release workflow attaches a GitHub build provenance
+  attestation to it (`gh attestation verify … --repo inotakeh/symbol-mcp-server`, see
+  [Install](#install)).
 - **Who can release.** Only maintainers create release tags (`v1.2.3`). The workflow checks that
   the tag matches `package.json`, runs lint, typecheck and tests, and then waits in the
   `npm-publish` GitHub Environment until a maintainer approves the run.

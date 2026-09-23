@@ -26,18 +26,23 @@ interface RegistryEntry {
 const serverJson = JSON.parse(read('server.json')) as RegistryEntry;
 const packageJson = JSON.parse(read('package.json')) as { version: string };
 
-/** `## ` headings outside fenced code blocks. */
-function level2Headings(markdown: string): string[] {
-  const headings: string[] = [];
+/** Headings (any level) outside fenced code blocks. */
+function headings(markdown: string): string[] {
+  const found: string[] = [];
   let inFence = false;
   for (const line of markdown.split('\n')) {
     if (line.startsWith('```')) {
       inFence = !inFence;
-    } else if (!inFence && line.startsWith('## ')) {
-      headings.push(line);
+    } else if (!inFence && /^#{1,6} /.test(line)) {
+      found.push(line);
     }
   }
-  return headings;
+  return found;
+}
+
+/** `## ` headings outside fenced code blocks. */
+function level2Headings(markdown: string): string[] {
+  return headings(markdown).filter((line) => line.startsWith('## '));
 }
 
 describe('documentation stays in sync with the code', () => {
@@ -70,4 +75,10 @@ describe('documentation stays in sync with the code', () => {
     expect(en.length).toBeGreaterThan(0);
     expect(ja).toHaveLength(en.length);
   });
+
+  for (const file of READMES) {
+    it(`${file} has a section on the Claude Desktop bundle (.mcpb)`, () => {
+      expect(headings(read(file)).some((h) => h.includes('.mcpb'))).toBe(true);
+    });
+  }
 });

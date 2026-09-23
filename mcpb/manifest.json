@@ -1,0 +1,89 @@
+{
+  "manifest_version": "0.3",
+  "name": "symbol-mcp-server",
+  "display_name": "Symbol (XYM)",
+  "version": "0.0.0",
+  "description": "Read-only MCP server for the Symbol blockchain (XYM): node health, harvesting, voting keys.",
+  "long_description": "Read-only MCP server that turns the Symbol blockchain REST API into task-level tools: balances with alias names and decimals applied, transaction history and details, mosaic and namespace lookups, fee estimates, harvesting income, node health and sync state, delegated-harvesting diagnosis, and voting-key expiry with a recommended renewal window.\n\nRead-only by design: no tool signs, builds or announces transactions, and no setting or argument accepts a private key, mnemonic or token. The server talks only to the Symbol node you configure (and the reference nodes you list), never to any other host, and sends no telemetry.\n\nSymbol only (not NEM NIS1). Unofficial: no affiliation with the NEM or Symbol core teams.",
+  "author": {
+    "name": "inotakeh",
+    "url": "https://github.com/inotakeh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/inotakeh/symbol-mcp-server"
+  },
+  "homepage": "https://github.com/inotakeh/symbol-mcp-server#readme",
+  "documentation": "https://github.com/inotakeh/symbol-mcp-server/blob/main/README.md",
+  "support": "https://github.com/inotakeh/symbol-mcp-server/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/dist/index.js"],
+      "env": {
+        "SYMBOL_NODE_URL": "${user_config.node_url}",
+        "SYMBOL_NETWORK": "${user_config.network}",
+        "SYMBOL_TIMEZONE": "${user_config.timezone}",
+        "SYMBOL_REFERENCE_NODES": "${user_config.reference_nodes}",
+        "SYMBOL_REQUEST_TIMEOUT_MS": "${user_config.request_timeout_ms}",
+        "SYMBOL_STATE_DIR": "${user_config.state_dir}"
+      }
+    }
+  },
+  "keywords": ["symbol", "xym", "blockchain", "harvesting", "voting", "node"],
+  "license": "MIT",
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=22"
+    }
+  },
+  "user_config": {
+    "node_url": {
+      "type": "string",
+      "title": "Symbol node URL",
+      "description": "REST URL of the Symbol node to query, e.g. https://<node-host>:3001. https:// is required (http:// only for localhost / 127.0.0.1). Your own node is recommended: the operator of a public node can see the addresses you look up.",
+      "required": true
+    },
+    "network": {
+      "type": "string",
+      "title": "Network (optional)",
+      "description": "mainnet or testnet. When set, start-up fails if the node reports a different network. Leave empty to skip the check.",
+      "required": false,
+      "default": ""
+    },
+    "timezone": {
+      "type": "string",
+      "title": "Time zone (optional)",
+      "description": "IANA zone such as Asia/Tokyo. Adds a local time next to every UTC timestamp. Leave empty for UTC only.",
+      "required": false,
+      "default": ""
+    },
+    "reference_nodes": {
+      "type": "string",
+      "title": "Reference nodes (optional)",
+      "description": "Comma-separated https:// node URLs that symbol_network_compare and symbol_version_drift check against. No other host is ever contacted.",
+      "required": false,
+      "default": ""
+    },
+    "request_timeout_ms": {
+      "type": "number",
+      "title": "Request timeout (ms)",
+      "description": "Per-request timeout in milliseconds, 100 to 600000.",
+      "required": false,
+      "default": 10000,
+      "min": 100,
+      "max": 600000
+    },
+    "state_dir": {
+      "type": "directory",
+      "title": "State directory (optional)",
+      "description": "Absolute directory where symbol_harvester_watch keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets). Leave empty and the tool reports the current list without a comparison.",
+      "required": false,
+      "default": ""
+    }
+  }
+}

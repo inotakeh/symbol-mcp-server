@@ -100,6 +100,24 @@ The full design is in [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md) (Japanese).
 - Releases are cut by maintainers: they bump the version and create the tag, and the release
   workflow publishes to npm after an approval. Do not bump versions or create tags in a PR.
 
+## Building the Claude Desktop bundle (.mcpb)
+
+The release workflow builds `symbol-mcp-server-<version>.mcpb` from the published npm tarball; you
+normally do not need to. To build one locally, check out the commit of that release (the lockfile
+must match the version) and run:
+
+```sh
+bash scripts/release-assets.sh 0.7.1 /tmp/a          # tarball as npm serves it, checked
+bash scripts/build-mcpb.sh 0.7.1 /tmp/a/symbol-mcp-server-0.7.1.tgz /tmp/a
+```
+
+The bundle is a plain zip (`manifest.json`, `icon.png`, `server/` with `dist` and the production
+`node_modules`); the `mcpb` CLI is not used. `mcpb/manifest.json` is the template: the build writes
+the release version and declares the tools and prompts from the packaged server
+(`scripts/mcpb-manifest.mjs`), so a new tool needs no manifest edit. `mcpb/icon.png` is drawn by
+`node scripts/make-icon.mjs mcpb/icon.png`. Install the result in Claude Desktop (Settings →
+Extensions) to try it.
+
 ## Files for AI agents
 
 This repository is also developed with AI coding agents. Human contributors can skip this section.

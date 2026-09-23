@@ -28,6 +28,7 @@
       "Edit(./SECURITY.md)",
       "Edit(./LICENSE)",
       "Edit(./server.json)",
+      "Edit(./mcpb/manifest.json)",
       "Edit(./.npmrc)",
       "Edit(./package-lock.json)",
 
@@ -132,7 +133,8 @@
         "./.npmrc",
         "./LICENSE",
         "./SECURITY.md",
-        "./server.json"
+        "./server.json",
+        "./mcpb/manifest.json"
       ]
     },
     "credentials": {

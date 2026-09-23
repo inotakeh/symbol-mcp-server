@@ -76,7 +76,28 @@ NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY on mainnet, 2026-09-01 to 2026-09-11 (As
 
 ## インストール
 
-**npm から**（推奨）:
+### Claude Desktop: ワンクリックのバンドル（.mcpb）
+
+1. [Releases](https://github.com/inotakeh/symbol-mcp-server/releases/latest) から最新の
+   `symbol-mcp-server-<version>.mcpb` をダウンロードします。
+2. ダブルクリックするか、Claude Desktop の **Settings → Extensions** からインストールします。
+3. 設定画面で **Symbol node URL**（例 `https://<node-host>:3001`）を入力します。自分のノードが最適です
+   （[ノードの選び方](#ノードの選び方)を参照）。必要ならタイムゾーンと、`symbol_harvester_watch` の
+   状態ディレクトリも設定します。ほかの項目は空のままで構いません。
+4. 拡張機能を有効にします。
+
+バンドルには、公開済みの npm パッケージから作ったサーバーと本番用の依存が入っていて、Claude Desktop に同梱の
+Node.js で動きます。バンドルと下の `npx` の設定は、どちらか一方だけにしてください。両方入れるとツールが重複します。
+バンドルは `mcpb sign` で署名していないため、Claude Desktop に「未検証」と表示されることがあります。出所は、
+リリースのワークフローが付ける build provenance で確認できます:
+
+```sh
+gh attestation verify symbol-mcp-server-<version>.mcpb --repo inotakeh/symbol-mcp-server
+```
+
+### npm とソース
+
+**npm から**（Claude Desktop 以外の MCP ホストではこちらを推奨）:
 
 ```sh
 npx -y symbol-mcp-server --help
@@ -470,6 +491,11 @@ MAILTO=you@example.com
   ```
 
   npm の provenance は tarball を SHA-512 で指定しているため、`--digest-alg sha512` が必要です。
+- **Claude Desktop 用のバンドルも同じ tarball から。** `symbol-mcp-server-<version>.mcpb` は
+  [`scripts/build-mcpb.sh`](scripts/build-mcpb.sh) が、上で照合した npm の tarball と、そのリリースの lockfile から
+  `npm ci --omit=dev` で入れた本番用の依存だけで作ります。それ以外にコンパイルやダウンロードはしません。リリースの
+  ワークフローが GitHub の build provenance を付けます（`gh attestation verify … --repo inotakeh/symbol-mcp-server`。
+  [インストール](#インストール)を参照）。
 - **リリースできる人。** リリース用タグ（`v1.2.3`）を作れるのは保守者だけです。ワークフローはタグと `package.json` の
   バージョンの一致を確認し、lint・typecheck・テストを実行したうえで、GitHub Environment `npm-publish` で保守者が
   承認するまで待機します。

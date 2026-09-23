@@ -71,7 +71,7 @@ jobs:
         run: |
           changed=$(git diff --name-only "$BASE" "$HEAD")
           echo "$changed"
-          if echo "$changed" | grep -E '^(\.claude/|\.github/|CLAUDE\.md$|AGENTS\.md$|SECURITY\.md$|LICENSE|server\.json$|\.npmrc$)' ; then
+          if echo "$changed" | grep -E '^(\.claude/|\.github/|CLAUDE\.md$|AGENTS\.md$|SECURITY\.md$|LICENSE|server\.json$|\.npmrc$|mcpb/manifest\.json$)' ; then
             if [ "$AUTHOR" != "$MAINTAINER" ] && [ "$AUTHOR" != "dependabot[bot]" ]; then
               echo "::error::Protected files changed by $AUTHOR. Only $MAINTAINER may change guardrail/governance files."
               exit 1

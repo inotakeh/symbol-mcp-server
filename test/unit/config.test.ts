@@ -67,6 +67,22 @@ describe('loadConfig', () => {
     expect(c.referenceNodes).toEqual(['https://a.test:3001', 'https://b.test:3001']);
     expect(c.requestTimeoutMs).toBe(2500);
   });
+  // Hosts that fill env from a settings form (the .mcpb user_config) pass "" for fields the user
+  // left blank; an empty or blank optional value must behave exactly like an unset one.
+  it.each([[''], ['   '], ['\t']])('treats %j in every optional variable as unset', (blank) => {
+    const c = loadConfig({
+      SYMBOL_NODE_URL: 'https://example.test:3001',
+      SYMBOL_NETWORK: blank,
+      SYMBOL_TIMEZONE: blank,
+      SYMBOL_REFERENCE_NODES: blank,
+      SYMBOL_REQUEST_TIMEOUT_MS: blank,
+      SYMBOL_STATE_DIR: blank,
+    });
+    expect(c).toEqual(loadConfig({ SYMBOL_NODE_URL: 'https://example.test:3001' }));
+  });
+  it.each([[''], ['   ']])('reports an empty or blank SYMBOL_NODE_URL (%j) as missing', (blank) => {
+    expect(() => loadConfig({ SYMBOL_NODE_URL: blank })).toThrow(/SYMBOL_NODE_URL is required/);
+  });
   it('rejects invalid option values', () => {
     const base = { SYMBOL_NODE_URL: 'https://example.test:3001' };
     expect(() => loadConfig({ ...base, SYMBOL_NETWORK: 'devnet' })).toThrow(ConfigError);
