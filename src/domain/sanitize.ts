@@ -1,13 +1,13 @@
 /**
  * Strings that live on-chain or come from nodes (transfer messages, metadata values, namespace and
  * alias names, friendlyName, host, status codes and version strings) are written by third parties
- * and must be treated as untrusted data (DESIGN-BRIEF §2-8). Before they reach any output we remove
- * the characters that change how text is displayed or read without being visible, and cap the
- * length.
+ * and must be treated as untrusted data (DESIGN-BRIEF §2-8). Before they reach any output we make
+ * them one line (tabs and line breaks become spaces), remove the characters that change how text
+ * is displayed or read without being visible, and cap the length.
  */
 
 /**
- * Removed from untrusted text:
+ * Removed from untrusted text (tabs and line breaks are first turned into spaces, see toSingleLine):
  * - Cc, every control character: C0 (TAB, LF and CR included), DEL and C1. Terminal escape
  *   sequences lose their ESC / CSI introducer.
  * - Cf, every format character: zero-width space and joiners, bidi marks, embeddings, overrides
@@ -44,21 +44,29 @@ export function truncateText(text: string, maxLength: number): string {
   return `${text.slice(0, end)}…`;
 }
 
-/** Tabs and line breaks of every kind, with the whitespace around them. */
-const BREAKS = /\s*[\t\n\v\f\r\x85\p{Zl}\p{Zp}]\s*/gu;
+/** Tabs and line breaks of every kind: TAB, LF, VT, FF, CR, NEL, line and paragraph separator. */
+const BREAKS = /[\t\n\v\f\r\x85\p{Zl}\p{Zp}]+/gu;
+/** Runs of ordinary spaces. Only U+0020: an ideographic or no-break space is kept as written. */
+const SPACE_RUNS = / {2,}/g;
+const EDGE_SPACES = /^ +| +$/g;
 
 /**
- * `text` as one line of plain text for a terminal: tabs and line breaks become one space, so the
- * words on either side stay apart; every other unsafe character is removed; the ends are trimmed.
+ * `text` as one line of plain text: tabs and line breaks become a space, so the words on either
+ * side stay apart; every other unsafe character is removed; runs of spaces become one space; the
+ * ends lose their spaces. Other kinds of space (ideographic, no-break) are left as they are.
  */
 export function toSingleLine(text: string): string {
-  return stripUnsafeCharacters(text.replace(BREAKS, ' ')).trim();
+  return stripUnsafeCharacters(text.replace(BREAKS, ' '))
+    .replace(SPACE_RUNS, ' ')
+    .replace(EDGE_SPACES, '');
 }
 
-/** Untrusted text ready for output: unsafe characters removed first, then capped at maxLength. */
+/**
+ * Untrusted text ready for output: made one line (toSingleLine) first, then capped at maxLength.
+ */
 export function sanitizeUntrusted(
   value: string,
   maxLength: number = DEFAULT_MAX_UNTRUSTED_LENGTH,
 ): string {
-  return truncateText(stripUnsafeCharacters(value), maxLength);
+  return truncateText(toSingleLine(value), maxLength);
 }

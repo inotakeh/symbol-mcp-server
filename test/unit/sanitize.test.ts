@@ -111,10 +111,34 @@ describe('toSingleLine', () => {
     expect(toSingleLine(`  two ${cp(0x0d, 0x0a)}  lines\n\nhere  `)).toBe('two lines here');
   });
 
-  it('removes the other unsafe characters and keeps ordinary spaces', () => {
+  it('removes the other unsafe characters and collapses runs of spaces', () => {
     expect(toSingleLine(`a${cp(0x1b)}[2Jb${cp(0x9b)}c${cp(0x200b)}d${cp(0xe0041)}  e`)).toBe(
-      'a[2Jbcd  e',
+      'a[2Jbcd e',
     );
+    // A removed character between two spaces leaves one space, not two.
+    expect(toSingleLine(`a ${cp(0x200b)} b`)).toBe('a b');
+  });
+
+  it('makes CRLF one space and drops the spaces at both ends', () => {
+    expect(toSingleLine(`${cp(0x0a)}hello${cp(0x0d, 0x0a)}`)).toBe('hello');
+    expect(toSingleLine(`one${cp(0x0d, 0x0a)}two${cp(0x09, 0x09)}three`)).toBe('one two three');
+  });
+
+  it('keeps ideographic and no-break spaces as written: only U+0020 is collapsed or trimmed', () => {
+    const ideographic = cp(0x3000);
+    const noBreak = cp(0xa0);
+    expect(toSingleLine(`${ideographic}全角${ideographic}${ideographic}空白`)).toBe(
+      `${ideographic}全角${ideographic}${ideographic}空白`,
+    );
+    expect(toSingleLine(`a${noBreak}${noBreak}b${noBreak}`)).toBe(
+      `a${noBreak}${noBreak}b${noBreak}`,
+    );
+  });
+
+  it('leaves text that is already one clean line unchanged', () => {
+    for (const text of ['symbol.xym', 'ハーベスト報酬 ありがとう', `rocket ${cp(0x1f680)} ok`]) {
+      expect(toSingleLine(text)).toBe(text);
+    }
   });
 });
 
@@ -137,6 +161,13 @@ describe('truncateText', () => {
 });
 
 describe('sanitizeUntrusted', () => {
+  it('turns line breaks and tabs into one space, so the words of a message stay apart', () => {
+    expect(sanitizeUntrusted(`first line${cp(0x0a)}second${cp(0x09)}column`)).toBe(
+      'first line second column',
+    );
+    expect(sanitizeUntrusted(`a${cp(0x0a)}${cp(0x200b)}${cp(0x0a)}b`)).toBe('a b');
+  });
+
   it('removes before it truncates, so hidden characters do not use up the length', () => {
     expect(sanitizeUntrusted(`${cp(0x200b).repeat(300)}visible`, 10)).toBe('visible');
   });

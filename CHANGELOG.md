@@ -26,6 +26,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Tabs and line breaks in untrusted text (transfer messages, metadata values, names, what a node
+  reports about itself, `priceSource` and `priceAsOf`) now become one space instead of being
+  removed, so the words on either side no longer run together: `a<LF>b` was `ab` and is now
+  `a b`. Runs of spaces become one space and the ends lose their spaces; ideographic and no-break
+  spaces are kept as written. This covers TAB, LF, VT, FF, CR (a CRLF pair gives one space), NEL
+  and the line and paragraph separators. A `/node/health` status is still judged after cleaning,
+  so `up` followed by a line break is still up.
 - What is distributed or documented no longer names real nodes or transactions: `--help` points to
   https://nodewatch.symbol.tools/ and `https://<node-host>:3001` instead of listing two public
   nodes, the `transactionHash` argument of `symbol_transaction_get` describes the format instead of

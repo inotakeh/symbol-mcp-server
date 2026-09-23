@@ -26,6 +26,7 @@ import {
   type TestServer,
   TRANSFER_HASH,
 } from './harness.js';
+import { unsafeLinesIn, unsafeTextIn } from './unsafe-text.js';
 
 const cp = (...codePoints: number[]) => String.fromCodePoint(...codePoints);
 const ESC = cp(0x1b);
@@ -38,23 +39,14 @@ const SMILE = cp(0x1f600);
 const tagged = (text: string) =>
   cp(0xe0001, ...[...text].map((ch) => 0xe0000 + (ch.codePointAt(0) ?? 0)), 0xe007f);
 
-/** What no output may contain; LF is allowed only as the line break of multi-line text. */
-const UNSAFE = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\u{E0000}-\u{E007F}]/u;
-
-/** Every string anywhere inside `value`, object keys included. */
-function strings(value: unknown): string[] {
-  if (typeof value === 'string') return [value];
-  if (Array.isArray(value)) return value.flatMap(strings);
-  if (value !== null && typeof value === 'object') {
-    return Object.entries(value).flatMap(([key, inner]) => [key, ...strings(inner)]);
-  }
-  return [];
-}
-
+/**
+ * No unsafe character anywhere in `value` (test/tools/unsafe-text.ts). A string is plain text of
+ * one or more lines (the CLI report); anything else is walked, and LF is allowed only between the
+ * lines of the multi-line fields.
+ */
 function expectClean(value: unknown): void {
-  for (const text of strings(value)) {
-    expect(text.replaceAll('\n', ''), JSON.stringify(text)).not.toMatch(UNSAFE);
-  }
+  if (typeof value === 'string') expect(unsafeLinesIn(value)).toEqual([]);
+  else expect(unsafeTextIn(value)).toEqual([]);
 }
 
 /** A /node/health answer whose statuses carry an escape sequence, CR, C1 CSI and tag text. */
@@ -85,12 +77,13 @@ describe('node status strings from /node/health', () => {
     });
     const result = await server.callTool('symbol_node_status');
     expect(result.isError).toBe(false);
+    // The CR inside db becomes a space; the escape introducers, CSI and tag text are removed.
     expect(result.structuredContent?.health).toEqual({
       apiNode: 'up[2J',
-      db: 'down31m',
+      db: 'down 31m',
       healthy: false,
     });
-    expect(result.structuredContent?.summary).toMatch(/Health apiNode=up\[2J, db=down31m;/);
+    expect(result.structuredContent?.summary).toMatch(/Health apiNode=up\[2J, db=down 31m;/);
     expectClean(result.structuredContent);
     expectClean(result.text);
   });
@@ -134,7 +127,7 @@ describe('node status strings from /node/health', () => {
     expect(result.structuredContent?.verdict).toBe('unhealthy');
     const checks = result.structuredContent?.checks as Array<{ id: string; detail: string }>;
     expect(checks.find((c) => c.id === 'api_node')?.detail).toBe('API node service is up[2J.');
-    expect(checks.find((c) => c.id === 'db')?.detail).toBe('Database service is down31m.');
+    expect(checks.find((c) => c.id === 'db')?.detail).toBe('Database service is down 31m.');
     expectClean(result.structuredContent);
   });
 
