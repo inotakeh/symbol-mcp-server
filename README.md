@@ -1,6 +1,7 @@
 # symbol-mcp-server
 
 [![npm version](https://img.shields.io/npm/v/symbol-mcp-server)](https://www.npmjs.com/package/symbol-mcp-server)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/inotakeh/symbol-mcp-server/badge)](https://scorecard.dev/viewer/?uri=github.com/inotakeh/symbol-mcp-server)
 
 > **Symbol only.** This server talks to [Symbol](https://docs.symbol.dev/) (catapult) nodes. It does not
 > support NEM NIS1 (XEM), which is a separate chain with a different API.
