@@ -50,7 +50,7 @@
 │       └── test-hooks.sh            # フックの自己テスト（112 ケース）
 ├── .github/
 │   ├── CODEOWNERS                   # 全変更にメンテナのレビューを要求
-│   ├── dependabot.yml               # npm / actions を週次更新
+│   ├── dependabot.yml               # npm / actions を月次更新
 │   └── workflows/
 │       ├── ci.yml                   # lint/typecheck/test/build/audit + dependency-review + 保護ファイル検査
 │       └── release.yml              # v* タグ → Environment 承認 → npm publish --provenance（OIDC）
