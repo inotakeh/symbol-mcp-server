@@ -124,6 +124,15 @@ describe('helpText', () => {
     expect(text).toContain('MAILTO');
   });
 
+  it('names no node host: only the <node-host> placeholder and nodewatch', () => {
+    // A URL ends before trailing sentence punctuation.
+    const urls = new Set(text.match(/https?:\/\/\S*[^\s.,;)]/g) ?? []);
+    expect([...urls].sort()).toEqual([
+      'https://<node-host>:3001',
+      'https://nodewatch.symbol.tools/',
+    ]);
+  });
+
   it('documents every environment variable loadConfig reads, marking the required one', () => {
     for (const v of ENV_VARS) expect(text).toContain(v.name);
     expect(text).toMatch(/SYMBOL_NODE_URL\s+\(required\)/);

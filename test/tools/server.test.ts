@@ -59,6 +59,18 @@ describe('server registration', () => {
     }
   });
 
+  it('puts no transaction hash or public key in what every client receives at start-up', async () => {
+    server = await startTestServer();
+    // Tools, prompts and instructions show the format of an identifier, not a real one (review
+    // item #7). The whole list results are checked: titles, descriptions and both schemas.
+    const text = JSON.stringify([
+      await server.client.listTools(),
+      await server.client.listPrompts(),
+      server.client.getInstructions(),
+    ]);
+    expect(text.match(/[0-9A-Fa-f]{64}/g) ?? []).toEqual([]);
+  });
+
   it('sends the server instructions in the initialize result', async () => {
     server = await startTestServer();
     const instructions = server.client.getInstructions();

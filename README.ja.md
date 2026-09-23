@@ -82,9 +82,11 @@ NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY on mainnet, 2026-09-01 to 2026-09-11 (As
    `symbol-mcp-server-<version>.mcpb` をダウンロードします。
 2. ダブルクリックするか、Claude Desktop の **Settings → Extensions** からインストールします。
 3. 設定画面で **Symbol node URL**（例 `https://<node-host>:3001`）を入力します。自分のノードが最適です
-   （[ノードの選び方](#ノードの選び方)を参照）。必要ならタイムゾーンと、`symbol_harvester_watch` の
-   状態ディレクトリも設定します。ほかの項目は空のままで構いません。
+   （[ノードの選び方](#ノードの選び方)を参照）。必須の項目で、未入力だと拡張機能は起動しません。必要なら
+   タイムゾーンと、`symbol_harvester_watch` の状態ディレクトリも設定します。ほかの項目は空のままで構いません。
 4. 拡張機能を有効にします。
+
+あとで設定を変えたときは、新しい会話で試してください。
 
 バンドルには、公開済みの npm パッケージから作ったサーバーと本番用の依存が入っていて、Claude Desktop に同梱の
 Node.js で動きます。バンドルと下の `npx` の設定は、どちらか一方だけにしてください。両方入れるとツールが重複します。
@@ -324,8 +326,8 @@ account を受けるすべてのツールで使えます。
 日付をブロック高さに解決し、そのアカウント宛の HarvestFee レシートを全件読んで整数のまま合算します。
 XYM 合計、harvester と beneficiary の内訳、日ごとの行を返すので、モデルが足し算をする余地はありません。
 
-**「さっき Voting キーの link を送った。トランザクション FAEEB042… は通った?」**
-→ `symbol_transaction_status { "transactionHashes": ["FAEEB042…"] }`
+**「さっき Voting キーの link を送った。トランザクション `<hash>` は通った?」**
+→ `symbol_transaction_status { "transactionHashes": ["<hash>"] }`
 confirmed（高さ付き）/ unconfirmed / partial（aggregate bonded で cosignature 待ち）/ failed（`Failure_Core_Insufficient_Balance`
 のようなノードのコードとその意味付き）/ not_found を返します。1 件でも配列で渡し、1 回に 20 件まで。
 
@@ -504,22 +506,25 @@ MAILTO=you@example.com
   [インストール](#インストール)を参照）。
 - **リリースできる人。** リリース用タグ（`v1.2.3`）を作れるのは保守者だけです。ワークフローはタグと `package.json` の
   バージョンの一致を確認し、lint・typecheck・テストを実行したうえで、GitHub Environment `npm-publish` で保守者が
-  承認するまで待機します。
+  承認するまで待機します。手順全体は [`docs/RELEASING.md`](docs/RELEASING.md)（英語）にあります。
 
 ## 対応ネットワーク
 
-| ネットワーク | identifier | generationHashSeed で判定 | ノード例 |
-|---|---|---|---|
-| Symbol mainnet | 104 | `57F7DA20…72B2D6` | `https://sym-main-01.opening-line.jp:3001` |
-| Symbol testnet (sai) | 152 | `49D6E1CE…FC665A4` | `https://sym-test-01.opening-line.jp:3001` |
+| ネットワーク | identifier | generationHashSeed で判定 |
+|---|---|---|
+| Symbol mainnet | 104 | `57F7DA20…72B2D6` |
+| Symbol testnet (sai) | 152 | `49D6E1CE…FC665A4` |
 
 ネットワークは起動時にノードから判定します。それ以外の generationHashSeed（プライベートネットワーク、NEM NIS1）は
-拒否します。ノードの稼働状況は変わるので、https://nodewatch.symbol.tools/ で現在のものを選んでください。
+拒否します。どちらのネットワークのノードも https://nodewatch.symbol.tools/ に一覧があります。
+[ノードの選び方](#ノードの選び方)も参照してください。
 
 ## 制限事項
 
-- **ノードの履歴。** 結果は設定したノードから取得します。トランザクション履歴を prune しているノードは保持している分
-  しか返さないため、`symbol_transaction_search` が古いトランザクションを取りこぼすことがあります。
+- **ノードの履歴と制限。** 結果は設定したノードから取得します。トランザクション履歴を prune しているノードは保持している分
+  しか返さないため、`symbol_transaction_search` が古いトランザクションを取りこぼすことがあります。公開ノードは、
+  受け付けるリクエストの数を制限していることもあります。リクエストが特に多いのは `symbol_account_rank`（最大 50 ページ）と、
+  長い期間の `symbol_harvesting_income`（最大 200 ページ）なので、これらは自分のノードで使ってください。
 - **将来の日時は推定。** Voting キー・ネームスペース・モザイクの失効日、将来の高さやエポックの日時は、直近 10,000
   ブロックの実測平均ブロック時間（mainnet で約 30 秒）から推定し、推定であることを明記します。
 - **暗号化メッセージは復号しません。** 暗号化されている旨を返します。
@@ -568,7 +573,8 @@ MAILTO=you@example.com
 | `Node <host> reports an unknown network` | ノードの generationHashSeed が Symbol の mainnet でも testnet でもありません（プライベートネットワークや NEM NIS1 のノード）。Symbol の mainnet / testnet のノードを使ってください。 |
 | 起動時の `<host> did not answer /node/info within 10000 ms` / `could not reach <host> for /node/info`、ツールの `Node <host> did not answer … within … ms` / `Could not connect to node <host>` | ノードが停止・過負荷か、ポートが違います（https は 3001）。nodewatch で別のノードを選ぶか、遅いノードなら `SYMBOL_REQUEST_TIMEOUT_MS`（最大 600000）で待ち時間を延ばしてください。 |
 | 起動時の `<host> answered /node/info with a redirect (HTTP 301), which is not followed`、ツールの `Node <host> answered … with a redirect` | URL の先がリダイレクトを返しています（http から https へ、プロキシ、パスの移動など）。リダイレクトは追わず、転送先にも接続しません。`SYMBOL_NODE_URL` にはノードの REST API の URL（通常 `https://<node-host>:3001`）を直接指定してください。 |
-| Claude Desktop に `symbol_*` ツールが出ない | Claude Desktop は起動時にしか設定を読みません。完全に終了して（ウィンドウを閉じるだけでは不十分）起動し直してください。それでも出なければ、上のログで `failed to start` の行を探し、JSON が正しいか確認してください。 |
+| ツールの `Node <host> answered HTTP 429 for …`（または 503） | ノードがリクエストの数を制限しているか、過負荷です。時間をおいて再試行してください。多くのページを読む呼び出し（大きな `maxRank` の `symbol_account_rank`、長い期間の `symbol_harvesting_income`）は、自分のノードか nodewatch で選んだ別のノードで使ってください。 |
+| Claude Desktop に `symbol_*` ツールが出ない | バンドル（.mcpb）の場合: 拡張機能の設定を開いてください。**Symbol node URL** が空のあいだは起動しません。JSON で設定した場合: Claude Desktop は起動時にしか設定を読みません。完全に終了して（ウィンドウを閉じるだけでは不十分）起動し直してください。それでも出なければ、上のログで `failed to start` の行を探し、JSON が正しいか確認してください。 |
 | `npm warn EBADENGINE Unsupported engine`（npm が出す警告） | Node.js が 22 より古いです。`node --version` で確認し、22 以上を入れてください（例 `nvm install 22`）。デスクトップアプリはシェルとは別の `PATH` で `node` / `npx` を探すことがあるので、必要なら `command` にフルパスを書いてください。 |
 | リリース後も古い版が動く | npx がキャッシュを使っています。`npx -y symbol-mcp-server@latest --version` を実行するか、`args` に `symbol-mcp-server@latest` と書いてください。 |
 
@@ -579,13 +585,18 @@ npm ci
 npm run lint && npm run typecheck && npm test
 npm run build
 SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
-npx @modelcontextprotocol/inspector node dist/index.js
-SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://sym-test-01.opening-line.jp:3001 npm test   # 実ノードでの統合テスト
+npx @modelcontextprotocol/inspector -e SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
+SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<testnet-node>:3001 npm test   # 実ノードでの統合テスト
 SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<node-host>:3001 SYMBOL_INTEGRATION_ACCOUNT=<address> npm test   # 指定アカウントでアカウント系ツールを検証
 node scripts/capture-fixtures.mjs https://<node-host>:3001   # test/fixtures/<network>/ をノードから更新
 ```
 
+MCP Inspector がサーバーに渡すのは、自分の環境変数のうち `PATH` や `HOME` などごく一部（MCP SDK の既定）と、
+指定された変数だけです。`npx` の前に書いた変数はサーバーに届かないので、上のように `-e KEY=VALUE` で 1 つずつ渡すか、
+Inspector の画面で入力してください。macOS と Linux では、サーバーのコマンドを `env` で包んでも渡せます。
+
 設計メモ: [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md)。変更履歴: [`CHANGELOG.md`](CHANGELOG.md)。
+リリース手順: [`docs/RELEASING.md`](docs/RELEASING.md)（英語）。
 
 ## コントリビューション
 

@@ -10,9 +10,7 @@ const inputSchema = z.object({
   transactionHash: z
     .string()
     .min(1)
-    .describe(
-      '64-character hex transaction hash (e.g. FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F).',
-    ),
+    .describe('Transaction hash: 64 hexadecimal characters, upper or lower case.'),
 });
 
 const outputSchema = z.object({
