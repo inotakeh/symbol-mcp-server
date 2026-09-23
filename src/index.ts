@@ -8,7 +8,7 @@
  */
 import { createRequire } from 'node:module';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
-import { runCli } from './cli.js';
+import { runCli, serverStartupFailureText } from './cli.js';
 import { createAppContext } from './context.js';
 import { createServer, SERVER_NAME } from './server.js';
 
@@ -53,7 +53,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  const message = err instanceof Error ? err.message : String(err);
-  console.error(`${SERVER_NAME} failed to start: ${message}`);
+  console.error(`${SERVER_NAME} failed to start: ${serverStartupFailureText(err)}`);
   process.exit(1);
 });

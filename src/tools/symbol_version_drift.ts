@@ -77,7 +77,7 @@ export const MAX_REST_VERSION_LENGTH = 64;
 
 interface ReferenceProbe {
   readonly version: string | null;
-  readonly excluded: 'unreachable' | 'other_network' | null;
+  readonly excluded: 'unreachable' | 'redirect' | 'other_network' | null;
 }
 
 async function probeReference(client: RestClient, seed: string): Promise<ReferenceProbe> {
@@ -88,7 +88,9 @@ async function probeReference(client: RestClient, seed: string): Promise<Referen
     }
     return { version: decodeVersion(info.version), excluded: null };
   } catch (err) {
-    if (err instanceof RestError) return { version: null, excluded: 'unreachable' };
+    if (err instanceof RestError) {
+      return { version: null, excluded: err.kind === 'redirect' ? 'redirect' : 'unreachable' };
+    }
     throw err;
   }
 }
@@ -155,9 +157,15 @@ export const versionDriftTool = defineTool({
 
     const referenceVersions = references.flatMap((r) => (r.version ? [r.version] : []));
     const unreachable = references.filter((r) => r.excluded === 'unreachable').length;
+    const redirected = references.filter((r) => r.excluded === 'redirect').length;
     const otherNetwork = references.filter((r) => r.excluded === 'other_network').length;
     if (unreachable > 0)
       notes.push(`${formatInteger(unreachable)} reference node(s) could not be reached.`);
+    if (redirected > 0) {
+      notes.push(
+        `${formatInteger(redirected)} reference node(s) answered with a redirect, which is never followed; set their SYMBOL_REFERENCE_NODES entries to the REST API URLs themselves.`,
+      );
+    }
     if (otherNetwork > 0) {
       notes.push(
         `${formatInteger(otherNetwork)} reference node(s) are on another network and were excluded.`,

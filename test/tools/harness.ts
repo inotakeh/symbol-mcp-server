@@ -206,14 +206,18 @@ export interface FakeFetch {
   readonly fetch: typeof fetch;
   /** Every URL the server asked for, in order. */
   readonly requests: URL[];
+  /** The redirect mode of each of those requests, in the same order. */
+  readonly redirects: Array<Request['redirect']>;
 }
 
 export function createFakeFetch(routes: Routes): FakeFetch {
   const requests: URL[] = [];
+  const redirects: Array<Request['redirect']> = [];
   const fakeFetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
     requests.push(url);
+    redirects.push(request.redirect);
     const key = `${request.method} ${url.pathname}`;
     let route = routes[key];
     if (route === undefined) {
@@ -230,7 +234,7 @@ export function createFakeFetch(routes: Routes): FakeFetch {
     }
     return jsonResponse(route);
   }) as typeof fetch;
-  return { fetch: fakeFetch, requests };
+  return { fetch: fakeFetch, requests, redirects };
 }
 
 export interface TestServerOptions {
@@ -308,6 +312,8 @@ export interface RawResponse {
 export interface TestServer {
   readonly client: Client;
   readonly requests: URL[];
+  /** The redirect mode of every node-side request, in the order of `requests`. */
+  readonly redirects: Array<Request['redirect']>;
   /** Every MCP-side HTTP response, in order (the node-side fetch is `requests`). */
   readonly rawResponses: RawResponse[];
   readonly config: Config;
@@ -327,6 +333,8 @@ export interface TestContext {
   readonly config: Config;
   /** Every URL asked of the (fake) node, in order. */
   readonly requests: URL[];
+  /** The redirect mode of each of those requests, in the same order. */
+  readonly redirects: Array<Request['redirect']>;
 }
 
 /**
@@ -347,7 +355,7 @@ export async function createTestContext(options: TestServerOptions = {}): Promis
   const network = await resolveNetwork(rest, config);
   const now = options.now ?? TEST_NOW;
   const ctx = new AppContext(config, rest, network, '0.0.0-test', () => now);
-  return { ctx, config, requests: fake.requests };
+  return { ctx, config, requests: fake.requests, redirects: fake.redirects };
 }
 
 /**
@@ -355,7 +363,7 @@ export async function createTestContext(options: TestServerOptions = {}): Promis
  * createServer) but in-process, with fetch stubbed.
  */
 export async function startTestServer(options: TestServerOptions = {}): Promise<TestServer> {
-  const { ctx, config, requests } = await createTestContext(options);
+  const { ctx, config, requests, redirects } = await createTestContext(options);
 
   const handler = createMcpHandler(() => createServer(ctx));
   const rawResponses: RawResponse[] = [];
@@ -383,6 +391,7 @@ export async function startTestServer(options: TestServerOptions = {}): Promise<
   return {
     client,
     requests,
+    redirects,
     rawResponses,
     config,
     ctx,

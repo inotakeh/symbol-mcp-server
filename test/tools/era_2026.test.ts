@@ -174,6 +174,7 @@ describe('2026-07-28 protocol era', () => {
           [SERVER_INFO_META_KEY]: { name: SERVER_NAME, version: '0.0.0-test' },
         });
         expect(result.ttlMs).toBeUndefined();
+        expect(new Set(server.redirects)).toEqual(new Set(['manual']));
       });
     }
   });

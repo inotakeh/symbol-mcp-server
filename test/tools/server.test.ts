@@ -102,11 +102,29 @@ describe('every tool returns structuredContent that validates against its output
       expect(typeof result.structuredContent?.summary).toBe('string');
       const def = TOOLS.find((t) => t.name === name);
       expect(def?.outputSchema.safeParse(result.structuredContent).success).toBe(true);
+      // Every node request, start-up included, is sent with redirects off.
+      expect(server.redirects.length).toBeGreaterThan(0);
+      expect(new Set(server.redirects)).toEqual(new Set(['manual']));
     });
   }
 });
 
 describe('outbound requests', () => {
+  it('ask the reference nodes with redirects off too', async () => {
+    server = await startTestServer({
+      env: {
+        SYMBOL_REFERENCE_NODES: 'https://reference-a.test:3001,https://reference-b.test:3001',
+      },
+    });
+    await server.callTool('symbol_network_compare');
+    await server.callTool('symbol_version_drift');
+    const hosts = new Set(server.requests.map((u) => u.host));
+    expect(hosts).toEqual(
+      new Set([TEST_NODE_HOST, 'reference-a.test:3001', 'reference-b.test:3001']),
+    );
+    expect(new Set(server.redirects)).toEqual(new Set(['manual']));
+  });
+
   it('only ever hit the SYMBOL_NODE_URL host, even with reference nodes configured', async () => {
     server = await startTestServer({
       env: {

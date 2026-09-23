@@ -17,8 +17,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   list; variation selectors are kept. Length caps no longer cut a surrogate pair in half.
 - `symbol_node_status` and `symbol_node_health` judge the `/node/health` statuses after cleaning, so
   the verdict always matches the status shown next to it.
+- A node that answers with a redirect (HTTP 301, 302, 303, 307 or 308) now gets an error of its own
+  (`redirect`) that says to set `SYMBOL_NODE_URL` to the node's REST API URL itself; before, it was
+  reported as "could not connect". Redirects are still never followed: requests are sent with
+  `redirect: 'manual'`, and the address a redirect points to is neither contacted nor quoted. The
+  same advice appears when the server or the `check` command cannot start (exit code 3 for
+  `check`, also when the node redirects every request after start-up), and README
+  "Troubleshooting" lists the message. A reference node that redirects is named as such by
+  `symbol_network_compare` and `symbol_version_drift`. Another 3xx answer (300, 304) stays an HTTP
+  error.
+- The REST client sends a request only when its path is plain segments and query values (letters,
+  digits, `_`, and `-` in values). Every tool validates its arguments before it builds a path; this
+  is a last net under that validation.
 
 ### Fixed
+
+- Bodies that are not read, from an error answer, a redirect or an answer whose `Content-Length`
+  is over the 5 MB cap, are discarded at once instead of holding the connection until garbage
+  collection. A body over the cap is still refused unread, and a streamed one is cut off as soon as
+  it passes the cap, reported as too large even when cancelling the stream fails.
 
 - Node strings that bypassed the untrusted-text filter are cleaned and capped: the `/node/health`
   statuses (`symbol_node_status`, `symbol_node_health` and the `check` output, where an escape

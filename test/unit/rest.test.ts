@@ -1,9 +1,47 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
 import { RestClient, RestError } from '../../src/client/rest.js';
 import { jsonResponse } from '../tools/harness.js';
 
 const Schema = z.object({ ok: z.boolean() });
+
+/**
+ * A response body that records what was pulled from it and whether it was cancelled. `lazy`
+ * (high-water mark 0) pulls nothing until someone reads, so "never read" is observable.
+ */
+function trackedBody(chunkBytes = 1024, lazy = false) {
+  const state = { pulls: 0, pulledBytes: 0, cancelled: false };
+  const chunk = new Uint8Array(chunkBytes).fill(0x20);
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        state.pulls++;
+        state.pulledBytes += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        state.cancelled = true;
+      },
+    },
+    { highWaterMark: lazy ? 0 : 1 },
+  );
+  return { stream, state };
+}
+
+function listen(server: Server): Promise<void> {
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+}
+
+function portOf(server: Server): number {
+  return (server.address() as AddressInfo).port;
+}
+
+function close(server: Server): Promise<void> {
+  server.closeAllConnections();
+  return new Promise((resolve) => server.close(() => resolve()));
+}
 
 function client(
   fetchImpl: typeof fetch,
@@ -40,6 +78,86 @@ describe('RestClient', () => {
     expect(seen?.url).toBe('https://node.test:3001/chain/info');
     expect(seen?.headers.get('user-agent')).toBe('symbol-mcp-server/test');
     expect(seen?.headers.get('accept')).toBe('application/json');
+    expect(seen?.redirect).toBe('manual');
+  });
+
+  it('reports a 3xx answer as a redirect, discards its body and never quotes the Location', async () => {
+    for (const status of [301, 302, 303, 307, 308]) {
+      const { stream, state } = trackedBody(1024, true);
+      const c = client(
+        (async () =>
+          new Response(stream, {
+            status,
+            headers: { location: 'https://elsewhere.example/node/info' },
+          })) as typeof fetch,
+      );
+      const err = await c.get('/node/info', Schema).catch((e: unknown) => e);
+      expect(err, `HTTP ${status}`).toBeInstanceOf(RestError);
+      expect(err).toMatchObject({ kind: 'redirect', status, path: '/node/info' });
+      expect((err as Error).message).toBe(
+        `node.test:3001 answered /node/info with a redirect (HTTP ${status}), which is not followed`,
+      );
+      expect(state.cancelled, `HTTP ${status}`).toBe(true);
+      expect(state.pulls, `HTTP ${status}`).toBe(0);
+    }
+  });
+
+  it('keeps another 3xx (300, 304) an HTTP error, not a redirect, and discards its body', async () => {
+    const { stream, state } = trackedBody(1024, true);
+    const multiple = await client(
+      (async () => new Response(stream, { status: 300 })) as typeof fetch,
+    )
+      .get('/x', Schema)
+      .catch((e: unknown) => e);
+    expect(multiple).toMatchObject({ kind: 'http', status: 300 });
+    expect(state.cancelled).toBe(true);
+    const notModified = await client(
+      (async () => new Response(null, { status: 304 })) as typeof fetch,
+    )
+      .get('/x', Schema)
+      .catch((e: unknown) => e);
+    expect(notModified).toMatchObject({ kind: 'http', status: 304 });
+  });
+
+  it('treats an opaque-redirect response, as a spec-conforming fetch returns it, as a redirect', async () => {
+    // The constructor refuses status 0, so the two fields of a real opaque redirect are set here.
+    const opaque = new Response(null, { status: 200 });
+    Object.defineProperty(opaque, 'type', { value: 'opaqueredirect' });
+    Object.defineProperty(opaque, 'status', { value: 0 });
+    const err = await client((async () => opaque) as typeof fetch)
+      .get('/node/info', Schema)
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({ kind: 'redirect', status: undefined });
+    expect((err as Error).message).toMatch(/\(HTTP 3xx\)/);
+  });
+
+  it('never follows a real redirect: the target of the Location is not contacted', async () => {
+    let targetHits = 0;
+    const target = createServer((_request, response) => {
+      targetHits++;
+      response.setHeader('content-type', 'application/json');
+      response.end('{"ok":true}');
+    });
+    await listen(target);
+    const origin = createServer((_request, response) => {
+      response.writeHead(302, { location: `http://127.0.0.1:${portOf(target)}/node/info` });
+      response.end('moved');
+    });
+    await listen(origin);
+    try {
+      // The real global fetch, not a stub.
+      const c = new RestClient({
+        baseUrl: `http://127.0.0.1:${portOf(origin)}`,
+        timeoutMs: 5_000,
+        userAgent: 'symbol-mcp-server/test',
+      });
+      const err = await c.get('/node/info', Schema).catch((e: unknown) => e);
+      expect(err).toMatchObject({ kind: 'redirect', status: 302 });
+      expect((err as Error).message).not.toContain(`127.0.0.1:${portOf(target)}`);
+      expect(targetHits).toBe(0);
+    } finally {
+      await Promise.all([close(origin), close(target)]);
+    }
   });
 
   it('sends JSON bodies for POST', async () => {
@@ -152,6 +270,84 @@ describe('RestClient', () => {
       maxBodyBytes: 1024,
     });
     expect(await kindOf(streamed.get('/x', Schema))).toBe('too_large');
+  });
+
+  it('stops reading a body that grows past the limit and cancels the rest', async () => {
+    const CHUNK = 64 * 1024;
+    const LIMIT = 4 * CHUNK;
+    // An endless body: without the limit the read would never finish.
+    const { stream, state } = trackedBody(CHUNK);
+    const c = client((async () => new Response(stream, { status: 200 })) as typeof fetch, {
+      maxBodyBytes: LIMIT,
+    });
+    expect(await kindOf(c.get('/x', Schema))).toBe('too_large');
+    expect(state.cancelled).toBe(true);
+    // The chunk that crossed the limit, plus at most one the stream had queued ahead.
+    expect(state.pulledBytes).toBeLessThanOrEqual(LIMIT + 2 * CHUNK);
+  });
+
+  it('still reports too_large when cancelling the oversized body fails', async () => {
+    const chunk = new Uint8Array(2048).fill(0x20);
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        throw new Error('the stream cannot be cancelled');
+      },
+    });
+    const c = client((async () => new Response(stream, { status: 200 })) as typeof fetch, {
+      maxBodyBytes: 1024,
+    });
+    expect(await kindOf(c.get('/x', Schema))).toBe('too_large');
+  });
+
+  it('discards the body of an answer it does not read, without reading any of it', async () => {
+    const answers: ReadonlyArray<readonly [number, Record<string, string>]> = [
+      [404, {}],
+      [500, {}],
+      [200, { 'content-length': '999999999' }],
+    ];
+    for (const [status, headers] of answers) {
+      const { stream, state } = trackedBody(1024, true);
+      const c = client((async () => new Response(stream, { status, headers })) as typeof fetch, {
+        maxBodyBytes: 1024,
+      });
+      await c.get('/x', Schema).catch(() => undefined);
+      expect(state.cancelled, `HTTP ${status}`).toBe(true);
+      expect(state.pulls, `HTTP ${status}`).toBe(0);
+    }
+  });
+
+  it('refuses a path that is not plain segments and query values, before any request', async () => {
+    let calls = 0;
+    const c = client((async () => {
+      calls++;
+      return jsonResponse({ ok: true });
+    }) as typeof fetch);
+    for (const path of [
+      '/accounts/../node/info',
+      '/a?b=c#d',
+      '/a b',
+      '/a%2e%2e',
+      '//elsewhere.example/x',
+      '/a\\b',
+      'accounts',
+      '/accounts?x=1&y=a.b',
+      '/accounts?x',
+      '/',
+    ]) {
+      await expect(c.get(path, Schema), path).rejects.toThrow(/refusing to request/);
+    }
+    expect(calls).toBe(0);
+    for (const path of [
+      '/node/info',
+      '/transactions/confirmed/0A1B',
+      '/accounts?mosaicId=6BED913FA20223F8&orderBy=balance&order=desc&pageSize=100&pageNumber=1',
+    ]) {
+      await expect(c.get(path, Schema), path).resolves.toEqual({ ok: true });
+    }
+    expect(calls).toBe(3);
   });
 
   it('never keeps more than maxConcurrency requests in flight', async () => {
