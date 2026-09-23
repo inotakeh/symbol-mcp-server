@@ -86,7 +86,7 @@
 | mainnet | 104 | `57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6` |
 | testnet (sai) | 152 | `49D6E1CE276A85B70EAFE52349AACCA389302E7A9754BCF1221E79494FC665A4` |
 
-動作確認に使うノードは https://nodewatch.symbol.tools/ で探す（mainnet / testnet の API ノードで、現在の高さにあり、多数派の版で、`https://`（通常 3001 番）で応答するもの。README「Choosing a node」）。文書・`--help`・ツール説明の例は `https://<node-host>:3001`（testnet は `https://<testnet-node>:3001`）のプレースホルダにし、実在のノードのホスト名や Tx ハッシュを書かない（配布物に入り、稼働状況も変わるため。テストと evals の公開データは除く）。
+動作確認に使うノードは https://nodewatch.symbol.tools/ で探す（mainnet / testnet の API ノードで、現在の高さにあり、多数派の版で、`https://`（通常 3001 番）で応答するもの。README「Choosing a node」）。文書・`--help`・ツール説明・テストの使い方コメントの例は `https://<node-host>:3001`（testnet は `https://<testnet-node>:3001`）のプレースホルダにし、実在のノードのホスト名や Tx ハッシュを書かない（配布物に入り、稼働状況も変わるため。テストのフィクスチャとハーネス、evals の公開データは除く）。
 
 ## 5. ツール仕様
 

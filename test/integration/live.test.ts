@@ -1,9 +1,11 @@
 /**
  * Live-node integration tests. Opt-in only:
- *   SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://sym-test-01.opening-line.jp:3001 npm test
+ *   SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<testnet-node>:3001 npm test
  *   SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<node-host>:3001 \
  *     SYMBOL_REFERENCE_NODES=https://<other-node>:3001 \
  *     SYMBOL_INTEGRATION_ACCOUNT=<address or public key with voting keys> npm test
+ * Pick the nodes on https://nodewatch.symbol.tools/ (README, "Choosing a node"): API nodes of the
+ * network at the current height that answer on https:// (usually port 3001).
  * SYMBOL_INTEGRATION_ACCOUNT selects the account the account-level tools are exercised with;
  * without it the node's own main account is used and the voting-key count test is skipped.
  * Never runs in CI (vitest.config.ts excludes this directory unless SYMBOL_INTEGRATION=1).
