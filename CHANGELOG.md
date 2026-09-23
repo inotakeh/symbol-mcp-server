@@ -7,6 +7,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Untrusted text (transfer messages, metadata values, namespace and alias names, and the strings a
+  node reports about itself) is stripped of every Unicode control (Cc) and format (Cf) character,
+  line and paragraph separators, lone surrogates and the whole tag block U+E0000 to U+E007F, whose
+  characters people cannot see but language models can read. Newly removed are the soft hyphen, the
+  Arabic letter mark, tag characters and the other format characters that were not on the previous
+  list; variation selectors are kept. Length caps no longer cut a surrogate pair in half.
+- `symbol_node_status` and `symbol_node_health` judge the `/node/health` statuses after cleaning, so
+  the verdict always matches the status shown next to it.
+
+### Fixed
+
+- Node strings that bypassed the untrusted-text filter are cleaned and capped: the `/node/health`
+  statuses (`symbol_node_status`, `symbol_node_health` and the `check` output, where an escape
+  sequence could reach the terminal; a status with nothing left is shown as `(empty)`), the REST
+  version from `/node/server` (`symbol_version_drift`), transaction status codes
+  (`symbol_transaction_status`; a code with nothing left counts as no code), and in transaction
+  details the metadata and restriction keys, account restriction values and the field names of
+  unrecognised transaction bodies (`symbol_transaction_get`, `symbol_transaction_search`; when two
+  names clean to the same text, the first is kept). `/network/properties` values quoted in error
+  messages are cleaned and capped as well.
+- Transaction details accept metadata and restriction keys of 16 hex digits, voting keys of 64 and
+  secret proofs up to the 65,535 bytes the wire format allows, as the REST API documents; any other
+  form is shown with the cleaned fields of kind `other`. An account voting key longer than 128 hex
+  digits (64 are documented) is reported as an unexpected node answer, so a runaway string cannot
+  flood the output; an odd shorter key is still accepted.
+- `symbol_network_compare` no longer copies internal error messages into its output: such a failure
+  is reported as an unexpected internal error with a fixed text, and the details go to the server
+  log. Internal error messages written to the server log are cleaned and capped too.
+- The `check` report, text and JSON, puts each detail and hint on one line (tabs and line breaks
+  become spaces) and strips control and format characters from it, as a last line of defence.
+
 ## [0.8.0] - 2026-09-23
 
 ### Added

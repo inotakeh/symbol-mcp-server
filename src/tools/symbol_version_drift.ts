@@ -7,6 +7,7 @@ import {
   ServerInfoSchema,
 } from '../client/schemas.js';
 import type { AppContext } from '../context.js';
+import { sanitizeUntrusted } from '../domain/sanitize.js';
 import {
   decodeVersion,
   deriveVersionDriftVerdict,
@@ -71,6 +72,9 @@ const NOTES = [
   'Peers and reference nodes on another network, unreachable reference nodes and malformed peer entries are excluded from the sample.',
 ];
 
+/** Longest catapult-rest version string kept (untrusted text from /node/server, e.g. "2.5.0"). */
+export const MAX_REST_VERSION_LENGTH = 64;
+
 interface ReferenceProbe {
   readonly version: string | null;
   readonly excluded: 'unreachable' | 'other_network' | null;
@@ -101,7 +105,7 @@ export const versionDriftTool = defineTool({
     const [info, serverInfo, rawPeers, references] = await Promise.all([
       ctx.rest.get('/node/info', NodeInfoSchema),
       ctx.rest.get('/node/server', ServerInfoSchema).then(
-        (s) => s.serverInfo.restVersion,
+        (s) => sanitizeUntrusted(s.serverInfo.restVersion, MAX_REST_VERSION_LENGTH),
         (err: unknown) => {
           if (err instanceof RestError) return null;
           throw err;

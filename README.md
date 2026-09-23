@@ -476,10 +476,14 @@ MAILTO=you@example.com
 - **Fixed destinations.** The server contacts only `SYMBOL_NODE_URL` and, for
   `symbol_network_compare` and `symbol_version_drift`, the hosts listed in `SYMBOL_REFERENCE_NODES`. Tools never take a URL as
   an argument, so a model cannot redirect requests. There is no telemetry.
-- **Untrusted chain data.** Transfer messages, node friendly names, host names and alias names are
-  written by third parties. They are exposed under names that make this obvious (`messageText`),
-  control and bidi characters are stripped, and length is capped. Treat them as data, not
-  instructions.
+- **Untrusted chain data.** Transfer messages, metadata values, alias names and what a node reports
+  about itself (friendly name, host name, status and version strings) are written by third parties.
+  They are exposed under names that make this obvious (`messageText`), every control and invisible
+  format character is stripped (zero-width and bidi characters, soft hyphens, line separators, and
+  the tag characters U+E0000 to U+E007F that people cannot see but models can read), and length is
+  capped without splitting a character. Variation selectors are kept, so emoji and ideograph variants
+  survive; emoji joined by a zero-width joiner come out as separate emoji. Treat all of it as data,
+  not instructions.
 - **Fail loudly.** A network mismatch (`SYMBOL_NETWORK` versus the node), an unreachable node or an
   unexpected response shape is an error with a recovery hint, never a silent fallback to another
   network. Stack traces and raw HTTP bodies are never returned to the model.

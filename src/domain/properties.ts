@@ -6,6 +6,18 @@
  *   - hex ids with a 0x prefix and apostrophes: "0x6BED'913F'A202'23F8"
  *   - durations with a unit suffix: "30s", "15m", "1h", "1d", "500ms"
  */
+import { sanitizeUntrusted } from './sanitize.js';
+
+/** Longest part of a raw property value quoted in an error message (the value comes from the node). */
+const MAX_QUOTED_VALUE_LENGTH = 64;
+
+/**
+ * A raw property value as an error message may show it: cleaned like any untrusted text, capped
+ * and JSON-quoted. The message reaches the model (describeError) and the check CLI output.
+ */
+function quote(value: string): string {
+  return JSON.stringify(sanitizeUntrusted(value, MAX_QUOTED_VALUE_LENGTH));
+}
 
 export class PropertyParseError extends Error {
   constructor(message: string) {
@@ -18,7 +30,7 @@ export class PropertyParseError extends Error {
 export function parsePropertyInt(value: string): bigint {
   const cleaned = value.replace(/'/g, '').trim();
   if (!/^-?\d+$/.test(cleaned)) {
-    throw new PropertyParseError(`not an integer property: ${JSON.stringify(value)}`);
+    throw new PropertyParseError(`not an integer property: ${quote(value)}`);
   }
   return BigInt(cleaned);
 }
@@ -27,7 +39,7 @@ export function parsePropertyInt(value: string): bigint {
 export function parsePropertyNumber(value: string): number {
   const big = parsePropertyInt(value);
   if (big > BigInt(Number.MAX_SAFE_INTEGER) || big < BigInt(Number.MIN_SAFE_INTEGER)) {
-    throw new PropertyParseError(`integer property does not fit in a JS number: ${value}`);
+    throw new PropertyParseError(`integer property does not fit in a JS number: ${quote(value)}`);
   }
   return Number(big);
 }
@@ -36,7 +48,7 @@ export function parsePropertyNumber(value: string): number {
 export function parseHexId(value: string): string {
   const cleaned = value.replace(/'/g, '').trim().replace(/^0x/i, '').toUpperCase();
   if (!/^[0-9A-F]{16}$/.test(cleaned)) {
-    throw new PropertyParseError(`not a 64-bit hex id property: ${JSON.stringify(value)}`);
+    throw new PropertyParseError(`not a 64-bit hex id property: ${quote(value)}`);
   }
   return cleaned;
 }
@@ -53,13 +65,13 @@ const DURATION_UNITS_MS: Record<string, number> = {
 export function parseDurationMs(value: string): number {
   const match = /^\s*(\d+(?:'\d+)*)\s*(ms|s|m|h|d)\s*$/.exec(value);
   if (!match) {
-    throw new PropertyParseError(`not a duration property: ${JSON.stringify(value)}`);
+    throw new PropertyParseError(`not a duration property: ${quote(value)}`);
   }
   const amount = Number(match[1]?.replace(/'/g, ''));
   const unit = match[2] ?? 's';
   const factor = DURATION_UNITS_MS[unit];
   if (factor === undefined) {
-    throw new PropertyParseError(`unknown duration unit in ${JSON.stringify(value)}`);
+    throw new PropertyParseError(`unknown duration unit in ${quote(value)}`);
   }
   return amount * factor;
 }

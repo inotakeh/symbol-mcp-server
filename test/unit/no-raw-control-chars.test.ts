@@ -1,9 +1,11 @@
 /**
- * Source and test files must not contain raw control or bidi/zero-width characters: git treats a
- * file with a NUL byte as binary (unreadable diffs) and bidi overrides can disguise code. Write
- * such characters as JavaScript escape sequences (backslash u XXXX) instead.
+ * Source and test files must not contain raw control, format or tag characters: git treats a file
+ * with a NUL byte as binary (unreadable diffs), bidi overrides can disguise code, and zero-width or
+ * tag characters can hide text from a reviewer. Write such characters as escape sequences or build
+ * them from code points instead.
  *
- * The forbidden set is built from numeric ranges so that this file itself contains none of them.
+ * The forbidden set is the one src/domain/sanitize.ts strips from untrusted text, except TAB, LF and
+ * CR. It is written with property escapes, so this file itself contains none of the characters.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -14,22 +16,13 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCAN_DIRS = ['src', 'test', 'scripts'];
 const TEXT_EXTENSIONS = ['.ts', '.mts', '.js', '.mjs', '.json', '.md', '.yml', '.yaml'];
 
-/** [from, to] inclusive code-point ranges that must not appear raw. */
-const FORBIDDEN_RANGES: ReadonlyArray<readonly [number, number]> = [
-  [0x00, 0x08], // C0 controls except TAB (0x09), LF (0x0a), CR (0x0d)
-  [0x0b, 0x0c],
-  [0x0e, 0x1f],
-  [0x7f, 0x7f], // DEL
-  [0x80, 0x9f], // C1 controls
-  [0x200b, 0x200f], // zero-width space/joiners, LRM, RLM
-  [0x2028, 0x202e], // line/paragraph separators, bidi embeddings and overrides
-  [0x2060, 0x2064], // word joiner and invisible operators
-  [0x2066, 0x2069], // bidi isolates
-  [0xfeff, 0xfeff], // BOM / zero-width no-break space
-];
+/** Control (Cc), format (Cf), surrogate (Cs), line and paragraph separator, and the tag block. */
+const UNSAFE = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\u{E0000}-\u{E007F}]/u;
+/** TAB, LF and CR are ordinary in source files. */
+const ALLOWED_CONTROLS = new Set([0x09, 0x0a, 0x0d]);
 
-function isForbidden(codePoint: number): boolean {
-  return FORBIDDEN_RANGES.some(([from, to]) => codePoint >= from && codePoint <= to);
+function isForbidden(ch: string): boolean {
+  return !ALLOWED_CONTROLS.has(ch.codePointAt(0) ?? 0) && UNSAFE.test(ch);
 }
 
 function listFiles(dir: string): string[] {
@@ -60,7 +53,7 @@ function findOffenders(text: string): string[] {
       line++;
       continue;
     }
-    if (isForbidden(cp)) {
+    if (isForbidden(ch)) {
       offenders.push(`line ${line}: U+${cp.toString(16).toUpperCase().padStart(4, '0')}`);
     }
   }
@@ -79,6 +72,16 @@ describe('no raw control characters in source or test files', () => {
       ['line 2: U+0000', 'line 2: U+202E'],
     );
     expect(findOffenders('plain\ttext\r\n')).toEqual([]);
+  });
+
+  it('detects a soft hyphen, a tag character and a line separator, and allows ordinary text', () => {
+    const at = (codePoint: number) => String.fromCodePoint(codePoint);
+    expect(findOffenders(`a${at(0xad)}b${at(0xe0041)}c${at(0x2028)}`)).toEqual([
+      'line 1: U+00AD',
+      'line 1: U+E0041',
+      'line 1: U+2028',
+    ]);
+    expect(findOffenders(`日本語 ${at(0x1f600)} café`)).toEqual([]);
   });
 
   for (const file of files) {

@@ -1,6 +1,7 @@
 import * as z from 'zod/v4';
 import { TransactionPageSchema } from '../client/schemas.js';
 import { publicKeyToAddress } from '../domain/address.js';
+import { truncateText } from '../domain/sanitize.js';
 import { formatInstantText } from '../domain/time.js';
 import { summarizeTransaction, type TransactionSummary } from '../domain/transaction.js';
 import { parseTransactionType, transactionTypeNames } from '../domain/txtype.js';
@@ -77,15 +78,18 @@ const outputSchema = z.object({
 });
 
 function conciseRow(t: TransactionSummary): TransactionSummary {
-  const message =
-    t.message?.kind === 'plain' && (t.message.messageText?.length ?? 0) > CONCISE_MESSAGE_PREVIEW
-      ? {
-          ...t.message,
-          messageText: `${t.message.messageText?.slice(0, CONCISE_MESSAGE_PREVIEW)}…`,
-          note: 'Message preview truncated; use format=detailed for the full text.',
-        }
-      : t.message;
-  return { ...t, message };
+  const text = t.message?.kind === 'plain' ? t.message.messageText : undefined;
+  if (t.message === null || text === undefined) return t;
+  const preview = truncateText(text, CONCISE_MESSAGE_PREVIEW);
+  if (preview === text) return t;
+  return {
+    ...t,
+    message: {
+      ...t.message,
+      messageText: preview,
+      note: 'Message preview truncated; use format=detailed for the full text.',
+    },
+  };
 }
 
 export const transactionSearchTool = defineTool({

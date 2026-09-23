@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { extractTransactionDetails, TransactionDetailsSchema } from '../../src/domain/txdetails.js';
+import {
+  extractTransactionDetails,
+  MAX_OTHER_FIELDS,
+  MAX_PROOF_HEX_LENGTH,
+  TransactionDetailsSchema,
+} from '../../src/domain/txdetails.js';
 import { fixture } from '../tools/harness.js';
 
 const HEX_ADDRESS = '68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53';
@@ -207,11 +212,12 @@ describe('extractTransactionDetails', () => {
   });
 
   it('decodes metadata and restrictions', () => {
+    // Keys are 16 hex digits (symbol-openapi MetadataKey and RestrictionKeyHex).
     expect(
       details({
         type: 0x4244,
         targetAddress: HEX_ADDRESS,
-        scopedMetadataKey: 'a1b2',
+        scopedMetadataKey: '0dc67fbe1cad29e3',
         targetMosaicId: '6BED913FA20223F8',
         valueSizeDelta: 4,
         valueSize: 4,
@@ -221,7 +227,7 @@ describe('extractTransactionDetails', () => {
       kind: 'metadata',
       metadataType: 'mosaic',
       targetAddress: BASE32,
-      scopedMetadataKey: 'A1B2',
+      scopedMetadataKey: '0DC67FBE1CAD29E3',
       targetMosaicId: '6BED913FA20223F8',
       targetNamespaceId: null,
       valueSizeDelta: 4,
@@ -262,7 +268,7 @@ describe('extractTransactionDetails', () => {
         type: 0x4151,
         mosaicId: '66BAE04E8758599E',
         referenceMosaicId: '0000000000000000',
-        restrictionKey: 'ff',
+        restrictionKey: '00000000000000ff',
         previousRestrictionValue: '0',
         newRestrictionValue: '1',
         previousRestrictionType: 0,
@@ -270,6 +276,7 @@ describe('extractTransactionDetails', () => {
       }),
     ).toMatchObject({
       kind: 'mosaicGlobalRestriction',
+      restrictionKey: '00000000000000FF',
       previousRestrictionType: { code: 0, name: 'NONE' },
       newRestrictionType: { code: 1, name: 'EQ' },
     });
@@ -286,5 +293,106 @@ describe('extractTransactionDetails', () => {
       kind: 'other',
       fields: { linkedPublicKey: 'not-a-key', linkAction: 1 },
     });
+  });
+
+  it('types node text only in the documented forms and cleans it otherwise', () => {
+    const at = (codePoint: number) => String.fromCodePoint(codePoint);
+    // Metadata and restriction keys are exactly 16 hex digits.
+    expect(
+      details({
+        type: 0x4144,
+        targetAddress: HEX_ADDRESS,
+        scopedMetadataKey: 'A1B2',
+        valueSizeDelta: 1,
+        valueSize: 1,
+        value: '00',
+      }),
+    ).toMatchObject({ kind: 'other', fields: { scopedMetadataKey: 'A1B2' } });
+    expect(
+      details({
+        type: 0x4251,
+        mosaicId: '66BAE04E8758599E',
+        restrictionKey: `00000000000000FF${at(0x1b)}[2J${at(0xe0041)}`,
+        previousRestrictionValue: '0',
+        newRestrictionValue: '1',
+        targetAddress: HEX_ADDRESS,
+      }),
+    ).toMatchObject({ kind: 'other', fields: { restrictionKey: '00000000000000FF[2J' } });
+    // Account restriction values are an address, a mosaic id or a transaction type code.
+    expect(
+      details({
+        type: 0x4150,
+        restrictionFlags: 1,
+        restrictionAdditions: [`hello${at(0x202e)}`],
+        restrictionDeletions: [],
+      }),
+    ).toEqual({ kind: 'other', fields: { restrictionFlags: 1 } });
+    expect(
+      details({
+        type: 0x4250,
+        restrictionFlags: 0x0002,
+        restrictionAdditions: ['66bae04e8758599e'],
+        restrictionDeletions: [],
+      }),
+    ).toMatchObject({ kind: 'accountRestriction', restrictionAdditions: ['66BAE04E8758599E'] });
+    // A voting key has 64 hex digits.
+    expect(
+      details({
+        type: 0x4143,
+        linkedPublicKey: `${KEY}AB`,
+        startEpoch: 1,
+        endEpoch: 2,
+        linkAction: 1,
+      }),
+    ).toMatchObject({ kind: 'other' });
+  });
+
+  it('accepts a secret proof up to the catbuffer size and treats a longer one as malformed', () => {
+    const proof = {
+      type: 0x4252,
+      recipientAddress: HEX_ADDRESS,
+      secret: KEY,
+      hashAlgorithm: 0,
+    };
+    expect(MAX_PROOF_HEX_LENGTH).toBe(131_070);
+    expect(details({ ...proof, proof: 'ab'.repeat(65_535) })).toMatchObject({
+      kind: 'secretProof',
+    });
+    const tooLong = details({ ...proof, proof: 'ab'.repeat(65_536) });
+    expect(tooLong.kind).toBe('other');
+    const fields = tooLong.kind === 'other' ? tooLong.fields : {};
+    expect(fields.proof).toHaveLength(257);
+  });
+
+  it('cleans the field names of kind other and keeps at most MAX_OTHER_FIELDS of them', () => {
+    const at = (codePoint: number) => String.fromCodePoint(codePoint);
+    const tx: Record<string, unknown> & { type: number } = {
+      type: 0x9999,
+      [`na${at(0x200b)}me${at(0xe0041)}`]: 'x',
+      [at(0x202e)]: 'dropped: nothing is left of its name',
+    };
+    for (let i = 0; i < 100; i++) tx[`f${i}`] = i;
+    const d = details(tx);
+    const fields = d.kind === 'other' ? d.fields : {};
+    expect(fields.name).toBe('x');
+    expect(Object.keys(fields)).toHaveLength(MAX_OTHER_FIELDS);
+    expect(Object.keys(fields).slice(0, 3)).toEqual(['name', 'f0', 'f1']);
+
+    // A later name that cleans to an earlier one cannot replace it.
+    const lookAlike = details({
+      type: 0x9999,
+      amount: '1',
+      [`amo${at(0x200b)}unt`]: '999999',
+    });
+    expect(lookAlike).toEqual({ kind: 'other', fields: { amount: '1' } });
+
+    // JSON.parse makes "__proto__" an own property; it stays an ordinary field.
+    const parsed = JSON.parse('{"type":39321,"__proto__":7}') as Record<string, unknown> & {
+      type: number;
+    };
+    const proto = extractTransactionDetails(parsed);
+    const protoFields = proto.kind === 'other' ? proto.fields : {};
+    expect(Object.hasOwn(protoFields, '__proto__')).toBe(true);
+    expect(Object.getPrototypeOf(protoFields)).toBe(Object.prototype);
   });
 });

@@ -11,7 +11,12 @@
  *
  * Transfers and aggregates carry no extra details (recipient/mosaics/message are top-level).
  * Unknown types, or known types whose fields do not parse, fall back to `kind: "other"` with the
- * scalar fields the node returned.
+ * scalar fields the node returned, names and values cleaned like any untrusted text.
+ *
+ * Fields are only accepted in the form the REST API documents, so nothing else reaches the typed
+ * output: scopedMetadataKey (MetadataKey) and restrictionKey (RestrictionKeyHex) are exactly 16 hex
+ * digits, the voting key of a VotingKeyLink (VotingKey) is 64, and account restriction values are
+ * an address (48 hex), a mosaic id (16 hex) or a transaction type code.
  */
 import * as z from 'zod/v4';
 import { hexAddressToBase32, hexToBytes } from './address.js';
@@ -21,6 +26,18 @@ const Hex16 = z.string().regex(/^[0-9A-Fa-f]{16}$/);
 const Hex48 = z.string().regex(/^[0-9A-Fa-f]{48}$/);
 const Hex64 = z.string().regex(/^[0-9A-Fa-f]{64}$/);
 const Uint64 = z.string().regex(/^\d+$/);
+
+/**
+ * Longest SecretProof proof in hex: catbuffer declares `proof_size = uint16`, so a proof has at most
+ * 65,535 bytes. A longer value cannot come from the chain and falls back to kind "other".
+ */
+export const MAX_PROOF_HEX_LENGTH = 2 * 65_535;
+
+/** Scalar fields kept for a transaction without a typed shape; real bodies have far fewer. */
+export const MAX_OTHER_FIELDS = 32;
+
+/** Longest field name kept in kind "other": the names come from the node as well. */
+export const MAX_OTHER_FIELD_NAME_LENGTH = 64;
 
 const FlagsSchema = z.object({
   supplyMutable: z.boolean(),
@@ -218,10 +235,7 @@ const upperHex64 = Hex64.transform((v) => v.toUpperCase());
 
 const keyLink = z.object({ linkedPublicKey: upperHex64, linkAction });
 const votingKeyLink = z.object({
-  linkedPublicKey: z
-    .string()
-    .regex(/^[0-9A-Fa-f]+$/)
-    .transform((v) => v.toUpperCase()),
+  linkedPublicKey: upperHex64,
   startEpoch: z.number().int(),
   endEpoch: z.number().int(),
   linkAction,
@@ -276,6 +290,7 @@ const secretProof = z.object({
   hashAlgorithm: named(HASH_ALGORITHMS),
   proof: z
     .string()
+    .max(MAX_PROOF_HEX_LENGTH)
     .regex(/^[0-9A-Fa-f]*$/)
     .transform((v) => v.toUpperCase()),
 });
@@ -287,21 +302,23 @@ const multisig = z.object({
 });
 const metadata = z.object({
   targetAddress: address,
-  scopedMetadataKey: z.string().transform((v) => v.toUpperCase()),
+  scopedMetadataKey: upperHex16,
   targetMosaicId: upperHex16.optional(),
   targetNamespaceId: upperHex16.optional(),
   valueSizeDelta: z.number().int(),
   valueSize: z.number().int(),
   value: z.string().transform((v) => sanitizeUntrusted(v, 2048)),
 });
+/** An account restriction value: an address, a mosaic id or a transaction type code. */
+const restrictionValue = z.union([Hex48, Hex16, z.number().int()]);
 const accountRestriction = z.object({
   restrictionFlags: z.number().int(),
-  restrictionAdditions: z.array(z.union([z.string(), z.number()])),
-  restrictionDeletions: z.array(z.union([z.string(), z.number()])),
+  restrictionAdditions: z.array(restrictionValue),
+  restrictionDeletions: z.array(restrictionValue),
 });
 const mosaicAddressRestriction = z.object({
   mosaicId: upperHex16,
-  restrictionKey: z.string().transform((v) => v.toUpperCase()),
+  restrictionKey: upperHex16,
   previousRestrictionValue: Uint64,
   newRestrictionValue: Uint64,
   targetAddress: address,
@@ -309,16 +326,17 @@ const mosaicAddressRestriction = z.object({
 const mosaicGlobalRestriction = z.object({
   mosaicId: upperHex16,
   referenceMosaicId: upperHex16,
-  restrictionKey: z.string().transform((v) => v.toUpperCase()),
+  restrictionKey: upperHex16,
   previousRestrictionValue: Uint64,
   newRestrictionValue: Uint64,
   previousRestrictionType: named(RESTRICTION_TYPES),
   newRestrictionType: named(RESTRICTION_TYPES),
 });
 
+/** An address as base32 (or alias), a mosaic id in upper case, a transaction type as its code. */
 function restrictionItem(value: string | number): string {
   if (typeof value === 'number') return String(value);
-  return /^[0-9A-Fa-f]{48}$/.test(value) ? addressText(value) : value.toUpperCase();
+  return value.length === 48 ? addressText(value) : value.toUpperCase();
 }
 
 function otherDetails(tx: Readonly<Record<string, unknown>>): TransactionDetails {
@@ -338,15 +356,20 @@ function otherDetails(tx: Readonly<Record<string, unknown>>): TransactionDetails
     'cosignatures',
     'transactionsHash',
   ]);
-  const fields: Record<string, string | number | boolean | null> = {};
-  for (const [key, value] of Object.entries(tx)) {
-    if (skip.has(key)) continue;
-    if (typeof value === 'string') fields[key] = sanitizeUntrusted(value);
+  const fields = new Map<string, string | number | boolean | null>();
+  for (const [rawKey, value] of Object.entries(tx)) {
+    if (fields.size >= MAX_OTHER_FIELDS) break;
+    // The body DTO is loose, so the field names are the node's text as much as the values are.
+    // Two names that clean to the same text keep the first, so a look-alike cannot replace it.
+    const key = sanitizeUntrusted(rawKey, MAX_OTHER_FIELD_NAME_LENGTH);
+    if (key === '' || skip.has(key) || fields.has(key)) continue;
+    if (typeof value === 'string') fields.set(key, sanitizeUntrusted(value));
     else if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
-      fields[key] = value;
+      fields.set(key, value);
     }
   }
-  return { kind: 'other', fields };
+  // fromEntries defines own properties, so a name such as "__proto__" stays an ordinary field.
+  return { kind: 'other', fields: Object.fromEntries(fields) };
 }
 
 /** Extracts typed details from a raw catapult-rest transaction object by its type code. */

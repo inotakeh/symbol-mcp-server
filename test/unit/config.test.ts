@@ -121,7 +121,6 @@ describe('resolveNetwork', () => {
       name: 'mainnet',
       identifier: 104,
       generationHashSeed: '57F7DA205008026C776CB6AED843393F04CD458E0AA2D9F1D5F31A402072B2D6',
-      nodeHost: 'mainnet-node.example',
     });
     expect(requests.map((u) => u.host)).toEqual(['node.test:3001']);
   });

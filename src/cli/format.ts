@@ -2,11 +2,16 @@
  * Plain-text rendering of a check report for a terminal or a cron mail: no colour, no decoration,
  * one line per item, and the tool's own hint under every warn / fail line.
  */
+import { toSingleLine } from '../domain/sanitize.js';
 import type { CheckReport } from './check.js';
 
-/** Details and hints are single lines; a stray newline from a tool text must not break that. */
+/**
+ * Details and hints are single lines of plain text: a stray line break or tab from a tool text
+ * becomes a space, and no control or format character reaches the terminal. runCheck already
+ * cleans them the same way; this keeps any report printable.
+ */
 function oneLine(text: string): string {
-  return text.replace(/\s*\n\s*/g, ' ').trim();
+  return toSingleLine(text);
 }
 
 export function formatCheckText(report: CheckReport): string {

@@ -134,8 +134,15 @@ export type ServerInfo = z.infer<typeof ServerInfoSchema>;
 
 const LinkedKeySchema = z.object({ publicKey: Hex64 });
 
+/**
+ * Longest voting key accepted in an account. symbol-openapi documents 64 hex digits
+ * (AccountLinkVotingKeyDTO -> PublicKey); up to 128 are accepted, so one odd key (a legacy 48-byte
+ * key, say) does not fail a whole page of `/accounts`, while a runaway string is still rejected.
+ */
+export const MAX_VOTING_KEY_HEX_LENGTH = 128;
+
 export const VotingKeySchema = z.object({
-  publicKey: HexString,
+  publicKey: HexString.max(MAX_VOTING_KEY_HEX_LENGTH),
   startEpoch: z.number().int().nonnegative(),
   endEpoch: z.number().int().nonnegative(),
 });
