@@ -2,8 +2,11 @@
  * Minimal fetch wrapper for catapult-rest.
  *
  * Hygiene (DESIGN-BRIEF §6 "HTTP衛生"): per-request timeout via AbortSignal.timeout, a
- * User-Agent header, a response size cap, a concurrency cap, and schema validation of every
- * response body. The client only ever talks to the base URL it was constructed with.
+ * User-Agent header, a response size cap (a declared Content-Length over it is refused unread, and
+ * the body is counted while it streams in), a concurrency cap, and schema validation of every
+ * response body. The client only ever talks to the base URL it was constructed with: redirects are
+ * never followed (a 3xx answer is an error), request paths are plain characters only, and a body
+ * that is not read is discarded rather than left open.
  */
 import type * as z from 'zod/v4';
 
@@ -12,8 +15,41 @@ export type RestErrorKind =
   | 'unreachable'
   | 'not_found'
   | 'http'
+  | 'redirect'
   | 'invalid_response'
   | 'too_large';
+
+/**
+ * Paths this client sends: segments of letters, digits and "_", then an optional query whose
+ * names are the same and whose values may also hold "-". Every tool validates its arguments before
+ * it builds a path; this is the net under that, so no argument can reach the node as "..", "?",
+ * "#", "%", "\" or a space.
+ */
+export const SAFE_REQUEST_PATH =
+  /^(?:\/[A-Za-z0-9_]+)+(?:\?[A-Za-z0-9_]+=[A-Za-z0-9_-]*(?:&[A-Za-z0-9_]+=[A-Za-z0-9_-]*)*)?$/;
+
+/**
+ * The redirect statuses of the Fetch Standard. Another 3xx (300, 304, …) is not a redirect and
+ * stays an HTTP error with its body discarded.
+ */
+const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
+
+/**
+ * A redirect answer. With `redirect: 'manual'` Node's fetch returns the 3xx response itself; a
+ * spec-conforming fetch returns an opaque-redirect response (status 0) instead.
+ */
+function isRedirect(response: Response): boolean {
+  return REDIRECT_STATUSES.has(response.status) || response.type === 'opaqueredirect';
+}
+
+/** Releases a body that will not be read, so the connection is not held until garbage collection. */
+async function discardBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Already closed or errored: nothing is left to release.
+  }
+}
 
 export class RestError extends Error {
   readonly kind: RestErrorKind;
@@ -120,7 +156,12 @@ export class RestClient {
     schema: z.ZodType<T>,
     options?: GetOptions,
   ): Promise<T> {
-    if (!path.startsWith('/')) throw new Error('path must start with "/"');
+    if (!SAFE_REQUEST_PATH.test(path)) {
+      // A programming error, not a node problem: describeError reports it as an internal error.
+      throw new Error(
+        `refusing to request ${JSON.stringify(path.slice(0, 80))}: only plain path segments and query values are sent`,
+      );
+    }
     const url = `${this.baseUrl}${path}`;
     const release = await this.semaphore.acquire();
     try {
@@ -133,7 +174,8 @@ export class RestClient {
         method,
         headers,
         signal: AbortSignal.timeout(this.timeoutMs),
-        redirect: 'error',
+        // Never follow: a redirect could lead anywhere. The 3xx answer is reported below.
+        redirect: 'manual',
       };
       if (body !== undefined) {
         headers['content-type'] = 'application/json';
@@ -147,11 +189,23 @@ export class RestClient {
         throw this.mapFetchError(err, path);
       }
 
+      if (isRedirect(response)) {
+        await discardBody(response);
+        // The Location header is text the node chose: it is neither followed nor quoted.
+        throw new RestError(
+          'redirect',
+          `${this.host} answered ${path} with a redirect (HTTP ${response.status || '3xx'}), which is not followed`,
+          path,
+          response.status || undefined,
+        );
+      }
       const accepted = options?.acceptStatuses?.includes(response.status) === true;
       if (response.status === 404 && !accepted) {
+        await discardBody(response);
         throw new RestError('not_found', `${path} was not found on ${this.host}`, path, 404);
       }
       if (!response.ok && !accepted) {
+        await discardBody(response);
         throw new RestError(
           'http',
           `${this.host} answered HTTP ${response.status} for ${path}`,
@@ -162,6 +216,7 @@ export class RestClient {
 
       const declared = Number(response.headers.get('content-length') ?? '0');
       if (declared > this.maxBodyBytes) {
+        await discardBody(response);
         throw new RestError('too_large', `response for ${path} exceeds the size limit`, path);
       }
       const text = await this.readBodyLimited(response, path);
@@ -197,7 +252,8 @@ export class RestClient {
         if (done) break;
         total += value.byteLength;
         if (total > this.maxBodyBytes) {
-          await reader.cancel();
+          // A failing cancel (an already errored stream) must not turn this into another error.
+          await reader.cancel().catch(() => undefined);
           throw new RestError('too_large', `response for ${path} exceeds the size limit`, path);
         }
         chunks.push(value);

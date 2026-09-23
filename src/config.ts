@@ -40,6 +40,13 @@ export interface Config {
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
+/**
+ * What to do when the configured node answers with a redirect. The same words for the tools
+ * (describeError), the check command and a failed server start-up.
+ */
+export const REDIRECT_ADVICE =
+  "Set SYMBOL_NODE_URL to the node's REST API URL itself (scheme, host and port, e.g. https://<node-host>:3001), not to an address that redirects to it.";
+
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** Accepts https URLs; http only for loopback. Strips trailing slashes, keeps the port as given. */

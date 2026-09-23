@@ -320,7 +320,10 @@ function splitFirstSentence(message: string): { first: string; rest: string | nu
 
 interface Failure {
   readonly body: ItemBody;
-  /** The node could not be reached at all (as opposed to answering with an error). */
+  /**
+   * The node could not be used at all: no answer, a timeout, or a redirect away from the REST API
+   * (as opposed to answering with an error).
+   */
   readonly unreachable: boolean;
 }
 
@@ -333,7 +336,7 @@ function describeFailure(id: CheckId, err: unknown, ctx: AppContext): Failure {
         detail: `could not run: ${err.kind}${status} on ${err.path}`,
         hint: describeError(err, ctx),
       },
-      unreachable: err.kind === 'unreachable' || err.kind === 'timeout',
+      unreachable: err.kind === 'unreachable' || err.kind === 'timeout' || err.kind === 'redirect',
     };
   }
   if (err instanceof ToolInputError) {
@@ -491,7 +494,7 @@ export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<
   }
   if (nodeUnreachable) {
     options.onDiagnostic?.(
-      `${ctx.rest.host} stopped answering after start-up, so no check could be made. Verify that the node is up and reachable from this machine (SYMBOL_NODE_URL).`,
+      `${ctx.rest.host} stopped answering after start-up, or answers only with redirects, so no check could be made. Verify that SYMBOL_NODE_URL is the node's REST API URL and that the node is up and reachable from this machine.`,
     );
   }
 

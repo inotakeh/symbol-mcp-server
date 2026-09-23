@@ -15,7 +15,12 @@ import {
 } from './cli/check.js';
 import { formatCheckJson, formatCheckText } from './cli/format.js';
 import { RestError } from './client/rest.js';
-import { ConfigError, DEFAULT_REQUEST_TIMEOUT_MS, NetworkVerificationError } from './config.js';
+import {
+  ConfigError,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  NetworkVerificationError,
+  REDIRECT_ADVICE,
+} from './config.js';
 import { createAppContext } from './context.js';
 import { classifyAccountId } from './domain/address.js';
 import { SERVER_NAME } from './server.js';
@@ -142,9 +147,25 @@ function startupFailureText(err: unknown, env: CliDeps['env']): string {
       // loadConfig has already accepted the URL; keep the generic wording if it somehow fails.
     }
     const status = err.status ? ` ${err.status}` : '';
-    return `could not read ${err.path} from ${host} (${err.kind}${status}), so nothing was checked.\nVerify SYMBOL_NODE_URL (scheme, host, and port: 3000 for http, 3001 for https) and that the node is up and reachable from this machine.`;
+    const advice =
+      err.kind === 'redirect'
+        ? `Redirects are never followed. ${REDIRECT_ADVICE}`
+        : 'Verify SYMBOL_NODE_URL (scheme, host, and port: 3000 for http, 3001 for https) and that the node is up and reachable from this machine.';
+    return `could not read ${err.path} from ${host} (${err.kind}${status}), so nothing was checked.\n${advice}`;
   }
   return `unexpected error: ${err instanceof Error ? err.message : String(err)}`;
+}
+
+/**
+ * Why the MCP server could not start, for the one stderr line index.ts prints after
+ * "failed to start:". Configuration errors carry their own advice; a redirect gets
+ * REDIRECT_ADVICE, which its bare message does not include.
+ */
+export function serverStartupFailureText(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return err instanceof RestError && err.kind === 'redirect'
+    ? `${message}. ${REDIRECT_ADVICE}`
+    : message;
 }
 
 async function runCheckCommand(options: CheckCliOptions, deps: CliDeps): Promise<number> {

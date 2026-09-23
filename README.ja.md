@@ -460,8 +460,10 @@ MAILTO=you@example.com
 - **失敗は明示。** ネットワーク不一致（`SYMBOL_NETWORK` とノード）、ノード到達不能、想定外の応答形式は復旧ヒント付きの
   エラーになります。別ネットワークへ黙って切り替えることはありません。スタックトレースや HTTP 生レスポンスは
   モデルに返しません。
-- **リクエスト衛生。** リクエストごとのタイムアウト、`User-Agent`、5 MB の応答サイズ上限、同時 4 リクエストまで、
-  全応答のスキーマ検証。
+- **リクエスト衛生。** リクエストごとのタイムアウト、`User-Agent`、5 MB の応答サイズ上限（本文を受信しながら数え、
+  宣言された `Content-Length` が上限を超えていれば本文を読まずに拒否）、同時 4 リクエストまで、全応答のスキーマ検証。
+  リダイレクトは追いません。HTTP 3xx を返したノードはエラーになり、転送先には接続しません。リクエストのパスには
+  単純な識別子だけを入れます。
 - **リポジトリの設定。** CodeQL のコードスキャン、Secret scanning と push protection、Dependabot（セキュリティ更新と、
   グループ化した月次のバージョン更新）、`main` のブランチ保護（変更はすべて pull request 経由、線形履歴）、
   Private vulnerability reporting を有効にしています。
@@ -564,6 +566,7 @@ MAILTO=you@example.com
 | `SYMBOL_NETWORK=mainnet but node <host> is on testnet` | ノードが別のネットワークです。`SYMBOL_NODE_URL` を目的のネットワークのノードに変えるか、`SYMBOL_NETWORK` を直してください。 |
 | `Node <host> reports an unknown network` | ノードの generationHashSeed が Symbol の mainnet でも testnet でもありません（プライベートネットワークや NEM NIS1 のノード）。Symbol の mainnet / testnet のノードを使ってください。 |
 | 起動時の `<host> did not answer /node/info within 10000 ms` / `could not reach <host> for /node/info`、ツールの `Node <host> did not answer … within … ms` / `Could not connect to node <host>` | ノードが停止・過負荷か、ポートが違います（https は 3001）。nodewatch で別のノードを選ぶか、遅いノードなら `SYMBOL_REQUEST_TIMEOUT_MS`（最大 600000）で待ち時間を延ばしてください。 |
+| 起動時の `<host> answered /node/info with a redirect (HTTP 301), which is not followed`、ツールの `Node <host> answered … with a redirect` | URL の先がリダイレクトを返しています（http から https へ、プロキシ、パスの移動など）。リダイレクトは追わず、転送先にも接続しません。`SYMBOL_NODE_URL` にはノードの REST API の URL（通常 `https://<node-host>:3001`）を直接指定してください。 |
 | Claude Desktop に `symbol_*` ツールが出ない | Claude Desktop は起動時にしか設定を読みません。完全に終了して（ウィンドウを閉じるだけでは不十分）起動し直してください。それでも出なければ、上のログで `failed to start` の行を探し、JSON が正しいか確認してください。 |
 | `npm warn EBADENGINE Unsupported engine`（npm が出す警告） | Node.js が 22 より古いです。`node --version` で確認し、22 以上を入れてください（例 `nvm install 22`）。デスクトップアプリはシェルとは別の `PATH` で `node` / `npx` を探すことがあるので、必要なら `command` にフルパスを書いてください。 |
 | リリース後も古い版が動く | npx がキャッシュを使っています。`npx -y symbol-mcp-server@latest --version` を実行するか、`args` に `symbol-mcp-server@latest` と書いてください。 |

@@ -487,8 +487,11 @@ MAILTO=you@example.com
 - **Fail loudly.** A network mismatch (`SYMBOL_NETWORK` versus the node), an unreachable node or an
   unexpected response shape is an error with a recovery hint, never a silent fallback to another
   network. Stack traces and raw HTTP bodies are never returned to the model.
-- **Request hygiene.** Per-request timeout, `User-Agent`, a 5 MB response cap, at most 4 concurrent
-  requests, and schema validation of every response.
+- **Request hygiene.** Per-request timeout, `User-Agent`, a 5 MB response cap applied while the body
+  streams in (a larger declared `Content-Length` is refused unread), at most 4 concurrent requests,
+  and schema validation of every response. Redirects are never followed: a node that answers with
+  HTTP 3xx gets an error, and the address it points to is not contacted. Request paths carry plain
+  identifiers only.
 - **Repository settings.** CodeQL code scanning, secret scanning with push protection, Dependabot
   (security updates and grouped monthly version updates), branch protection on `main` (every change
   lands through a pull request, with linear history) and private vulnerability reporting are enabled.
@@ -601,6 +604,7 @@ hosts keep stderr in their logs (Claude Desktop: `~/Library/Logs/Claude/mcp*.log
 | `SYMBOL_NETWORK=mainnet but node <host> is on testnet` | The node is on the other network. Point `SYMBOL_NODE_URL` at a node of the network you want, or correct `SYMBOL_NETWORK`. |
 | `Node <host> reports an unknown network` | The node's generation hash seed is neither Symbol mainnet nor testnet (a private network, or a NEM NIS1 node). Use a Symbol mainnet or testnet node. |
 | `<host> did not answer /node/info within 10000 ms` or `could not reach <host> for /node/info` at start-up; `Node <host> did not answer … within … ms` or `Could not connect to node <host>` from a tool | The node is down, overloaded, or the port is wrong (3001 for https). Try another node from nodewatch, or give a slow node more time with `SYMBOL_REQUEST_TIMEOUT_MS` (up to 600000). |
+| `<host> answered /node/info with a redirect (HTTP 301), which is not followed` at start-up; `Node <host> answered … with a redirect` from a tool | The URL leads to something that redirects: http to https, a proxy, or a moved path. Redirects are never followed and the address in them is not contacted. Set `SYMBOL_NODE_URL` to the node's REST API URL itself, usually `https://<node-host>:3001`. |
 | Claude Desktop lists no `symbol_*` tools | Claude Desktop reads its configuration at start-up only. Quit it completely (closing the window is not enough) and reopen it. If the tools are still missing, look for a `failed to start` line in the log above and check that the JSON is valid. |
 | `npm warn EBADENGINE Unsupported engine` (printed by npm) | Node.js is older than 22. Check `node --version` and install 22 or newer (for example `nvm install 22`). A desktop app may find a different `node` / `npx` on its `PATH` than your shell does; give the full path in `command` if needed. |
 | An older version keeps running after a release | npx reuses its cache. Run `npx -y symbol-mcp-server@latest --version`, or put `symbol-mcp-server@latest` in `args`. |

@@ -11,6 +11,7 @@
 import type { CallToolResult, McpServer, ToolAnnotations } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 import { RestError } from '../client/rest.js';
+import { REDIRECT_ADVICE } from '../config.js';
 import type { AppContext } from '../context.js';
 import { PropertyParseError } from '../domain/properties.js';
 import { sanitizeUntrusted } from '../domain/sanitize.js';
@@ -100,6 +101,8 @@ export function describeError(err: unknown, ctx: AppContext): string {
         return `${err.path} was not found on ${host} (${ctx.network.name}). The resource may not exist on this network; check the identifier and whether you meant mainnet or testnet.`;
       case 'http':
         return `Node ${host} answered HTTP ${err.status ?? 'error'} for ${err.path}. The node may be overloaded or misconfigured; retry later or point SYMBOL_NODE_URL at another node (see https://nodewatch.symbol.tools/).`;
+      case 'redirect':
+        return `Node ${host} answered ${err.path} with a redirect (HTTP ${err.status ?? '3xx'}), which this server never follows. ${REDIRECT_ADVICE}`;
       case 'invalid_response':
         return `Node ${host} returned an unexpected response shape for ${err.path}. It may run an incompatible catapult-rest version; try another node.`;
       case 'too_large':
