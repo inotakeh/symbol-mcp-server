@@ -18,6 +18,7 @@ import {
   deriveHealthVerdict,
   type HealthVerdict,
   pickNodeTimestamp,
+  serviceStatus,
   skewThresholds,
 } from '../domain/nodehealth.js';
 import { decodeRoles } from '../domain/roles.js';
@@ -142,7 +143,8 @@ export const nodeHealthTool = defineTool({
 
     // 1-2. api_node, db
     if (health.ok) {
-      const { apiNode, db } = health.value.status;
+      const apiNode = serviceStatus(health.value.status.apiNode);
+      const db = serviceStatus(health.value.status.db);
       checks.push(
         apiNode === 'up'
           ? check({

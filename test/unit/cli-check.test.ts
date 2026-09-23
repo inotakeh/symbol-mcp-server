@@ -20,6 +20,7 @@ import {
   mapVersionDrift,
   mapVotingKeys,
   type NodeHealthView,
+  printableItem,
   type VotingKeysView,
 } from '../../src/cli/check.js';
 import { formatCheckJson, formatCheckText } from '../../src/cli/format.js';
@@ -540,6 +541,44 @@ describe('formatCheckText and formatCheckJson', () => {
   it('prints the report itself as one JSON document', () => {
     expect(JSON.parse(formatCheckJson(report))).toEqual(report);
     expect(formatCheckJson(report).endsWith('}\n')).toBe(true);
+  });
+
+  it('keeps words apart and drops control and format characters in the text lines', () => {
+    const at = (codePoint: number) => String.fromCodePoint(codePoint);
+    const text = formatCheckText({
+      ...report,
+      checks: [
+        {
+          id: 'node_health',
+          status: 'fail',
+          detail: `lag\t19 blocks${at(0x2028)}then${at(0x0d)}more${at(0x1b)}[2J${at(0xe0041)}`,
+          hint: `check${at(0x85)}the node${at(0x202e)}`,
+        },
+      ],
+    });
+    expect(text.split('\n').slice(1, 3)).toEqual([
+      '[fail] node_health: lag 19 blocks then more[2J',
+      '  hint: check the node',
+    ]);
+  });
+});
+
+describe('printableItem', () => {
+  const at = (codePoint: number) => String.fromCodePoint(codePoint);
+
+  it('turns details and hints into one clean line for both output formats', () => {
+    expect(
+      printableItem({
+        status: 'warn',
+        detail: `two${at(0x0a)} lines${at(0x09)}and${at(0x9b)}31m${at(0x200b)}`,
+        hint: `a${at(0x2029)}b${at(0xe0001)}${at(0xe0061)}`,
+      }),
+    ).toEqual({ status: 'warn', detail: 'two lines and31m', hint: 'a b' });
+    expect(printableItem({ status: 'ok', detail: 'healthy', hint: null })).toEqual({
+      status: 'ok',
+      detail: 'healthy',
+      hint: null,
+    });
   });
 });
 

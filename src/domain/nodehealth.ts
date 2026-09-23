@@ -4,7 +4,26 @@
  * epochAdjustment); nothing network-specific is hard-coded here.
  */
 import type { CheckStatus } from './delegation.js';
+import { sanitizeUntrusted } from './sanitize.js';
 import { networkTimestampToDate, roundTo } from './time.js';
+
+/**
+ * Longest `/node/health` service status kept. NodeStatusEnum is `up | down`; the node can send any
+ * string, so a status is untrusted text like a friendly name.
+ */
+export const MAX_SERVICE_STATUS_LENGTH = 32;
+
+/** Shown for a status that is empty, or nothing but removed characters. */
+export const EMPTY_SERVICE_STATUS = '(empty)';
+
+/**
+ * A `/node/health` status (`status.apiNode`, `status.db`) cleaned for judging and for output alike.
+ * Judging the cleaned value keeps the verdict and the text shown next to it consistent; a node that
+ * hides characters in a status gains nothing it could not get by sending "up" outright.
+ */
+export function serviceStatus(value: string): string {
+  return sanitizeUntrusted(value, MAX_SERVICE_STATUS_LENGTH) || EMPTY_SERVICE_STATUS;
+}
 
 /** Wall-clock window whose worth of blocks the node database may lag the chain height. */
 export const STORAGE_TOLERANCE_WINDOW_MS = 60_000;

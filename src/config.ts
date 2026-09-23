@@ -132,8 +132,6 @@ export interface ResolvedNetwork {
   readonly name: NetworkName;
   readonly identifier: number;
   readonly generationHashSeed: string;
-  /** Host name the node reports about itself (untrusted, informational). */
-  readonly nodeHost: string;
 }
 
 /**
@@ -158,6 +156,5 @@ export async function resolveNetwork(rest: RestClient, config: Config): Promise<
     name: known.name,
     identifier: known.identifier,
     generationHashSeed: known.generationHashSeed,
-    nodeHost: info.host ?? rest.host,
   };
 }

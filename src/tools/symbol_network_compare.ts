@@ -3,11 +3,18 @@ import { type RestClient, RestError } from '../client/rest.js';
 import { ChainInfoSchema, NodeInfoSchema } from '../client/schemas.js';
 import { parseHeight } from '../domain/epoch.js';
 import { findNetworkBySeed } from '../domain/network.js';
-import { defineTool, formatInteger, nullable } from './_shared.js';
+import { defineTool, formatInteger, logUnexpectedError, nullable } from './_shared.js';
 
 /** A node this many blocks (or more) behind the best reference is reported as lagging. */
 export const LAG_THRESHOLD_BLOCKS = 10;
 export const NODEWATCH_URL = 'https://nodewatch.symbol.tools/';
+
+/**
+ * `nodes[].error` for a failure that is not a RestError (an internal error, or a value such as a
+ * height beyond the safe integer range); the details go to stderr, as with describeError.
+ */
+export const INTERNAL_ERROR_TEXT =
+  'error: unexpected internal error while reading this node (details were written to the server log)';
 
 const NodeReportSchema = z.object({
   url: z.string(),
@@ -80,10 +87,14 @@ async function probe(
       error: null,
     };
   } catch (err) {
-    const error =
-      err instanceof RestError
-        ? `${err.kind}: ${err.message}`
-        : `error: ${err instanceof Error ? err.message : String(err)}`;
+    let error: string;
+    if (err instanceof RestError) {
+      error = `${err.kind}: ${err.message}`;
+    } else {
+      // The message may quote node data, so it goes to stderr and the output gets a fixed text.
+      logUnexpectedError(err, `${role} node ${client.host}`);
+      error = INTERNAL_ERROR_TEXT;
+    }
     return {
       ...base,
       reachable: false,

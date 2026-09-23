@@ -11,7 +11,7 @@ import * as z from 'zod/v4';
 import { RestError } from '../client/rest.js';
 import type { AppContext } from '../context.js';
 import { describeSignedStages } from '../domain/finality.js';
-import { sanitizeUntrusted } from '../domain/sanitize.js';
+import { sanitizeUntrusted, toSingleLine } from '../domain/sanitize.js';
 import type { Instant } from '../domain/time.js';
 import { formatInstantText } from '../domain/time.js';
 import { hasSuccessorKey, RENEWAL_WINDOW_END_DAYS } from '../domain/voting.js';
@@ -102,6 +102,19 @@ export const CheckReportSchema = z.object({
 // ---------------------------------------------------------------------------------------------
 
 type ItemBody = Omit<CheckItem, 'id'>;
+
+/**
+ * Details and hints end up on a terminal or in a cron mail, as text or as JSON. Node strings are
+ * cleaned where the tools read them; this is the last line of defence for both formats: one line,
+ * no control or format character.
+ */
+export function printableItem(body: ItemBody): ItemBody {
+  return {
+    status: body.status,
+    detail: toSingleLine(body.detail),
+    hint: body.hint === null ? null : toSingleLine(body.hint),
+  };
+}
 
 export interface NodeHealthView {
   readonly verdict: 'healthy' | 'degraded' | 'unhealthy';
@@ -452,7 +465,7 @@ export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<
       const raced = await withinTimeLimit(step.run(), remainingMs);
       if (raced.done) {
         ran++;
-        checks.push({ id: step.id, ...raced.value });
+        checks.push({ id: step.id, ...printableItem(raced.value) });
       } else {
         cutShort++;
         checks.push({
@@ -466,7 +479,7 @@ export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<
       ran++;
       const failure = describeFailure(step.id, err, ctx);
       if (failure.unreachable) unreachable++;
-      checks.push({ id: step.id, ...failure.body });
+      checks.push({ id: step.id, ...printableItem(failure.body) });
     }
   }
 

@@ -86,3 +86,35 @@ describe('parseNetworkProperties', () => {
     );
   });
 });
+
+describe('PropertyParseError messages', () => {
+  const cp = (...codePoints: number[]) => String.fromCodePoint(...codePoints);
+  const hidden = cp(0xe0001, ...[...'obey'].map((ch) => 0xe0000 + (ch.codePointAt(0) ?? 0)));
+  const unsafe = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\u{E0000}-\u{E007F}]/u;
+
+  function messageOf(parse: () => unknown): string {
+    try {
+      parse();
+    } catch (err) {
+      expect(err).toBeInstanceOf(PropertyParseError);
+      return (err as Error).message;
+    }
+    throw new Error('expected a PropertyParseError');
+  }
+
+  it('quote a raw value from the node only after cleaning and capping it', () => {
+    const messages = [
+      messageOf(() => parsePropertyInt(`30s${cp(0x202e)}${hidden}${'x'.repeat(500)}`)),
+      messageOf(() => parseHexId(`0x6BED${cp(0x1b)}[2J`)),
+      messageOf(() => parseDurationMs(`30${cp(0x0d)}w`)),
+      // trim() lets the digits through the integer check; the value is then too large.
+      messageOf(() => parsePropertyNumber(`${cp(0x2028)}${'9'.repeat(40)}${cp(0xfeff)}`)),
+    ];
+    for (const message of messages) {
+      expect(message).not.toMatch(unsafe);
+      expect(message.length).toBeLessThan(120);
+    }
+    expect(messages[1]).toBe('not a 64-bit hex id property: "0x6BED[2J"');
+    expect(messages[3]).toBe(`integer property does not fit in a JS number: "${'9'.repeat(40)}"`);
+  });
+});

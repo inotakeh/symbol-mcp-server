@@ -13,6 +13,7 @@ import * as z from 'zod/v4';
 import { RestError } from '../client/rest.js';
 import type { AppContext } from '../context.js';
 import { PropertyParseError } from '../domain/properties.js';
+import { sanitizeUntrusted } from '../domain/sanitize.js';
 import { StateFileError } from '../state/snapshotfile.js';
 
 export const TOOL_ANNOTATIONS: ToolAnnotations = {
@@ -114,10 +115,22 @@ export function describeError(err: unknown, ctx: AppContext): string {
     return `Could not ${err.operation === 'read' ? 'read' : 'write'} the harvester snapshot file ${err.path} (${err.code}). Check that SYMBOL_STATE_DIR exists or can be created and is writable by the server process, or unset SYMBOL_STATE_DIR to run without comparisons.`;
   }
   // Internal failures: details go to stderr (never to the model), the reply stays generic.
+  logUnexpectedError(err);
+  return 'Unexpected internal error while running the tool. Retry; if it persists, report it with the tool name and arguments (details were written to the server log).';
+}
+
+/**
+ * Writes an unexpected error (not a RestError, not bad input) to stderr for the operator; callers
+ * give the model a generic text instead. The message can quote node data (an overflowing height,
+ * say), so it is cleaned and capped like any untrusted text.
+ */
+export function logUnexpectedError(err: unknown, context?: string): void {
   const name = err instanceof Error ? err.name : 'Error';
   const message = err instanceof Error ? err.message : String(err);
-  console.error(`symbol-mcp-server: unexpected internal error: ${name}: ${message}`);
-  return 'Unexpected internal error while running the tool. Retry; if it persists, report it with the tool name and arguments (details were written to the server log).';
+  const where = context === undefined ? '' : ` (${context})`;
+  console.error(
+    `symbol-mcp-server: unexpected internal error${where}: ${name}: ${sanitizeUntrusted(message)}`,
+  );
 }
 
 async function execute(

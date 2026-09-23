@@ -2,6 +2,7 @@ import * as z from 'zod/v4';
 import { RestError } from '../client/rest.js';
 import { type TransactionStatus, TransactionStatusListSchema } from '../client/schemas.js';
 import { parseHeight } from '../domain/epoch.js';
+import { sanitizeUntrusted } from '../domain/sanitize.js';
 import { formatInstantText, type Instant, networkTimestampToDate } from '../domain/time.js';
 import { describeTransactionStatusCode, TRANSACTION_GROUPS } from '../domain/txstatus.js';
 import { defineTool, formatInteger, maskIdentifier, nullable, ToolInputError } from './_shared.js';
@@ -9,6 +10,12 @@ import { InstantSchema } from './_transactions.js';
 
 /** Hashes checked per call; the node answers one POST for the whole batch. */
 export const MAX_STATUS_HASHES = 20;
+
+/**
+ * Longest status code kept. The code is untrusted text from the node; the longest name in
+ * TransactionStatusEnum has 67 characters.
+ */
+export const MAX_STATUS_CODE_LENGTH = 128;
 
 const HASH_HINT = `Pass 1 to ${MAX_STATUS_HASHES} transaction hashes, each the 64-character hex hash printed when the transaction was announced (symbol_transaction_search lists hashes for an address).`;
 
@@ -131,7 +138,9 @@ export const transactionStatusTool = defineTool({
           deadline: null,
         };
       }
-      const code = s.code ?? null;
+      // Cleaned before it is looked up, so the meaning always belongs to the code that is shown;
+      // nothing left after cleaning counts as no code reported.
+      const code = sanitizeUntrusted(s.code ?? '', MAX_STATUS_CODE_LENGTH) || null;
       const height = s.height === undefined ? 0 : parseHeight(s.height);
       return {
         hash,

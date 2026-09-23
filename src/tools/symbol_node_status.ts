@@ -8,6 +8,7 @@ import {
 } from '../client/schemas.js';
 import { parseHeight } from '../domain/epoch.js';
 import { findNetworkBySeed } from '../domain/network.js';
+import { serviceStatus } from '../domain/nodehealth.js';
 import { decodeRoles } from '../domain/roles.js';
 import { sanitizeUntrusted } from '../domain/sanitize.js';
 import { networkTimestampToDate } from '../domain/time.js';
@@ -80,7 +81,9 @@ export const nodeStatusTool = defineTool({
     );
     const ageSeconds = Math.round((now.getTime() - latestBlockDate.getTime()) / 1000);
     const synced = ageSeconds <= SYNC_THRESHOLD_SECONDS;
-    const healthy = health.status.apiNode === 'up' && health.status.db === 'up';
+    const apiNode = serviceStatus(health.status.apiNode);
+    const db = serviceStatus(health.status.db);
+    const healthy = apiNode === 'up' && db === 'up';
 
     const nodeNetwork = findNetworkBySeed(info.networkGenerationHashSeed);
     const matchesConfiguredNetwork = nodeNetwork?.name === ctx.network.name;
@@ -97,7 +100,7 @@ export const nodeStatusTool = defineTool({
       );
     }
     if (!healthy) {
-      warnings.push(`Node health: apiNode=${health.status.apiNode}, db=${health.status.db}.`);
+      warnings.push(`Node health: apiNode=${apiNode}, db=${db}.`);
     }
     if (!matchesConfiguredNetwork) {
       warnings.push('The node now reports a different network than at startup.');
@@ -105,7 +108,7 @@ export const nodeStatusTool = defineTool({
 
     const summary = [
       `${friendlyName || host || ctx.rest.host} (${host || ctx.rest.host}) runs Symbol ${version} on ${ctx.network.name} with roles ${roles.join('/') || 'none'}.`,
-      `Health apiNode=${health.status.apiNode}, db=${health.status.db}; height ${formatInteger(height)}, finalized ${formatInteger(parseHeight(chain.latestFinalizedBlock.height))} (epoch ${chain.latestFinalizedBlock.finalizationEpoch}); ${peers.length} peers.`,
+      `Health apiNode=${apiNode}, db=${db}; height ${formatInteger(height)}, finalized ${formatInteger(parseHeight(chain.latestFinalizedBlock.height))} (epoch ${chain.latestFinalizedBlock.finalizationEpoch}); ${peers.length} peers.`,
       synced
         ? `Synced: latest block ${ageSeconds}s old.`
         : `NOT synced: latest block ${ageSeconds}s old (threshold ${SYNC_THRESHOLD_SECONDS}s).`,
@@ -129,7 +132,7 @@ export const nodeStatusTool = defineTool({
         identifier: info.networkIdentifier,
         matchesConfiguredNetwork,
       },
-      health: { apiNode: health.status.apiNode, db: health.status.db, healthy },
+      health: { apiNode, db, healthy },
       chain: {
         height,
         finalizedHeight: parseHeight(chain.latestFinalizedBlock.height),
