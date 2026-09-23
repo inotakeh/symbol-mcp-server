@@ -35,10 +35,16 @@ Manual checks against a real node:
 
 ```sh
 npm run build
-npx @modelcontextprotocol/inspector node dist/index.js      # set SYMBOL_NODE_URL in the Inspector
+npx @modelcontextprotocol/inspector -e SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
 SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<testnet-node>:3001 npm test
 SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<node-host>:3001 SYMBOL_INTEGRATION_ACCOUNT=<address> npm test
 ```
+
+The Inspector gives the server it starts only a few of its own environment variables (`PATH`,
+`HOME` and the like, the MCP SDK's default) plus the ones it is given, so a variable set in front of
+`npx` does not reach the server. Pass each one with `-e KEY=VALUE` as above, or enter it in the
+Inspector's form; on macOS and Linux, wrapping the server command in `env` works too. Public nodes
+for these checks are listed at https://nodewatch.symbol.tools/.
 
 The integration tests (`test/integration/`) only run with `SYMBOL_INTEGRATION=1` and never in CI.
 They treat the node as a read-only REST endpoint.
@@ -98,7 +104,8 @@ The full design is in [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md) (Japanese).
 - Keep pull requests small. Fill in the template: what changes, how you verified it (commands and
   results), and the checklist.
 - Releases are cut by maintainers: they bump the version and create the tag, and the release
-  workflow publishes to npm after an approval. Do not bump versions or create tags in a PR.
+  workflow publishes to npm after an approval. Do not bump versions or create tags in a PR. The
+  steps are in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Building the Claude Desktop bundle (.mcpb)
 
@@ -126,6 +133,8 @@ This repository is also developed with AI coding agents. Human contributors can 
   [`CLAUDE.md`](CLAUDE.md) only imports it.
 - `.claude/` holds Claude Code's hooks and permission settings. They are guardrails that keep an
   agent away from protected files, credentials and outbound network access.
-  [`GUARDRAILS.md`](GUARDRAILS.md) (Japanese) describes the model in detail.
+  [`GUARDRAILS.md`](GUARDRAILS.md) (Japanese) describes the model in detail. The hooks are
+  Python 3 scripts, so running Claude Code in this repository needs `python3` on `PATH`. Building,
+  testing and sending a pull request by hand need none of these files.
 - These files, `.github/workflows/`, `SECURITY.md`, `server.json`, `LICENSE` and the lockfile are
   edited by maintainers only.

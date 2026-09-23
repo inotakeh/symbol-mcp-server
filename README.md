@@ -86,9 +86,12 @@ decimal string (`"662.574177"`) and as the raw integer (`"662574177"`), summed b
    [Releases](https://github.com/inotakeh/symbol-mcp-server/releases/latest).
 2. Double-click it, or open Claude Desktop's **Settings → Extensions** and install it there.
 3. In the settings form, enter the **Symbol node URL**, for example `https://<node-host>:3001` (your
-   own node is best, see [Choosing a node](#choosing-a-node)). Optionally set the time zone and a
-   state directory for `symbol_harvester_watch`; the other fields can stay empty.
+   own node is best, see [Choosing a node](#choosing-a-node)). It is required: the extension does
+   not start without it. Optionally set the time zone and a state directory for
+   `symbol_harvester_watch`; the other fields can stay empty.
 4. Enable the extension.
+
+After changing these settings later, try them in a new conversation.
 
 The bundle holds the server built from the published npm package with its production
 dependencies and runs on the Node.js that ships with Claude Desktop. Use either the bundle or the
@@ -337,8 +340,8 @@ Resolves the dates to block heights, reads every HarvestFee receipt addressed to
 sums them as exact integers: total XYM, harvester versus beneficiary share, and one row per day.
 Nothing is left for the model to add up.
 
-**"I just announced my voting key link. Did transaction FAEEB042… go through?"**
-→ `symbol_transaction_status { "transactionHashes": ["FAEEB042…"] }`
+**"I just announced my voting key link. Did transaction `<hash>` go through?"**
+→ `symbol_transaction_status { "transactionHashes": ["<hash>"] }`
 Answers confirmed (with the height), unconfirmed, partial (aggregate bonded waiting for
 cosignatures), failed (with the node's code such as `Failure_Core_Insufficient_Balance` and its
 meaning) or not_found. Always an array, up to 20 hashes per call.
@@ -536,24 +539,27 @@ Vulnerability reports: see [`SECURITY.md`](SECURITY.md).
   [Install](#install)).
 - **Who can release.** Only maintainers create release tags (`v1.2.3`). The workflow checks that
   the tag matches `package.json`, runs lint, typecheck and tests, and then waits in the
-  `npm-publish` GitHub Environment until a maintainer approves the run.
+  `npm-publish` GitHub Environment until a maintainer approves the run. The whole procedure is in
+  [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Supported networks
 
-| Network | Identifier | Detected by generation hash seed | Example node |
-|---|---|---|---|
-| Symbol mainnet | 104 | `57F7DA20…72B2D6` | `https://sym-main-01.opening-line.jp:3001` |
-| Symbol testnet (sai) | 152 | `49D6E1CE…FC665A4` | `https://sym-test-01.opening-line.jp:3001` |
+| Network | Identifier | Detected by generation hash seed |
+|---|---|---|
+| Symbol mainnet | 104 | `57F7DA20…72B2D6` |
+| Symbol testnet (sai) | 152 | `49D6E1CE…FC665A4` |
 
 The network is detected from the node at start-up. Any other generation hash seed (private
-networks, NEM NIS1) is rejected. Node availability changes over time; pick a current one from
-https://nodewatch.symbol.tools/.
+networks, NEM NIS1) is rejected. Nodes of both networks are listed at
+https://nodewatch.symbol.tools/; see [Choosing a node](#choosing-a-node).
 
 ## Limitations
 
-- **Node history.** Results come from the configured node. Nodes that prune transaction history
-  return only what they still hold, so `symbol_transaction_search` may miss old transactions on
-  such nodes.
+- **Node history and limits.** Results come from the configured node. Nodes that prune transaction
+  history return only what they still hold, so `symbol_transaction_search` may miss old
+  transactions on such nodes. A public node may also limit how many requests it accepts. The calls
+  that send the most are `symbol_account_rank` (up to 50 pages) and `symbol_harvesting_income` over
+  a long period (up to 200 pages); use your own node for those.
 - **Future dates are estimates.** Expiry dates for voting keys, namespaces and mosaics, and any
   future height or epoch, are projected from the measured average block time over the last 10,000
   blocks (about 30 s on mainnet) and are flagged as estimates.
@@ -607,7 +613,8 @@ hosts keep stderr in their logs (Claude Desktop: `~/Library/Logs/Claude/mcp*.log
 | `Node <host> reports an unknown network` | The node's generation hash seed is neither Symbol mainnet nor testnet (a private network, or a NEM NIS1 node). Use a Symbol mainnet or testnet node. |
 | `<host> did not answer /node/info within 10000 ms` or `could not reach <host> for /node/info` at start-up; `Node <host> did not answer … within … ms` or `Could not connect to node <host>` from a tool | The node is down, overloaded, or the port is wrong (3001 for https). Try another node from nodewatch, or give a slow node more time with `SYMBOL_REQUEST_TIMEOUT_MS` (up to 600000). |
 | `<host> answered /node/info with a redirect (HTTP 301), which is not followed` at start-up; `Node <host> answered … with a redirect` from a tool | The URL leads to something that redirects: http to https, a proxy, or a moved path. Redirects are never followed and the address in them is not contacted. Set `SYMBOL_NODE_URL` to the node's REST API URL itself, usually `https://<node-host>:3001`. |
-| Claude Desktop lists no `symbol_*` tools | Claude Desktop reads its configuration at start-up only. Quit it completely (closing the window is not enough) and reopen it. If the tools are still missing, look for a `failed to start` line in the log above and check that the JSON is valid. |
+| `Node <host> answered HTTP 429 for …` (or 503) from a tool | The node limits how many requests it accepts, or is overloaded. Wait and try again. For calls that read many pages (`symbol_account_rank` with a large `maxRank`, `symbol_harvesting_income` over a long period), use your own node or another node from nodewatch. |
+| Claude Desktop lists no `symbol_*` tools | With the bundle (.mcpb): open the extension's settings; it does not start while the **Symbol node URL** is empty. With a JSON configuration: Claude Desktop reads it at start-up only. Quit it completely (closing the window is not enough) and reopen it. If the tools are still missing, look for a `failed to start` line in the log above and check that the JSON is valid. |
 | `npm warn EBADENGINE Unsupported engine` (printed by npm) | Node.js is older than 22. Check `node --version` and install 22 or newer (for example `nvm install 22`). A desktop app may find a different `node` / `npx` on its `PATH` than your shell does; give the full path in `command` if needed. |
 | An older version keeps running after a release | npx reuses its cache. Run `npx -y symbol-mcp-server@latest --version`, or put `symbol-mcp-server@latest` in `args`. |
 
@@ -618,13 +625,19 @@ npm ci
 npm run lint && npm run typecheck && npm test
 npm run build
 SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
-npx @modelcontextprotocol/inspector node dist/index.js
-SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://sym-test-01.opening-line.jp:3001 npm test   # live-node tests
+npx @modelcontextprotocol/inspector -e SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
+SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<testnet-node>:3001 npm test   # live-node tests
 SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<node-host>:3001 SYMBOL_INTEGRATION_ACCOUNT=<address> npm test   # account tools against a specific account
 node scripts/capture-fixtures.mjs https://<node-host>:3001   # refresh test/fixtures/<network>/ from a node
 ```
 
+The MCP Inspector gives the server it starts only a few of its own environment variables (`PATH`,
+`HOME` and the like, the MCP SDK's default) plus the ones it is given, so a variable set in front of
+`npx` does not reach the server. Pass each one with `-e KEY=VALUE` as above, or enter it in the
+Inspector's form; on macOS and Linux, wrapping the server command in `env` works too.
+
 Design notes: [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md). Changes: [`CHANGELOG.md`](CHANGELOG.md).
+Releases: [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Contributing
 

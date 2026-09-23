@@ -266,11 +266,6 @@ export const ENV_VARS: readonly EnvVarDoc[] = [
   },
 ];
 
-const PUBLIC_NODES = [
-  ['mainnet', 'https://sym-main-01.opening-line.jp:3001'],
-  ['testnet', 'https://sym-test-01.opening-line.jp:3001'],
-] as const;
-
 function wrap(text: string, width: number, indent: string): string {
   const words = text.split(' ');
   const lines: string[] = [];
@@ -293,7 +288,7 @@ export function helpText(serverName: string, version: string): string {
   out.push('Read-only MCP server for the Symbol blockchain (stdio transport).');
   out.push('');
   out.push('Usage:');
-  out.push(`  SYMBOL_NODE_URL=https://<node>:3001 ${serverName}`);
+  out.push(`  SYMBOL_NODE_URL=https://<node-host>:3001 ${serverName}`);
   out.push(`  ${serverName} check        One-shot node health check for cron (see below)`);
   out.push(`  ${serverName} --help       Show this message and exit`);
   out.push(`  ${serverName} --version    Print the version and exit`);
@@ -324,10 +319,9 @@ export function helpText(serverName: string, version: string): string {
   out.push('  Exit codes: 0 all ok or skipped, 1 warnings, 2 failures,');
   out.push('              3 could not run (configuration, node unreachable, bad arguments)');
   out.push('');
-  out.push('Public nodes (availability may change; see https://nodewatch.symbol.tools/):');
-  for (const [network, url] of PUBLIC_NODES) {
-    out.push(`  ${network.padEnd(8)} ${url}`);
-  }
+  out.push('Choosing a node: your own node is best. Public mainnet and testnet nodes are listed');
+  out.push('at https://nodewatch.symbol.tools/; use the REST URL of an API node there, usually');
+  out.push('https://<node-host>:3001.');
   out.push('');
   out.push('On start-up the server fetches /node/info, detects mainnet or testnet from the');
   out.push(`generation hash seed and logs "${serverName} <version>: <network> via <host>".`);

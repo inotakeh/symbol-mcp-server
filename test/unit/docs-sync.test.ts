@@ -1,8 +1,8 @@
 /**
  * Keeps the user-facing documents in step with the code: every registered tool and every
  * environment variable is documented in both READMEs, server.json (the MCP Registry entry)
- * declares exactly the variables the server reads, its versions follow package.json, and the two
- * READMEs keep the same section structure.
+ * declares exactly the variables the server reads, its versions and those of package-lock.json
+ * follow package.json, and the two READMEs keep the same section structure.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -23,8 +23,14 @@ interface RegistryEntry {
   packages: Array<{ version: string; environmentVariables: Array<{ name: string }> }>;
 }
 
+interface Lockfile {
+  version: string;
+  packages: Record<string, { version?: string }>;
+}
+
 const serverJson = JSON.parse(read('server.json')) as RegistryEntry;
 const packageJson = JSON.parse(read('package.json')) as { version: string };
+const packageLock = JSON.parse(read('package-lock.json')) as Lockfile;
 
 /** Headings (any level) outside fenced code blocks. */
 function headings(markdown: string): string[] {
@@ -67,6 +73,12 @@ describe('documentation stays in sync with the code', () => {
   it('server.json versions match package.json', () => {
     expect(serverJson.version).toBe(packageJson.version);
     expect(serverJson.packages[0]?.version).toBe(packageJson.version);
+  });
+
+  it('package-lock.json versions match package.json', () => {
+    // The root version and the root package entry (key ""), both written by npm install.
+    expect(packageLock.version).toBe(packageJson.version);
+    expect(packageLock.packages['']?.version).toBe(packageJson.version);
   });
 
   it('README.md and README.ja.md have the same number of sections', () => {

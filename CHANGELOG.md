@@ -9,6 +9,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `docs/RELEASING.md`: the release procedure (release PR, tag, approval, the `publish` and
+  `github-release` jobs, checking the release, the MCP Registry, what to do when a step fails),
+  backfilling an older GitHub Release, and where to read the OpenSSF Scorecard results. The
+  docs-sync test also checks that `package-lock.json` carries the version of `package.json`, as it
+  already did for `server.json`.
+- README (English and Japanese): the bundle (.mcpb) does not start without the node URL, and
+  changed settings are best tried in a new conversation; how to pass environment variables to the
+  MCP Inspector (`-e KEY=VALUE`); public nodes may limit requests, with a
+  Troubleshooting row for HTTP 429 and 503. `CONTRIBUTING.md`: the same Inspector command, and
+  that the Claude Code hooks need Python 3 while contributing by hand needs none of `.claude/`.
 - `symbol_holdings_value`: optional argument `decimals` (an integer from 0 to 12) to round
   `value.amount` to, and the outputs `value.roundingDecimals` (the decimals used, or null when not
   rounded) and `value.decimalsSource` (`caller`, `currency`, `none` or `rounds_to_zero`). The
@@ -16,6 +26,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- What is distributed or documented no longer names real nodes or transactions: `--help` points to
+  https://nodewatch.symbol.tools/ and `https://<node-host>:3001` instead of listing two public
+  nodes, the `transactionHash` argument of `symbol_transaction_get` describes the format instead of
+  quoting a hash, and the README and DESIGN-BRIEF examples use placeholders. The tests (fixtures,
+  harness and the usage comment of the live integration test) and the evaluation cases keep their
+  public data.
 - The descriptions of the tools that are easy to mix up now start with the question each one
   answers and name the tool for each neighbouring question in their second sentence:
   `symbol_node_status` (sync), `symbol_node_health` (service health), `symbol_version_drift`
