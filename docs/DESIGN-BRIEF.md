@@ -477,3 +477,25 @@ symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <
 **外部通信・状態**: `SYMBOL_NODE_URL` と、`symbol_version_drift` 経由の `SYMBOL_REFERENCE_NODES`（`/node/info` のみ）だけ。通知・テレメトリなし。ディスクに書くのは従来どおり `symbol_harvester_watch` の状態ファイルだけ（§2-9。check は 1 回の実行で 1 件追記する）。
 
 **置き場所**: `src/cli/` に閉じる（`check.ts`、`format.ts`）。将来 CLI を別パッケージに切り出せるように、**`src/cli/` から `@modelcontextprotocol` を import しない**（テストで検査。`tools/_shared.ts` 経由の `import type` は実行時に消えるので今回は許容）。`src/cli.ts` は `runCli(argv, deps)`（`deps = { env, stdout, stderr, serve, version, now }`）で、`index.ts` は実プロセスを配線して `process.exitCode` を設定するだけ。instructions / prompts / evals は変更しない（CLI は MCP の外）。
+
+## 14. 配布形式（npm / MCP Registry / .mcpb。.mcpb は 0.8.0 で追加）
+
+利用者に届く形は 3 つで、中身はすべて npm に公開した同じ tarball から来る。
+
+| 形式 | 作るもの・場所 | 使う人 |
+|---|---|---|
+| npm | `release.yml` の `publish` ジョブ（Trusted Publishing、provenance 付き） | `npx -y symbol-mcp-server` を設定するすべての MCP ホスト |
+| MCP Registry | `server.json`（人間が `mcp-publisher publish`。§8） | Registry からサーバーを探すクライアント |
+| .mcpb | `github-release` ジョブが `scripts/build-mcpb.sh` で作り、GitHub Release に添付 | Claude Desktop（ダブルクリックまたは Settings → Extensions） |
+
+**.mcpb の作り方**: 公式 CLI `@anthropic-ai/mcpb` は依存（`tmp`）に修正版の無い脆弱性があるため使わない。`.mcpb` は「直下に `manifest.json` を置いた普通の zip」で（CLI の `pack` も fflate の `zipSync` で同じ形を作り、署名は任意の追記ブロック）、`zip -X -r` で作る。中身は `manifest.json`・`icon.png`・`server/`（tarball の `dist`・`package.json`・`README.md`・`LICENSE` と、そのリリースの lockfile から `npm ci --omit=dev --ignore-scripts` で入れた本番用の `node_modules`）。ビルドは lockfile と `package.json` の版が一致しなければ失敗する。`unzip -Z1` で、`manifest.json` が直下にあること、`server/dist/index.js` と `@modelcontextprotocol/server` があること、開発用依存が無いことを確認する。
+
+**manifest**: `mcpb/manifest.json` がテンプレート（保護対象）。`manifest_version` は "0.3"（2026-09 時点の最新スキーマ。0.4 は `uv` 型を足すだけ）。`version` は "0.0.0" の置き場所で、ビルド時にリリースの版を書く。tools と prompts はテンプレートに書かず、ビルド時に同梱した `dist/server.js` の `TOOLS` / `PROMPTS` から宣言する（`scripts/mcpb-manifest.mjs`。description は 1 文目、prompt の `text` は `{account}` を `${arguments.account}` に置き換えたテンプレート）。ツールを足しても manifest の手作業は増えない。`server` は `node`、`args` は `${__dirname}/server/dist/index.js`、`env` は `user_config` の 6 項目を `SYMBOL_*` に対応付ける（`node_url` だけ required）。
+
+**user_config の未設定値**: 参照実装（mcpb の `src/shared/config.ts`）は、値も `default` も無い任意項目を置換しないので、`${user_config.x}` という文字列のまま環境変数に入る。そこで任意項目にはすべて `default` を置く（文字列と directory は `""`、`request_timeout_ms` は 10000）。`src/config.ts` は任意の環境変数の空文字・空白のみを未設定として扱う（`test/unit/config.test.ts`）。この「任意項目には必ず default」はテストで固定する（`test/unit/mcpb-manifest.test.ts`）。
+
+**Node.js**: Claude Desktop は Node.js を同梱して node 型の拡張を動かす（公式）。同梱の版は公式ドキュメントに書かれていない。`compatibility.runtimes.node` は `engines` と同じ ">=22" にし、`claude_desktop` の下限は公式に確認できる値が無いので書かない。.mcpb を最初に配る前に、人間が実機の Claude Desktop に入れて、起動・ツール呼び出し・ログの Node の版を確認する。
+
+**出所の確認**: `.mcpb` には GitHub の build provenance を付け（`actions/attest`）、`gh attestation verify <file>.mcpb --repo inotakeh/symbol-mcp-server` で確認できる。`mcpb sign` の署名は付けないので、Claude Desktop に「未検証」と表示されうる。README に明記する。
+
+**アイコン**: `mcpb/icon.png`（512×512）は Symbol / NEM のロゴを使わない独自の図形で、`scripts/make-icon.mjs`（依存なし、`node:zlib` のみ）で再生成できる。

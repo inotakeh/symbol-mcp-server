@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Claude Desktop bundle: `symbol-mcp-server-<version>.mcpb` for one-click installation (double-click
+  or Settings → Extensions), with a settings form for the node URL and the optional network, time
+  zone, reference nodes, request timeout and state directory. It is built by
+  `scripts/build-mcpb.sh` from the published npm tarball plus the release's locked production
+  dependencies, without the `mcpb` CLI; `mcpb/manifest.json` is the template and the tools and
+  prompts are declared from the packaged server. See README "Install".
+
 ## [0.7.1] - 2026-09-23
 
 ### Added
