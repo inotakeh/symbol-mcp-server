@@ -854,7 +854,10 @@ describe('symbol_harvesting_income', () => {
       totals: { receipts: 0, xym: '0.000000', raw: '0' },
       daily: [],
     });
-    expect(result.structuredContent?.summary).toMatch(/No harvest receipts in this period/);
+    expect(result.structuredContent?.summary).toMatch(
+      /No harvest receipts in this period\. Check that the period is not before its first harvested block, and use symbol_delegation_diagnose to see whether its harvesting works\./,
+    );
+    expect(result.structuredContent?.summary).not.toMatch(/symbol_harvesting_status/);
   });
 
   describe('input validation', () => {

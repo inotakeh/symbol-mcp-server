@@ -71,6 +71,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   model to use it for every harvest income question and not `symbol_transaction_search` or a
   browser. The server instructions now also route node sync, blocks behind other nodes and
   transaction status. Tool names, arguments and outputs are unchanged.
+- The `delegatedHarvesting.note` of `symbol_account_get`, and the summary of
+  `symbol_harvesting_income` for a period without receipts, send the question whether an account's
+  harvesting works to `symbol_delegation_diagnose`, as the tool descriptions do. They pointed to
+  `symbol_harvesting_status`, which only lists what the configured node has unlocked.
 - `symbol_holdings_value` rounds to the digits Intl (Unicode CLDR, as bundled with the Node.js that
   runs the server) gives the currency, instead of 0 for JPY and KRW and 2 for everything else:
   KWD and BHD now keep 3 decimals and CLF 4. A code Intl does not know (BTC, USDT, ETH) is no

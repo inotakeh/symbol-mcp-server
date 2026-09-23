@@ -572,7 +572,7 @@ export const harvestingIncomeTool = defineTool({
     ];
     if (totals.receipts === 0) {
       lines.push(
-        'No harvest receipts in this period. Check that the account harvests (symbol_harvesting_status) and that the period is not before its first harvested block.',
+        'No harvest receipts in this period. Check that the period is not before its first harvested block, and use symbol_delegation_diagnose to see whether its harvesting works.',
       );
     } else if (daily) {
       const shown = daily.slice(0, SUMMARY_DAYS);
