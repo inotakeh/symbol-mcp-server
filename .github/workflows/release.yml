@@ -28,6 +28,12 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      # First, before anything is installed or published (scripts/release-check.mjs): the tag's
+      # version is in package.json, package-lock.json and server.json, server.json names this npm
+      # package and its mcpName, and CHANGELOG.md has the version's notes. A version on npm cannot
+      # be changed, and the MCP Registry accepts it only with server.json's name as its mcpName.
+      - name: Release files must match the tag
+        run: node scripts/release-check.mjs "${GITHUB_REF_NAME#v}"
       # Trusted publishing needs npm >= 11.5.1, which Node 24 bundles. Fail instead of installing
       # an unpinned npm@latest.
       - name: npm must be 11.5.1 or newer
@@ -41,13 +47,6 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Tag must match package.json version
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          ver=$(node -p "require('./package.json').version")
-          if [ "$tag" != "$ver" ]; then
-            echo "::error::tag v$tag does not match package.json version $ver"; exit 1
-          fi
       - name: Publish
         run: npm publish --access public --provenance
 
@@ -88,3 +87,59 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" assets/* --notes-file notes.md --verify-tag --title "$GITHUB_REF_NAME"
+
+  # server.json to the MCP Registry. Runs only after publish (and therefore the npm-publish approval)
+  # succeeded, alongside github-release: the Registry entry names the npm package, not the GitHub
+  # Release, so a failure there does not hold it back. The Registry reads the npm version back and
+  # accepts it only when its mcpName is server.json's name, so the job first waits until npm shows
+  # that (scripts/wait-for-npm.sh, which release-assets.sh also uses). mcp-publisher logs in with
+  # this job's GitHub OIDC token; the Registry grants io.github.<repository owner>/* for it, so no
+  # Registry token or secret exists. If it fails, npm is already published: rerun this job, or
+  # publish by hand (docs/RELEASING.md).
+  registry:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write   # GitHub OIDC token that mcp-publisher exchanges for a short-lived Registry token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Wait until npm shows the version with its mcpName
+        run: |
+          package=$(node -p "require('./package.json').name")
+          server=$(node -p "require('./server.json').name")
+          bash scripts/wait-for-npm.sh "$package@${GITHUB_REF_NAME#v}" mcpName "$server"
+      # One mcp-publisher release, checked against the SHA-256 that the release's cosign-signed
+      # checksums file lists. Dependabot does not update these two values; docs/RELEASING.md
+      # ("Updating mcp-publisher") says how.
+      - name: Install mcp-publisher
+        env:
+          MCP_PUBLISHER_VERSION: "1.8.1"
+          MCP_PUBLISHER_SHA256: "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc"
+        run: |
+          archive="$RUNNER_TEMP/mcp-publisher_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --output "$archive" \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "$MCP_PUBLISHER_SHA256  $archive" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/bin" mcp-publisher
+          "$RUNNER_TEMP/bin/mcp-publisher" --version
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Log in to the MCP Registry with the job's OIDC token
+        run: mcp-publisher login github-oidc
+      - name: Publish server.json
+        run: mcp-publisher publish
+      - name: Say what is left to do
+        if: failure()
+        run: |
+          {
+            echo "npm is published; only the MCP Registry entry is missing (the GitHub Release is a separate job)."
+            echo "Rerun this job, or publish by hand as docs/RELEASING.md (When something fails) says."
+          } >> "$GITHUB_STEP_SUMMARY"
