@@ -224,6 +224,9 @@ describe('symbol_delegation_diagnose', () => {
     expect(out.checks.find((c) => c.id === 'balance_in_range')).toMatchObject({
       status: 'fail',
       detail: expect.stringMatching(/exceeds maxHarvesterBalance/),
+      hint: expect.stringMatching(
+        /cannot harvest, and nodes drop them from their unlocked list; move the excess/,
+      ),
     });
   });
 

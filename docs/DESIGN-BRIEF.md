@@ -167,6 +167,7 @@ friendlyName、host、ロール（ビットフラグを Peer/API/Voting に展�
 
 **`symbol_harvesting_status`** — `account`（任意）。
 ノードで解錠中の委任ハーベスター数と公開鍵一覧（`/node/unlockedaccount`）、`minHarvesterBalance` / `maxHarvesterBalance` / `harvestBeneficiaryPercentage`、`account` 指定時はその linked 公開鍵が解錠リストに含まれるか（＝このノードで実際にハーベストできる状態か）。
+- 残高の範囲（`balanceWithinLimits`）は `minHarvesterBalance <= 残高 <= maxHarvesterBalance`（harvestingMosaicId の残高。両端を含む）。上限を超えた分が切り捨てられるのではなく、**上限を超えるとハーベストできない**。catapult の `ImportanceView::canHarvest`（`client/catapult/src/catapult/cache_core/ImportanceView.cpp`）が importance が 0 でないことと両端の範囲を求め、`EligibleHarvesterValidator` はこれを満たさないハーベスターのブロックを `Failure_Core_Block_Harvester_Ineligible` で拒否する（テスト `FailureWhenBalanceIsAboveMaxBalance`）。さらに harvesting 拡張の `UnlockedAccountsUpdater::pruneUnlockedAccounts` が、次の高さで `canHarvest` を満たさない委任者をノードの解錠一覧から外す。`canHarvestHere` はこの範囲も含めて判定する。`symbol_delegation_diagnose` の `balance_in_range` と同じ規則。
 
 **`symbol_network_compare`** — 引数なし（対象は `SYMBOL_REFERENCE_NODES`）。
 自ノードと各参照ノードの高さ・ファイナライズ高さ、最大差分、`lagging: boolean`（差が10ブロック超）。参照ノード未設定なら、その旨と https://nodewatch.symbol.tools/ を案内する（エラーにしない）。

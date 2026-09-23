@@ -411,7 +411,7 @@ export const delegationDiagnoseTool = defineTool({
           id: 'balance_in_range',
           status: 'fail',
           detail: `Balance ${balanceText} exceeds maxHarvesterBalance ${maxText}.`,
-          hint: `Accounts above maxHarvesterBalance cannot harvest; move the excess to another account so the balance stays at or below ${maxText}.`,
+          hint: `Accounts above maxHarvesterBalance cannot harvest, and nodes drop them from their unlocked list; move the excess to another account so the balance stays at or below ${maxText}.`,
         }),
       );
     } else {
