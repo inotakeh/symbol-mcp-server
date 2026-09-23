@@ -25,6 +25,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   backfilling an older GitHub Release, and where to read the OpenSSF Scorecard results. The
   docs-sync test also checks that `package-lock.json` carries the version of `package.json`, as it
   already did for `server.json`.
+- The release workflow publishes `server.json` to the MCP Registry itself, in a new `registry` job
+  that starts once npm has the version, alongside the GitHub Release. It waits until npm shows the
+  version with the `mcpName` that the Registry checks, runs one pinned `mcp-publisher` release
+  checked against its SHA-256, and logs in with the job's GitHub OIDC token, so no Registry token
+  exists. Before anything is installed or published, the `publish` job now checks that the tag,
+  `package.json`, `package-lock.json` and `server.json` carry one version, that `server.json` names
+  this npm package and its `mcpName`, and that `CHANGELOG.md` has the version's section
+  (`scripts/release-check.mjs`, which maintainers can also run before tagging).
+  `scripts/wait-for-npm.sh` is the wait that the new job and `scripts/release-assets.sh` share.
+  `docs/RELEASING.md` describes the job and keeps the manual Registry steps for when it fails.
 - README (English and Japanese): the bundle (.mcpb) does not start without the node URL, and
   changed settings are best tried in a new conversation; how to pass environment variables to the
   MCP Inspector (`-e KEY=VALUE`); public nodes may limit requests, with a

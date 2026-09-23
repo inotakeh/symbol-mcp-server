@@ -329,6 +329,8 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - ツール説明の経路（`test/unit/tool-descriptions.test.ts`、§5 共通規約）: 取り違えやすい組のツールごとに、1 文目に他のツール名が無く、2 文目が組の他のツールを名指しすること（文は .mcpb の manifest と同じ `firstSentence` で切る）、組の中で 1 文目の動詞が重ならないこと、全ツールの説明で文と文の間の空白が欠けていないこと（欠けると 2 文目の境界がずれる）、`symbol_harvesting_income` の「use this tool whenever …」と「Do not use symbol_transaction_search or a browser … receipts, not transactions」。instructions（`test/unit/instructions.test.ts`）: 150 語以内、必須語句（`use symbol_harvesting_income, never symbol_transaction_search`、同期・高さの差・Tx の状態の経路を含む）
 - CLI check の純粋部分（`test/unit/cli-check.test.ts`、§13）: 5 項目それぞれの「ツールの verdict → status」対応表、`decideExit`（ok / skip のみ → 0、warn → 1、fail 優先 → 2、時間上限 → 最低 1、全項目到達不能 → 3）、`--warn-days` の境界（14 = warn / 14.1・15 = ok / 3 = fail / 0・失効のみ = fail / 後継キー登録済み = ok / active 複数は残り最大で判定）、hint がツールの文言から取られること、引数解析（既定値、`--flag value` と `--flag=value`、不正値・重複・値欠落・`--quiet=1` → usage、`check --help`）、`runCli` の exit 3（リクエスト 0 回）、`--quiet` は exit 0 のときだけ無出力、text / JSON の整形、`src/cli/*.ts` に `@modelcontextprotocol` の import が無いこと。`test/unit/cli.test.ts`: `check` が `serve` を呼ばない／引数なしは呼ぶ／`--help` に check と exit code／`--help` の URL は `https://<node-host>:3001` と nodewatch だけ（実在のノード名を書かない）。`test/unit/voting.test.ts`: `hasSuccessorKey`
 - 文書と版の整合（`test/unit/docs-sync.test.ts`）: 両 README が全ツール名と全環境変数を含む、`server.json` の環境変数が `ENV_VARS` と一致、`server.json`（`version` と `packages[0].version`）と `package-lock.json`（ルートの `version` と `packages[""].version`）の版が `package.json` と一致、両 README の節の数が同じ、`.mcpb` の節がある。リリース PR は人間が `server.json` と lockfile を更新するまでこの検査で落ちる（`docs/RELEASING.md`）
+- リリースの事前検査（`test/unit/release-check.test.ts`）: `scripts/release-check.mjs <version>` は、`package.json`・`package-lock.json`（ルートと `packages[""]`）・`server.json`（`version` とすべての `packages[].version`）の版、`server.json` の `name` と `package.json` の `mcpName` の一致、npm エントリの `identifier` と `package.json` の `name` の一致、`CHANGELOG.md` の日付付きで空でない節を検査し、不一致をすべて列挙する（`release.yml` の publish ジョブが最初に実行する）。検査の本体は副作用のない `scripts/release-files.mjs` の `releaseProblems`（`release-notes.mjs` が使う節の抽出もここ）で、2 つの CLI はガードを置かずに main を必ず実行する。ガードがあると、シンボリックリンク経由で起動したときに検査を飛ばして exit 0 になるため。テストは純粋関数の各項目と、リポジトリ自身のファイルでの CLI（package.json の版で exit 0、別の版で版の各項目と CHANGELOG の行を出して exit 1、引数の誤りで exit 2、シンボリックリンク経由でも同じ）。リリース PR では docs-sync と同じく、人間が `server.json` と lockfile を更新するまで落ちる
+- npm の待機（`test/unit/wait-for-npm.test.ts`）: `scripts/wait-for-npm.sh` を、npm と sleep を差し替えて実行する。1 回目で見える／何回か後に見える／`NPM_WAIT` の上限（15 秒ごと、既定 300 秒）で失敗／期待値と違えば待たずに失敗／引数の誤りで exit 2／`NPM_WAIT` が秒の整数でなければその名前を出して exit 2、を確かめる
 
 **ツール層（CIで必ず実行。SDK公式のインプロセス方式）**
 `createMcpHandler(createServer)` を作り、`@modelcontextprotocol/client` の `Client` を `StreamableHTTPClientTransport(url, { fetch: (u, i) => handler.fetch(new Request(u, i)) })` で接続して `client.callTool()` を呼ぶ。ノードへの `fetch` は `vi.stubGlobal('fetch', ...)` で差し替え、固定レスポンスを返す。
@@ -401,7 +403,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 4. `mcp-publisher login github` → `mcp-publisher publish`
 5. `curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=<mcpName>"` で確認
 ※ Registry は 2026-09 時点で preview（破壊的変更やデータリセットの可能性あり）。
-※ 初回公開のための手順。リリースごとの実際の手順（release PR・タグ・承認・npm・GitHub Release・Registry と、その確認）は `docs/RELEASING.md`。
+※ 初回公開のための手順。リリースごとの実際の手順（release PR・タグ・承認・npm・GitHub Release・Registry と、その確認）は `docs/RELEASING.md`。リリースごとの Registry への公開は `release.yml` の `registry` ジョブが行う。GitHub OIDC でログインし、版と SHA-256 で固定した mcp-publisher を使う。手作業で公開するのは、このジョブが失敗したときだけ。
 
 ## 9. 実装の段階
 
@@ -500,7 +502,7 @@ symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <
 | 形式 | 作るもの・場所 | 使う人 |
 |---|---|---|
 | npm | `release.yml` の `publish` ジョブ（Trusted Publishing、provenance 付き） | `npx -y symbol-mcp-server` を設定するすべての MCP ホスト |
-| MCP Registry | `server.json`（人間が `mcp-publisher publish`。§8） | Registry からサーバーを探すクライアント |
+| MCP Registry | `server.json`（`release.yml` の `registry` ジョブが GitHub OIDC で `mcp-publisher publish`。失敗したときは人間が手作業。§8、`docs/RELEASING.md`） | Registry からサーバーを探すクライアント |
 | .mcpb | `github-release` ジョブが `scripts/build-mcpb.sh` で作り、GitHub Release に添付 | Claude Desktop（ダブルクリックまたは Settings → Extensions） |
 
 **.mcpb の作り方**: 公式 CLI `@anthropic-ai/mcpb` は依存（`tmp`）に修正版の無い脆弱性があるため使わない。`.mcpb` は「直下に `manifest.json` を置いた普通の zip」で（CLI の `pack` も fflate の `zipSync` で同じ形を作り、署名は任意の追記ブロック）、`zip -X -r` で作る。中身は `manifest.json`・`icon.png`・`server/`（tarball の `dist`・`package.json`・`README.md`・`LICENSE` と、そのリリースの lockfile から `npm ci --omit=dev --ignore-scripts` で入れた本番用の `node_modules`）。ビルドは lockfile と `package.json` の版が一致しなければ失敗する。`unzip -Z1` で、`manifest.json` が直下にあること、`server/dist/index.js` と `@modelcontextprotocol/server` があること、開発用依存が無いことを確認する。

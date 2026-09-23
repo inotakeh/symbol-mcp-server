@@ -6,39 +6,18 @@
  *   node scripts/release-notes.mjs 0.7.0 > notes.md
  *
  * The section starts after the line `## [0.7.0] - YYYY-MM-DD` and ends before the next `## [`
- * heading or the link references at the end of the file. Exit codes: 0 printed, 1 no dated
- * section for that version (including [Unreleased]) or an empty one, 2 usage error.
+ * heading or the link references at the end of the file (extractSection in release-files.mjs,
+ * which scripts/release-check.mjs also uses before anything is published). Exit codes: 0 printed,
+ * 1 no dated section for that version (including [Unreleased]) or an empty one, 2 usage error.
  * Development and CI only; the MCP server never loads this file.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extractSection } from './release-files.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CHANGELOG = join(REPO_ROOT, 'CHANGELOG.md');
-
-const NEXT_SECTION = /^## \[/;
-const LINK_REFERENCE = /^\[[^\]]+\]: /;
-
-function escapeRegExp(text) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** Lines of the section for `version`, trimmed of blank lines at both ends; null if absent. */
-function extractSection(markdown, version) {
-  const heading = new RegExp(`^## \\[${escapeRegExp(version)}\\] - \\d{4}-\\d{2}-\\d{2}$`);
-  const lines = markdown.split(/\r?\n/);
-  const start = lines.findIndex((line) => heading.test(line));
-  if (start === -1) return null;
-  const body = [];
-  for (const line of lines.slice(start + 1)) {
-    if (NEXT_SECTION.test(line) || LINK_REFERENCE.test(line)) break;
-    body.push(line);
-  }
-  while (body.length > 0 && body[0].trim() === '') body.shift();
-  while (body.length > 0 && body[body.length - 1].trim() === '') body.pop();
-  return body;
-}
 
 function main(args) {
   if (args.length !== 1 || args[0].trim() === '') {
