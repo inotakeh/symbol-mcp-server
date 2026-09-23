@@ -92,7 +92,7 @@ export const transactionStatusTool = defineTool({
   name: 'symbol_transaction_status',
   title: 'Symbol transaction status',
   description:
-    "Check where one or more Symbol transactions stand right now by hash: confirmed (in a block, with the height), unconfirmed (in the mempool), partial (aggregate bonded waiting for cosignatures), failed (with the node's validation code and its meaning) or not_found. Use it right after announcing a transaction, for example a voting/VRF/node key link, to see whether it went through; use symbol_transaction_get for the contents of a transaction. Up to 20 hashes per call.",
+    "Track where one or more Symbol transactions stand right now, by hash: confirmed (in a block, with the height), unconfirmed (in the mempool), partial (aggregate bonded waiting for cosignatures), failed (with the node's validation code and its meaning) or not_found. For what a transaction contains, use symbol_transaction_get. Use this tool right after announcing a transaction, for example a voting/VRF/node key link, to see whether it went through, and to learn why a transaction failed; the node the transaction was announced to has the most detailed result. Up to 20 hashes per call.",
   inputSchema,
   outputSchema,
   run: async (ctx, { transactionHashes }) => {

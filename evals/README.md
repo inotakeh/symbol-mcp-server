@@ -30,8 +30,8 @@ and argument shapes for the 22 tools, and they double as a deterministic regress
 
 1. Append an object to `cases` in `cases.json`. Use synthetic or public, non-sensitive identifiers
    only: the synthetic fixture account (`fixture` in `test/fixtures/address-vectors.json`, see
-   `test/fixtures/README.md`) and a captured public transaction hash from `test/fixtures/mainnet/`
-   are already used.
+   `test/fixtures/README.md`), a captured public transaction hash from `test/fixtures/mainnet/` and
+   the synthetic failed hash of `test/fixtures/mainnet/transaction-status.json` are already used.
 2. Run `npm test`. The test fails with the zod error if the arguments do not fit the tool's schema,
    which is usually the point: the case then shows how the schema should be read.
 3. If you add a tool, add at least one case for it or the coverage assertion fails.

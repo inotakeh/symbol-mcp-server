@@ -16,6 +16,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The descriptions of the tools that are easy to mix up now start with the question each one
+  answers and name the tool for each neighbouring question in their second sentence:
+  `symbol_node_status` (sync), `symbol_node_health` (service health), `symbol_version_drift`
+  (version behind) and `symbol_network_compare` (blocks behind other nodes);
+  `symbol_transaction_get` (contents) and `symbol_transaction_status` (went through or failed);
+  `symbol_harvesting_status`, `symbol_harvester_watch`, `symbol_delegation_diagnose`,
+  `symbol_harvesting_income` and `symbol_account_get`. `symbol_harvesting_income` still tells the
+  model to use it for every harvest income question and not `symbol_transaction_search` or a
+  browser. The server instructions now also route node sync, blocks behind other nodes and
+  transaction status. Tool names, arguments and outputs are unchanged.
 - `symbol_holdings_value` rounds to the digits Intl (Unicode CLDR, as bundled with the Node.js that
   runs the server) gives the currency, instead of 0 for JPY and KRW and 2 for everything else:
   KWD and BHD now keep 3 decimals and CLF 4. A code Intl does not know (BTC, USDT, ETH) is no

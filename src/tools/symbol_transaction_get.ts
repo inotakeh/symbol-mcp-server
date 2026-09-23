@@ -68,7 +68,7 @@ export const transactionGetTool = defineTool({
   name: 'symbol_transaction_get',
   title: 'Symbol transaction details',
   description:
-    'Look up a Symbol transaction by hash. Checks the confirmed, unconfirmed and partial (aggregate bonded awaiting cosignatures) groups and reports which one it was found in, or not_found. Returns the type name, signer address, recipient, mosaics with alias names and divisibility-adjusted amounts, the decoded message (plain text, or a note when encrypted), fees in XYM, block height and time, and for aggregates a summary of every inner transaction. ' +
+    'Show what a Symbol transaction contains, by hash: type, signer address, recipient, mosaics and amounts, message, fee, block height and time, and the inner transactions of an aggregate. For whether a transaction went through or failed, and why, use symbol_transaction_status: a rejected transaction is in none of the groups this tool reads, so this tool reports it as not_found, the same as an unknown hash. Checks the confirmed, unconfirmed and partial (aggregate bonded awaiting cosignatures) groups and reports which one it was found in, or not_found. Mosaics come with alias names and divisibility-adjusted amounts, the message is decoded (plain text, or a note when encrypted), fees are in XYM, and an aggregate lists a summary of every inner transaction. ' +
     UNTRUSTED_TEXT_NOTE,
   inputSchema,
   outputSchema,

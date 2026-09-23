@@ -67,7 +67,7 @@ export const harvestingStatusTool = defineTool({
   name: 'symbol_harvesting_status',
   title: 'Symbol harvesting status',
   description:
-    'Report delegated harvesting on the configured node: how many remote harvester keys are unlocked (/node/unlockedaccount) and the network limits (minHarvesterBalance, maxHarvesterBalance, harvestBeneficiaryPercentage). With an account, also checks whether its linked key is unlocked on this node, whether its balance and importance allow harvesting, and lists warnings.',
+    "List the delegated harvester keys unlocked on the configured node right now (/node/unlockedaccount) and the network's harvesting limits; with an account, also tell whether its linked key is among them. For whether an account's delegated harvesting works and where it stops, use symbol_delegation_diagnose; for how the unlocked list changed since the last check, symbol_harvester_watch; for harvesting rewards, symbol_harvesting_income. The limits are minHarvesterBalance, maxHarvesterBalance and harvestBeneficiaryPercentage. With an account, the tool also checks that the balance is at least minHarvesterBalance and the importance above zero, and lists warnings.",
   inputSchema,
   outputSchema,
   run: async (ctx, { account }) => {

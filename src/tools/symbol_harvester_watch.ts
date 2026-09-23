@@ -109,7 +109,7 @@ export const harvesterWatchTool = defineTool({
   name: 'symbol_harvester_watch',
   title: 'Symbol unlocked harvester watch',
   description:
-    'Compare the delegated harvesters currently unlocked on the configured node (/node/unlockedaccount) with the previous call: which remote keys were added or removed, the count delta, and min / max / average over the snapshots of the last 30 days. Snapshots (public keys, heights and times only) are kept in one file per node under SYMBOL_STATE_DIR; without that variable the tool reports the current list and says no comparison is possible. Mode compare reads only, compare_and_save (default) also stores the current list, save_only stores without comparing. Use it after a node migration ("did the delegators come back?") and for monthly churn. symbol_harvesting_status shows the current list only.',
+    'Compare the delegated harvesters unlocked on the configured node (/node/unlockedaccount) with the previous snapshot: which remote keys were added or removed, the count delta, and min / max / average over the snapshots of the last 30 days. For the current list and the harvesting limits only, use symbol_harvesting_status; for whether one account\'s delegation works, symbol_delegation_diagnose. Snapshots (public keys, heights and times only) are kept in one file per node under SYMBOL_STATE_DIR; without that variable the tool reports the current list and says no comparison is possible. Mode compare reads only, compare_and_save (default) also stores the current list, save_only stores without comparing. Use it after a node migration ("did the delegators come back?") and for monthly churn.',
   inputSchema,
   outputSchema,
   run: async (ctx: AppContext, { mode, format }) => {
