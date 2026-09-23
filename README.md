@@ -2,6 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/symbol-mcp-server)](https://www.npmjs.com/package/symbol-mcp-server)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/inotakeh/symbol-mcp-server/badge)](https://scorecard.dev/viewer/?uri=github.com/inotakeh/symbol-mcp-server)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14763/badge)](https://www.bestpractices.dev/projects/14763)
 
 > **Symbol only.** This server talks to [Symbol](https://docs.symbol.dev/) (catapult) nodes. It does not
 > support NEM NIS1 (XEM), which is a separate chain with a different API.
@@ -482,6 +483,20 @@ Vulnerability reports: see [`SECURITY.md`](SECURITY.md).
     predicate type of the latest version.
   - In a project that installs it, `npm audit signatures` verifies the registry signatures and
     provenance attestations of the installed packages.
+- **GitHub Releases carry the same package.** Each GitHub Release has two files attached:
+  `symbol-mcp-server-<version>.tgz`, byte for byte the tarball npm serves (its SHA-512 is checked
+  against the registry's `dist.integrity`), and `symbol-mcp-server-<version>.tgz.sigstore.json`,
+  npm's SLSA provenance for that tarball as a Sigstore bundle (its subject is checked to be the
+  tarball's SHA-512). Both are collected by [`scripts/release-assets.sh`](scripts/release-assets.sh).
+  To verify a downloaded pair with the [GitHub CLI](https://cli.github.com/manual/gh_attestation_verify):
+
+  ```sh
+  gh attestation verify symbol-mcp-server-<version>.tgz \
+    --bundle symbol-mcp-server-<version>.tgz.sigstore.json \
+    --repo inotakeh/symbol-mcp-server --digest-alg sha512
+  ```
+
+  `--digest-alg sha512` is needed because npm's provenance names the tarball by its SHA-512.
 - **Who can release.** Only maintainers create release tags (`v1.2.3`). The workflow checks that
   the tag matches `package.json`, runs lint, typecheck and tests, and then waits in the
   `npm-publish` GitHub Environment until a maintainer approves the run.

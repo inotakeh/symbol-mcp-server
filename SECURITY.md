@@ -20,8 +20,30 @@ contact a host other than `SYMBOL_NODE_URL` and `SYMBOL_REFERENCE_NODES`, or wri
 Please use GitHub's private vulnerability reporting ("Security" tab → "Report a vulnerability")
 on this repository. Do not open a public issue for security problems.
 
+The report form is at https://github.com/inotakeh/symbol-mcp-server/security/advisories/new, and
+GitHub explains the process at
+https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability.
+
 You can expect an acknowledgement within 7 days. Please include reproduction steps and the version
 (`npm ls symbol-mcp-server`), and allow reasonable time for a fix before public disclosure.
+
+## Disclosure policy
+
+This project follows coordinated disclosure:
+
+1. The maintainer acknowledges the report within 7 days.
+2. An initial assessment (whether the issue is confirmed, its severity and the affected versions)
+   follows within 14 days of the report.
+3. A fixed version is published to npm within 90 days of the report, sooner for severe issues. If
+   a fix needs longer, a new date is agreed with the reporter.
+4. Once the fixed version is on npm, the vulnerability is disclosed in a GitHub Security Advisory
+   for this repository (with a CVE requested when applicable), crediting the reporter unless they
+   prefer otherwise.
+5. Fixed vulnerabilities are listed under a **Security** heading in `CHANGELOG.md`, in the section
+   of the release that fixes them.
+
+Please do not disclose the vulnerability publicly before the advisory is published or 90 days have
+passed since the report, whichever comes first.
 
 ## Supported versions
 
