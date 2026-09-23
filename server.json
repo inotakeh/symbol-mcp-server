@@ -18,21 +18,42 @@
       "environmentVariables": [
         {
           "name": "SYMBOL_NODE_URL",
-          "description": "Base URL of the Symbol REST node to query, e.g. https://your-node.example:3001",
+          "description": "REST URL of the Symbol node to query, e.g. https://<node-host>:3001; https:// is required (http:// only for localhost / 127.0.0.1) and the port is used exactly as given.",
           "isRequired": true,
           "isSecret": false,
           "format": "string"
         },
         {
+          "name": "SYMBOL_NETWORK",
+          "description": "mainnet or testnet; when set, start-up fails if the node reports a different network.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
           "name": "SYMBOL_TIMEZONE",
-          "description": "IANA time zone for local date/time output, e.g. Asia/Tokyo (default UTC)",
+          "description": "IANA zone such as Asia/Tokyo that adds a local time next to every UTC timestamp.",
           "isRequired": false,
           "isSecret": false,
           "format": "string"
         },
         {
           "name": "SYMBOL_REFERENCE_NODES",
-          "description": "Comma-separated REST URLs of reference nodes for symbol_network_compare (optional)",
+          "description": "Comma-separated https:// node URLs that symbol_network_compare and symbol_version_drift check against; no other host is ever contacted.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "SYMBOL_REQUEST_TIMEOUT_MS",
+          "description": "Per-request timeout in milliseconds, 100 to 600000 (default 10000).",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "SYMBOL_STATE_DIR",
+          "description": "Absolute directory where symbol_harvester_watch keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets), created on first save with mode 0700; when unset, the tool reports the current list without a comparison.",
           "isRequired": false,
           "isSecret": false,
           "format": "string"
