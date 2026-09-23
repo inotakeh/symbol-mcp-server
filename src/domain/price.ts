@@ -2,7 +2,13 @@
  * Pure arithmetic for symbol_holdings_value: a caller-supplied unit price as a decimal string,
  * a currency code, and balance x price in BigInt. No floating point anywhere: the price is kept
  * as an integer plus a number of decimal places, so `raw balance x scaled price` is exact and the
- * only rounding is the final half-up rounding to the currency's customary decimals.
+ * only rounding is the final half-up rounding of `value.amount`.
+ *
+ * How many decimals that rounding keeps (roundingRule): the caller's `decimals` when given; else
+ * the minor-unit digits Intl knows for the currency (Unicode CLDR as bundled with the running
+ * Node.js: JPY 0, USD 2, KWD 3, CLF 4); else, for a code Intl does not know (BTC, USDT), none.
+ * No ISO 4217 table is kept here. A non-zero product that would round to 0 is not rounded either
+ * (multiplyAndRound), so a small holding never shows as 0.
  *
  * The server never fetches or validates a price (DESIGN-BRIEF §2-7: no traffic beyond the node);
  * everything here is arithmetic on values the caller passed in.
@@ -14,15 +20,16 @@ export const MAX_PRICE_DECIMALS = 12;
 /** Longest unit price string accepted, before any normalisation (policy constant). */
 export const MAX_PRICE_LENGTH = 40;
 
+/** Most decimals a caller may ask value.amount to be rounded to (the same bound as the price). */
+export const MAX_ROUNDING_DECIMALS = 12;
+
 /**
- * Customary decimals per currency code for the rounded `value.amount`. Codes not listed round to
- * `DEFAULT_CURRENCY_DECIMALS`. Extend this table to add a currency; nothing else needs to change.
+ * Which rule set the decimals of value.amount: `caller` (the decimals argument), `currency` (the
+ * digits Intl gives the currency), `none` (Intl does not know the code, so no rounding), or
+ * `rounds_to_zero` (rounding would have shown a non-zero value as 0, so no rounding).
  */
-export const CURRENCY_DECIMALS: Readonly<Record<string, number>> = {
-  JPY: 0,
-  KRW: 0,
-};
-export const DEFAULT_CURRENCY_DECIMALS = 2;
+export const DECIMALS_SOURCES = ['caller', 'currency', 'none', 'rounds_to_zero'] as const;
+export type DecimalsSource = (typeof DECIMALS_SOURCES)[number];
 
 const CURRENCY_CODE_PATTERN = /^[A-Z]{3,6}$/;
 const DECIMAL_PATTERN = /^(\d+)(?:\.(\d+))?$/;
@@ -92,11 +99,74 @@ export function parseCurrencyCode(value: string): string {
   return value;
 }
 
-/** Decimals the rounded amount is shown with for a currency (CURRENCY_DECIMALS or the default). */
-export function currencyDecimals(currency: string): number {
-  return Object.hasOwn(CURRENCY_DECIMALS, currency)
-    ? (CURRENCY_DECIMALS[currency] ?? DEFAULT_CURRENCY_DECIMALS)
-    : DEFAULT_CURRENCY_DECIMALS;
+/** Validates the caller's `decimals`: an integer from 0 to MAX_ROUNDING_DECIMALS. */
+export function parseRoundingDecimals(value: number): number {
+  if (!Number.isInteger(value) || value < 0 || value > MAX_ROUNDING_DECIMALS) {
+    throw new PriceParseError(
+      `decimals ${value} is not an integer from 0 to ${MAX_ROUNDING_DECIMALS}. Pass how many decimals to round the value to, or omit decimals to use the digits Intl (Unicode CLDR) gives the currency.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * Digits of the codes Intl knows, looked up once per process (the Intl data does not change).
+ * Unknown codes are not kept, so the map stays within the CLDR currency list whatever codes
+ * callers pass.
+ */
+const knownDigits = new Map<string, number>();
+
+/**
+ * Minor-unit digits of `currency` as Intl knows them (Unicode CLDR as bundled with the running
+ * Node.js; for a few codes CLDR differs from ISO 4217, e.g. HUF 0), or null for a code Intl does
+ * not know (BTC, USDT, XYM). CLDR data, not a table of ours.
+ */
+export function intlCurrencyDigits(currency: string): number | null {
+  const cached = knownDigits.get(currency);
+  if (cached !== undefined) return cached;
+  const digits = lookUpIntlDigits(currency);
+  if (digits !== null) knownDigits.set(currency, digits);
+  return digits;
+}
+
+function lookUpIntlDigits(currency: string): number | null {
+  try {
+    // With fallback 'none' a code Intl does not know has no name. Built here, not at module load,
+    // so a Node.js without Intl loses only this lookup, not the whole server.
+    const names = new Intl.DisplayNames(['en'], { type: 'currency', fallback: 'none' });
+    if (names.of(currency) === undefined) return null;
+    const { maximumFractionDigits } = new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency,
+    }).resolvedOptions();
+    return typeof maximumFractionDigits === 'number' ? maximumFractionDigits : null;
+  } catch {
+    // Not a well-formed three-letter code (USDT has four letters), or no Intl: no digits known.
+    return null;
+  }
+}
+
+/** Where the decimals of a rounding rule come from, before the zero check. */
+export type RuleSource = Exclude<DecimalsSource, 'rounds_to_zero'>;
+
+export interface RoundingRule {
+  /** Decimals to round value.amount to; null for no rounding. */
+  readonly decimals: number | null;
+  readonly source: RuleSource;
+}
+
+/** The decimals of value.amount: the caller's, else the digits Intl gives the currency, else none. */
+export function roundingRule(currency: string, callerDecimals?: number): RoundingRule {
+  if (callerDecimals !== undefined) return { decimals: callerDecimals, source: 'caller' };
+  const digits = intlCurrencyDigits(currency);
+  return digits === null
+    ? { decimals: null, source: 'none' }
+    : { decimals: digits, source: 'currency' };
+}
+
+/** A fixed-point string without trailing fractional zeros: "0.0003000" -> "0.0003", "21.0" -> "21". */
+export function trimFraction(value: string): string {
+  return value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value;
 }
 
 /**
@@ -131,32 +201,53 @@ export function roundScaled(value: bigint, fromDecimals: number, toDecimals: num
 export interface HoldingsValue {
   /** balance x price with every digit: divisibility + price decimals fractional digits. */
   readonly exact: string;
-  /** The same value rounded half up to `decimals` fractional digits. */
-  readonly amount: string;
   /** Fractional digits of `exact`. */
   readonly exactDecimals: number;
+  /**
+   * The same value rounded half up to `roundingDecimals`; when it is not rounded
+   * (`roundingDecimals` null), `exact` without trailing zeros.
+   */
+  readonly amount: string;
+  /** Decimals `amount` was rounded to; null when it was not rounded. */
+  readonly roundingDecimals: number | null;
+  /** The rule's source, or `rounds_to_zero` when the rule was not applied to keep a value non-zero. */
+  readonly decimalsSource: DecimalsSource;
 }
 
 /**
  * Value of `balanceRaw` units of a mosaic with `divisibility` at `price` per whole unit:
- * exact = balanceRaw x price.scaled / 10^(divisibility + price.decimals), and the same rounded to
- * `decimals` places. multiplyAndRound(9111457601413n, 6, parse("12.34"), 0) ->
- * { exact: "112435386.80143642", amount: "112435387" }.
+ * exact = balanceRaw x price.scaled / 10^(divisibility + price.decimals), and the same rounded as
+ * `rule` says. multiplyAndRound(9111457601413n, 6, parse("12.34"), { decimals: 0, ... }) ->
+ * { exact: "112435386.80143642", amount: "112435387", ... }. A rule without decimals keeps every
+ * digit, and so does a non-zero value that would round to 0 (a small holding never shows as 0).
  */
 export function multiplyAndRound(
   balanceRaw: bigint,
   divisibility: number,
   price: DecimalPrice,
-  decimals: number,
+  rule: RoundingRule,
 ): HoldingsValue {
   if (balanceRaw < 0n) throw new RangeError('balanceRaw must be non-negative');
   if (!Number.isInteger(divisibility) || divisibility < 0)
     throw new RangeError('divisibility >= 0');
   const exactDecimals = divisibility + price.decimals;
   const raw = balanceRaw * price.scaled;
-  return {
-    exact: formatScaled(raw, exactDecimals),
-    amount: formatScaled(roundScaled(raw, exactDecimals, decimals), decimals),
+  const exact = formatScaled(raw, exactDecimals);
+  const unrounded = (decimalsSource: DecimalsSource): HoldingsValue => ({
+    exact,
     exactDecimals,
+    amount: trimFraction(exact),
+    roundingDecimals: null,
+    decimalsSource,
+  });
+  if (rule.decimals === null) return unrounded(rule.source);
+  const rounded = roundScaled(raw, exactDecimals, rule.decimals);
+  if (raw > 0n && rounded === 0n) return unrounded('rounds_to_zero');
+  return {
+    exact,
+    exactDecimals,
+    amount: formatScaled(rounded, rule.decimals),
+    roundingDecimals: rule.decimals,
+    decimalsSource: rule.source,
   };
 }
