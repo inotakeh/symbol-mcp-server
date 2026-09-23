@@ -11,7 +11,7 @@ Full design brief: @docs/DESIGN-BRIEF.md (read it before any non-trivial change)
 - `npm run lint` — biome
 - `npm run typecheck` — tsc --noEmit
 - `SYMBOL_INTEGRATION=1 npm test` — live-node integration tests (opt-in, never in CI)
-- `npx @modelcontextprotocol/inspector node dist/index.js` — manual tool check
+- `npx @modelcontextprotocol/inspector -e SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js` — manual tool check (the Inspector does not pass the shell's variables to the server)
 
 Run `npm run lint && npm run typecheck && npm test` before every commit.
 
