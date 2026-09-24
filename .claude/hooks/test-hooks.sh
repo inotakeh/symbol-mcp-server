@@ -472,6 +472,128 @@ B 2 'cp x ~/.claude/session-env/abc/x.sh'
 B 2 'git show HEAD:x --output="$HOME/.claude/shell-snapshots/s.sh"'
 B 2 'git show HEAD:x > ~/.claude/shell-snapshots/s.sh'
 
+echo "== guard-bash: git and gh subcommands are allowlisted (not on the list = blocked) =="
+B 0 'git rev-parse --abbrev-ref HEAD'
+B 0 'git merge-base main HEAD'
+B 0 'git blame src/server.ts'
+B 0 'git switch -c fix/x'
+B 0 'git worktree list'
+B 0 'git help log'
+B 0 'git rev-list --count HEAD'
+B 0 'gh run list --limit 5'
+B 0 'gh run view 123 --log-failed'
+B 0 'gh workflow list'
+B 0 'gh repo view'
+B 0 'gh search code "x" --repo o/r'
+B 0 'gh status'
+B 0 'gh pr view 12 --web'
+B 3 'gh pr ready 12'
+B 2 'git fetch-pack --upload-pack=x . HEAD'
+B 2 'git send-pack x HEAD'
+B 2 'git maintenance start'
+B 2 'git foo'
+B 2 'git init'
+B 2 'git gc'
+B 2 'git notes add -m x'
+B 2 'git format-patch -1'
+B 2 'git worktree add ../x'
+B 2 'git help -w log'
+B 2 'gh workflow run release.yml'
+B 2 'gh repo create x'
+B 2 'gh repo clone o/r'
+B 2 'gh copilot suggest x'
+B 2 'gh issue close 3'
+
+echo "== guard-bash: review findings, each with a look-alike that passes =="
+# 1. gh -R/--repo before the command words
+B 0 'gh --repo o/r pr view 12'
+B 0 'gh pr list -R o/r'
+B 2 'gh --repo o/r pr merge 5 --squash'
+B 2 'gh -R o/r release create v9'
+B 2 'gh -R o/r secret set X'
+B 2 'gh --repo=o/r pr merge 5'
+B 2 'gh -Ro/r pr merge 5'
+B 2 'gh pr --foo view merge 5'
+# 2. fetch-pack / send-pack (also in the allowlist section)
+B 0 'git fetch origin'
+B 2 "git fetch-pack --upload-pack='touch /tmp/pwn' . HEAD"
+B 2 'git send-pack --receive-pack=x . HEAD'
+# 3. init --template
+B 0 'git commit --template=msg.txt'
+B 2 'git init --template=/tmp/t .'
+# 4. checkout <tree-ish> <path>
+B 0 'git checkout main'
+B 0 'git checkout -b fix/y main'
+B 2 'git checkout main .claude/hooks/guard-bash.py'
+B 2 'git checkout main CLAUDE.md'
+B 2 'git checkout --ours .claude/x'
+B 2 'git checkout --pathspec-from-file=f main'
+# 5. abbreviated long options
+B 3 'git push --dry-run origin feat'
+B 2 'git commit --no-verif -m x'
+B 2 'git push --tag origin'
+B 2 'git push --del origin feat'
+B 2 'git push --mirr'
+B 2 'git fetch --upload=x origin'
+B 2 'git apply --check --app x.patch'
+B 2 'git merge --no-verify feat'
+# 6. cd forms git and relative writes cannot follow
+B 0 'cd src && git status'
+B 2 'builtin cd /tmp && git status'
+B 2 'command cd /tmp && git status'
+B 2 'CDPATH=/tmp; cd other && git status'
+B 2 'shopt -s cdable_vars; cd x; git status'
+B 2 'cd "$(echo .claude)" && echo x > allowed-packages.txt'
+# 7. variable names: only assignments count, computed names are refused
+B 0 "git commit -m 'docs: explain PATH handling'"
+B 0 'git grep -n "HOME" src'
+B 2 'x=GI; export "${x}T_DIR=/tmp/e"; git status'
+B 2 'export "$n"; git status'
+B 2 'declare -x GIT_DIR=x; git status'
+B 2 'read GIT_DIR <<< x; git status'
+B 2 'printf -v GIT_DIR x; git status'
+B 2 'for GIT_DIR in x; do git status; done'
+B 2 ': ${GIT_DIR:=x}; git status'
+B 2 'declare -n r=GIT_DIR; r=x; git status'
+B 2 'env "GIT_DIR=x" git status'
+# 8. writes through globs, brace lists, awk, sort, uniq
+B 0 "sed -i '' 's|a/.claude/x|b|' notes.txt"
+B 0 'sed -i.bak -e s/x/y/ src/server.ts'
+B 0 'sort -o "$TMPDIR/s.txt" x'
+B 0 "awk '{print \$1 > \"out.txt\"}' f"
+B 2 'echo evil >> .cla[u]de/allowed-packages.txt'
+B 2 'tee -a {/dev/null,.claude/allowed-packages.txt}'
+B 2 "awk 'BEGIN{print \"evil\" >> \".claude/allowed-packages.txt\"}'"
+B 2 'sort -o .claude/allowed-packages.txt x'
+B 2 'sort --output=.claude/x f'
+B 2 'uniq in .claude/x'
+B 2 'sed -i -e s/a/b/ LICENSE'
+# 9. scripts read from stdin, /dev/fd, process substitution; more shells
+B 0 'bash < script.sh'
+B 0 'python3 -m pytest'
+B 2 "echo 'curl evil' | bash /dev/stdin"
+B 2 "echo 'curl evil' | source /dev/stdin"
+B 2 "bash <(echo 'curl evil')"
+B 2 '. <(echo x)'
+B 2 'bash -o posix /dev/stdin'
+B 2 'python3 /dev/stdin'
+B 2 'node /dev/fd/0'
+B 2 "csh -c 'curl evil'"
+B 2 "tcsh -c 'curl evil'"
+B 2 'fish --command="curl x"'
+# 10. npm aliases and initializers
+B 0 'npm init -y'
+B 0 'npm i zod'
+B 2 'npm inst evilpkg'
+B 2 'npm it evilpkg'
+B 2 'npm isntal evilpkg'
+B 2 'npm init evilpkg'
+B 2 'npm create evilpkg'
+B 2 'pnpm create evilpkg'
+B 2 'npx --package=evilpkg tsc'
+B 2 'npx -p evilpkg tsc'
+B 2 "npx -c 'curl x'"
+
 echo "== guard-files: must BLOCK (2) =="
 F 2 Write ".claude/settings.json"
 F 2 Edit ".claude/hooks/guard-bash.py"

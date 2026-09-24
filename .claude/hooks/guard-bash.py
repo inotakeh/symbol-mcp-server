@@ -18,10 +18,15 @@ permissionDecision "ask"), or stays silent (exit 0) so the normal permission
 rules / classifier decide.
 
 git and gh run OUTSIDE the OS sandbox (settings.local.json excludedCommands),
-so for them this hook is the only defence. Refused: configuration that runs
-commands (git -c other than a small allowlist, git config writes, HOME / PATH /
-GIT_* / GH_* / EDITOR / PAGER / BASH_ENV / LD_* / DYLD_* / NODE_OPTIONS ... in
-the same command: the hooks, pagers and ssh that git starts run outside the
+so for them this hook is the only defence, and their subcommands are
+ALLOWLISTED (GIT_ALLOWED, GH_ALLOWED): anything not on the lists is refused by
+default, including aliases and external git-* / gh-* commands. Within the
+allowed subcommands, long options are also matched when abbreviated (git
+accepts unique prefixes). Refused: configuration that runs
+commands (git -c other than a small allowlist, git config writes, assigning
+HOME / PATH / CDPATH / GIT_* / GH_* / EDITOR / PAGER / BASH_ENV / LD_* / DYLD_* /
+NODE_OPTIONS ... or a variable whose name is computed, in the same command:
+the hooks, pagers and ssh that git starts run outside the
 sandbox as well), subcommands that run commands (submodule foreach, bisect
 run, rebase --exec, difftool --extcmd, grep -O), git maintenance (it registers
 background jobs), network access other than a configured remote by name
@@ -47,6 +52,7 @@ Exit codes (per Claude Code hooks reference):
   0  -> no decision (or JSON on stdout with a decision)
   2  -> block; stderr is shown to Claude as the reason
 """
+import glob
 import json
 import os
 import re
@@ -76,6 +82,10 @@ TEXT_RULES = [
 # ---------------------------------------------------------------------------
 # Messages for the command rules
 # ---------------------------------------------------------------------------
+MSG_GIT_NOT_ALLOWED = "git {} is not on the guardrail's allowlist of git subcommands (git runs outside the sandbox, so subcommands not on the list are refused by default). If it is needed, a human runs it, or adds it to GIT_ALLOWED in .claude/hooks/guard-bash.py."
+MSG_GH_NOT_ALLOWED = "gh {} is not on the guardrail's allowlist of gh commands (gh runs outside the sandbox, so commands not on the list are refused by default). If it is needed, a human runs it, or adds it to GH_ALLOWED in .claude/hooks/guard-bash.py."
+MSG_GH_FLAG_FIRST = "Put the gh command words before their flags: an unknown flag in front of them can hide which command runs. Only -R/--repo/--hostname may come first."
+MSG_GIT_ENV_DYNAMIC = "A variable whose name is computed at run time is set in a command that runs git or gh, which hides whether it changes the configuration or programs they load. Write variable names literally."
 MSG_PARSE = "The command could not be parsed ({}). Fix the quoting or the heredoc/substitution; commands the guardrail cannot read are refused."
 MSG_DYNAMIC = "The command name is computed at run time (variable, substitution, glob or brace expansion), which hides the real command from the guardrails. Write the command name literally."
 MSG_NETWORK = "curl/wget are disabled for the agent. Use the WebFetch tool for documentation; the MCP server itself uses fetch() in code."
@@ -96,14 +106,14 @@ MSG_NPM_EXEC_C = "npm exec -c / --call runs a shell string, which hides the real
 MSG_INLINE_SPAWN = "Inline interpreter code that starts processes is forbidden (the guardrails cannot see the command it runs). Run the command directly."
 MSG_INLINE_WRITE = "Inline interpreter code that writes to protected files (.claude/, .github/workflows/, CLAUDE.md, AGENTS.md, .npmrc, package-lock.json, LICENSE, SECURITY.md, CODEOWNERS, server.json, mcpb/manifest.json, .gitignore, .git/) is forbidden. Propose the change in chat for a human to apply."
 MSG_AWK = "awk programs that run commands (system() or piping to/from a command) are forbidden. Run the command directly."
-MSG_PROTECTED = "shell writes to protected files (.claude/, .github/workflows/, CLAUDE.md, AGENTS.md, .npmrc, package-lock.json, LICENSE, SECURITY.md, CODEOWNERS, server.json, mcpb/manifest.json, .gitignore, .git/) are forbidden. Propose the change in chat for a human to apply."
+MSG_PROTECTED = "shell writes to protected files (.claude/, .github/workflows/, CLAUDE.md, AGENTS.md, .npmrc, package-lock.json, LICENSE, SECURITY.md, CODEOWNERS, server.json, mcpb/manifest.json, .gitignore, .git/) are forbidden, and so are relative writes after a cd whose target cannot be worked out. Propose the change in chat for a human to apply."
 MSG_FORCE = "Force-pushes and remote branch deletion are forbidden."
 MSG_MAIN = "Pushing directly to main/master is forbidden. Push a feature branch and open a PR."
 MSG_TAG_PUSH = "Pushing tags is forbidden (tags trigger releases; a human pushes them)."
 MSG_NO_VERIFY = "Bypassing commit hooks (--no-verify) is forbidden."
 MSG_GIT_CONFIG = "Changing git configuration is forbidden. git config may only be read (--get, --get-all, --get-regexp, --list, -l, --show-origin, or 'git config get/list')."
 MSG_GIT_C = "git -c {} is forbidden. git runs outside the sandbox and configuration can run commands; only commit.gpgsign, core.quotepath, color.* and advice.* may be set with -c."
-MSG_GIT_ENV = "Setting or mentioning {} in a command that runs git or gh is forbidden: git and gh run outside the sandbox and these variables change which configuration, programs or editors they run."
+MSG_GIT_ENV = "Setting {} in a command that runs git or gh is forbidden: git and gh (and the hooks, pagers, editors and ssh they start) run outside the sandbox, and this variable changes which configuration, programs or code they load."
 MSG_GIT_LOCATION = "git --git-dir / --work-tree / --exec-path=... / --config-env are forbidden (git runs outside the sandbox; they point it at other configuration or programs)."
 MSG_GIT_DIR = "git and gh run outside the sandbox, so they may only run in this repository: no -C or cd into another directory, a computed directory, or a nested repository."
 MSG_REMOTE_CHANGE = "Changing git remotes is forbidden."
@@ -130,7 +140,9 @@ PRIV_CMDS = {"sudo", "doas", "su"}
 REMOTE_CMDS = {"ssh", "scp", "sftp", "rsync"}
 NODE_OPS_CMDS = {"symbol-bootstrap", "shoestring"}
 DOCKER_CMDS = {"docker", "docker-compose"}
-SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "mksh", "yash", "posh", "csh", "tcsh", "fish"}
+# Paths through which a shell or an interpreter reads a script the guardrail cannot see
+STDIN_SCRIPT = re.compile(r"^(-|/dev/stdin|/dev/fd/\d+|/proc/self/fd/\d+|[<>]\(.*)$", re.S)
 AWKS = {"awk", "gawk", "mawk", "nawk"}
 WRAPPERS = {"env", "command", "builtin", "exec", "nice", "nohup", "time", "timeout", "stdbuf", "caffeinate",
             "arch", "busybox", "setsid", "xargs", "flock", "watch", "parallel", "script"}
@@ -175,18 +187,46 @@ GIT_PLUMBING = {"update-index", "mktree", "commit-tree", "fast-import", "read-tr
 GIT_OTHER = {"send-email", "instaweb", "daemon", "svn", "p4", "cvsimport", "cvsserver", "cvsexportcommit", "archimport",
              "shell", "upload-pack", "receive-pack", "upload-archive",
              "maintenance"}  # register/start write the global config and a launchd/cron job that runs git later
+# git and gh run outside the sandbox: only these subcommands are allowed; anything else (including
+# aliases and external git-*/gh-* commands) is refused. The rules in _git/_gh still apply to them.
+GIT_ALLOWED = {
+    "status", "diff", "log", "show", "add", "commit", "restore", "switch", "checkout", "branch", "fetch", "pull",
+    "push", "stash", "rev-parse", "ls-files", "grep", "blame", "tag", "config", "apply", "am", "merge-base",
+    "describe", "remote", "shortlog", "cat-file", "ls-tree", "reflog", "show-ref", "for-each-ref", "hash-object",
+    "merge", "rebase", "cherry-pick", "reset", "clean", "mv", "rm", "worktree", "version", "help", "var",
+    # also allowed, with the restrictions below: read-only or already tested before the allowlist
+    "ls-remote", "rev-list", "submodule", "update-index",
+}
+GH_ALLOWED = {  # command -> allowed subcommands (None: no subcommand)
+    "pr": {"create", "view", "list", "diff", "checks", "edit", "comment", "close", "reopen", "ready", "status"},
+    "issue": {"view", "list", "create", "comment"},
+    "run": {"list", "view", "watch", "rerun", "cancel"},
+    "workflow": {"list", "view"},
+    "release": {"view", "list"},
+    "repo": {"view"},
+    "search": {"code", "commits", "issues", "prs", "repos"},
+    "config": {"get", "list"},
+    "api": None,
+    "status": None,
+    "browse": None,
+}
+GH_VALUE_FLAGS = {"-R", "--repo", "--hostname"}
+GH_BOOL_FLAGS = {"-h", "--help", "--version"}
 GH_BLOCKED = {"secret", "variable", "auth", "alias", "extension", "extensions", "ext", "codespace", "cs", "ssh-key", "gpg-key"}
 GH_WRITE_METHODS = {"DELETE", "PATCH", "PUT", "POST"}
 REMOTE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 TAG_LIKE = re.compile(r"^v?\d+(\.\d+)+")
 # Variables that change which configuration, programs or code git/gh and the processes they start
 # (hooks, pagers, editors, ssh, gpg, interpreters) load. Those processes run outside the sandbox too.
-EXEC_ENV = re.compile(
-    r"(?<![\w${])(HOME|PATH|XDG_CONFIG_HOME|XDG_CONFIG_DIRS|EDITOR|VISUAL|PAGER|BROWSER|LESSOPEN|LESSCLOSE|GH_[A-Z0-9_]+|GIT_[A-Z0-9_]+"
+EXEC_ENV_NAME = re.compile(
+    r"(HOME|PATH|CDPATH|XDG_CONFIG_HOME|XDG_CONFIG_DIRS|EDITOR|VISUAL|PAGER|BROWSER|LESSOPEN|LESSCLOSE|GH_[A-Z0-9_]+|GIT_[A-Z0-9_]+"
     r"|BASH_ENV|ENV|SHELL|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|DYLD_[A-Z0-9_]+|PYTHONPATH|PYTHONHOME|PYTHONSTARTUP"
-    r"|NODE_OPTIONS|NODE_PATH|PERL5LIB|PERL5OPT|RUBYOPT|RUBYLIB|SSH_ASKPASS|GNUPGHOME)(?!\w)"
+    r"|NODE_OPTIONS|NODE_PATH|PERL5LIB|PERL5OPT|RUBYOPT|RUBYLIB|SSH_ASKPASS|GNUPGHOME)"
 )
-SAFE_ENV = re.compile(r"(?<![\w${])(GIT_TERMINAL_PROMPT=0|GIT_OPTIONAL_LOCKS=0|(GIT_|GH_)?PAGER=cat)(?![\w])")
+SAFE_ENV = {("GIT_TERMINAL_PROMPT", "0"), ("GIT_OPTIONAL_LOCKS", "0"), ("PAGER", "cat"), ("GIT_PAGER", "cat"), ("GH_PAGER", "cat")}
+# Builtins whose arguments name variables (NAME or NAME=value)
+SETTERS = {"export", "declare", "typeset", "local", "readonly"}
+READERS = {"read", "mapfile", "readarray"}
 ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?=")
 ASSIGN_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?$")
 TMP_VAR = re.compile(r"^(\$TMPDIR|\$\{TMPDIR\}|\$\{TMPDIR:\?[^}]*\})/(.+)$")
@@ -570,6 +610,7 @@ class Ctx(object):
         self.codes = []    # (lang, code): inline interpreter code
         self.problems = []  # block reasons found while collecting
         self.asks = []     # reasons to ask a human
+        self.assigns = []  # (name, value): variables this command line sets; name None = computed at run time
         without = re.sub(r"\$\{?TMPDIR", "", flat)
         # TMPDIR may be changed in this command line (assigned, exported, read, unset...); decide() also
         # counts a sourced file
@@ -577,15 +618,21 @@ class Ctx(object):
 
     def bases(self):
         """Directories git/gh may run in: the session cwd and every literal cd target. None = unknown."""
+        # CDPATH and cdable_vars make "cd name" go somewhere the text does not say
+        if "cdable_vars" in self.flat or any(n in ("CDPATH", None) for n, _ in self.assigns):
+            return None
         out = [self.cwd]
         cur = self.cwd
         for c in self.cmds:
-            if not c.words:
+            words = c.words
+            while words and words[0].text in ("builtin", "command") and len(words) > 1:
+                words = words[1:]
+            if not words:
                 continue
-            name = _base(c.words[0].text)
+            name = _base(words[0].text)
             if name not in ("cd", "pushd", "popd"):
                 continue
-            args = [w for w in c.words[1:] if not w.text.startswith("-")]
+            args = [w for w in words[1:] if not w.text.startswith("-")]
             if name == "popd" or not args or args[0].dynamic or args[0].glob or args[0].text == "-":
                 return None
             cur = os.path.normpath(os.path.join(cur, os.path.expanduser(args[0].text)))
@@ -628,6 +675,8 @@ def _process(cmd, ctx, depth):
     while words:
         w = words[0]
         if w.assign:
+            name, _, value = w.text.partition("=")
+            ctx.assigns.append((name.rstrip("+").split("[")[0], value))
             words.pop(0)
             continue
         if not w.quoted and w.text in RESERVED:
@@ -637,6 +686,8 @@ def _process(cmd, ctx, depth):
             continue
         break
     if words and not words[0].quoted and words[0].text in DROP_REST:
+        if words[0].text in ("for", "select") and len(words) > 1:
+            ctx.assigns.append((words[1].text if not words[1].dynamic else None, ""))  # the loop variable
         words = []
     cmd.words = words
     ctx.cmds.append(cmd)
@@ -864,11 +915,69 @@ def _find_execs(words):
     return out
 
 
+def _record_assigns(name, words, ctx):
+    """Record the variables a command sets (for the git/gh environment rule). Computed names are recorded as None."""
+    args = words[1:]
+
+    def add(w_or_text, value=""):
+        text = w_or_text if isinstance(w_or_text, str) else w_or_text.text
+        nm = text.split("=", 1)[0]
+        if re.search(r"[$`]", nm):
+            ctx.assigns.append((None, value))
+        else:
+            ctx.assigns.append((nm.rstrip("+").split("[")[0], value))
+
+    if name == "env":
+        for w in args:
+            if w.text.startswith("-"):
+                continue
+            if w.assign or ASSIGN_RE.match(w.text) or ("=" in w.text and re.search(r"[$`]", w.text.split("=", 1)[0])):
+                add(w, w.text.partition("=")[2])
+                continue
+            break
+    elif name in SETTERS:
+        nameref = any(re.match(r"^-[A-Za-z]*n", w.text) for w in args)
+        for w in args:
+            if w.text.startswith(("-", "+")) and not w.dynamic:
+                continue
+            nm, _, value = w.text.partition("=")
+            add(w, value)
+            if nameref and value:
+                add(value)  # declare -n ref=NAME makes later assignments to ref set NAME
+    elif name in READERS:
+        for w in args:
+            if not w.text.startswith("-") or w.dynamic:
+                add(w)
+    elif name == "printf":
+        for k, w in enumerate(args):
+            if w.text == "-v" and k + 1 < len(args):
+                add(args[k + 1])
+            elif w.text.startswith("-v") and len(w.text) > 2:
+                add(w.text[2:])
+    elif name == "getopts" and len(args) >= 2:
+        add(args[1])
+
+
+def _stdin_script(name, a):
+    """True when a shell, source or an interpreter would run a script the guardrail cannot read."""
+    # Any positional, not only the first: an option value (bash -o posix /dev/stdin) comes before the script.
+    # "bash -" / "python3 -" read stdin: a heredoc there is checked, a pipe is refused by the pipe rule.
+    pos = [t for t in a[1:] if not t.startswith("-") and t != "-"]
+    if name in SHELLS or name in ("source", "."):
+        return any(STDIN_SCRIPT.match(t) for t in pos)
+    lang = _interp_lang(name)
+    if lang:
+        codes, _ = _inline(lang, a)
+        return not codes and any(STDIN_SCRIPT.match(t) for t in pos)
+    return False
+
+
 def _expand(words, cmd, ctx, depth):
     while words:
         ctx.invs.append((words, cmd))
         a = _texts(words)
         name = _base(a[0])
+        _record_assigns(name, words, ctx)
         if name in WRAPPERS:
             idx, strings = _wrapped(name, a)
             for st in strings:
@@ -925,12 +1034,17 @@ def _pkg_name(p):
     return p.split("@")[0]
 
 
+# npm's own aliases for install (npm/lib/utils/cmd-list.js) and install-test
+NPM_INSTALL = {"install", "i", "in", "ins", "inst", "insta", "instal", "isnt", "isnta", "isntal", "isntall", "add",
+               "install-test", "it"}
+
+
 def check_installs(argv, allowed):
     """Block 'npm install <pkg>' etc. unless every package is in the allowlist."""
     tool = _base(argv[0])
     rest = argv[1:]
     pkgs = None
-    if tool == "npm" and rest and rest[0] in ("install", "i", "add", "isntall", "in", "ins"):
+    if tool == "npm" and rest and rest[0] in NPM_INSTALL:
         pkgs = [a for a in rest[1:] if not a.startswith("-")]
     elif tool == "pnpm" and rest and rest[0] in ("add", "install", "i"):
         pkgs = [a for a in rest[1:] if not a.startswith("-")]
@@ -947,6 +1061,14 @@ def check_installs(argv, allowed):
     return problems
 
 
+def _initializer(pkg):
+    """npm init <pkg> / create <pkg> runs the package create-<pkg> (@scope -> @scope/create, @scope/x -> @scope/create-x)."""
+    if pkg.startswith("@"):
+        scope, _, rest = pkg.partition("/")
+        return scope + "/create" + ("-" + rest if rest else "")
+    return "create-" + pkg
+
+
 def check_npx(argv, allowed):
     tool = _base(argv[0])
     rest = argv[1:]
@@ -958,8 +1080,12 @@ def check_npx(argv, allowed):
     elif tool in ("npx", "bunx") or (tool in ("pnpm", "yarn") and rest and rest[0] == "dlx"):
         if tool in ("pnpm", "yarn"):
             rest = rest[1:]
-        args = [a for a in rest if not a.startswith("-")]
-        pkgs = args[:1]
+        values = set(_option_value(rest, ("--package", "-p")))
+        args = [a for a in rest if not a.startswith("-") and a not in values]
+        pkgs = sorted(values) + args[:1]  # every --package is installed, and the first word is run
+    elif (tool == "npm" and rest and rest[0] in ("init", "create", "innit")) or (tool in ("pnpm", "yarn", "bun") and rest and rest[0] == "create"):
+        args = [a for a in rest[1:] if not a.startswith("-")]
+        pkgs = [_initializer(args[0])] if args else []
     else:
         return []
     return [f"'{_pkg_name(p)}' (not in .claude/allowed-npx.txt)" for p in pkgs if _pkg_name(p) not in allowed]
@@ -975,17 +1101,60 @@ def _is_protected_path(p):
     return p.endswith("mcpb/manifest.json")
 
 
+def _brace_expand(s, limit=64):
+    """Expand {a,b} alternatives the way bash would (ranges are left as they are)."""
+    depth = 0
+    start = None
+    for i, c in enumerate(s):
+        if c == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif c == "}" and depth:
+            depth -= 1
+            if depth == 0:
+                inner = s[start + 1:i]
+                parts, d, cur = [], 0, ""
+                for ch in inner:
+                    if ch == "," and d == 0:
+                        parts.append(cur)
+                        cur = ""
+                        continue
+                    d += (ch == "{") - (ch == "}")
+                    cur += ch
+                parts.append(cur)
+                if len(parts) < 2:
+                    continue
+                out = []
+                for p in parts:
+                    out += _brace_expand(s[:start] + p + s[i + 1:], limit)
+                    if len(out) >= limit:
+                        break
+                return out[:limit]
+    return [s]
+
+
 def _protected_target(text, ctx):
     if not text or text == "-" or text.startswith("/dev/"):
         return False
     # Claude Code sources this file (and the shell snapshots under ~/.claude) before each Bash call
-    if re.search(r"\$\{?CLAUDE_ENV_FILE\b", text) or _is_protected_path(text):
+    if re.search(r"\$\{?CLAUDE_ENV_FILE\b", text):
         return True
-    p = os.path.expanduser(text)
-    for base in ctx.bases() or [ctx.cwd]:
-        ab = os.path.normpath(os.path.join(base, p))
-        if _is_protected_path(ab) or _is_protected_path(os.path.realpath(ab)):
+    bases = ctx.bases()
+    for cand in _brace_expand(text):
+        if _is_protected_path(cand):
             return True
+        p = os.path.expanduser(cand)
+        if bases is None and not os.path.isabs(p) and not TMP_VAR.match(cand):
+            return True  # relative to a directory the hook cannot work out
+        for base in bases or [ctx.cwd]:
+            ab = os.path.normpath(os.path.join(base, p))
+            paths = [ab]
+            if re.search(r"[*?\[]", ab):
+                paths += glob.glob(ab)  # a glob that matches an existing file writes that file
+            for q in paths:
+                if _is_protected_path(q) or _is_protected_path(os.path.realpath(q)):
+                    return True
     return False
 
 
@@ -1008,11 +1177,19 @@ def _write_targets(name, a):
     if name in ("mv", "ln", "install", "rm", "rmdir", "unlink", "truncate", "touch", "mkdir", "chmod", "chown", "chgrp", "shred"):
         return pos
     if name == "sed" and any(t == "--in-place" or t.startswith(("--in-place=", "-i")) or (_is_cluster(t) and "i" in t) for t in args):
-        return pos
+        files = [t for t in pos if t]  # BSD "sed -i ''" gives an empty suffix
+        script_given = any(t in ("-e", "-f", "--expression", "--file") or t.startswith(("--expression=", "--file=")) for t in args)
+        return files if script_given else files[1:]  # otherwise the first word is the script
     if name == "perl" and any(t.startswith("-i") or (_is_cluster(t) and "i" in t) for t in args):
         return pos
     if name == "dd":
         return [t[3:] for t in args if t.startswith("of=")]
+    if name == "sort":
+        return _option_value(args, ("-o", "--output")) + [t[2:] for t in args if t.startswith("-o") and len(t) > 2]
+    if name == "uniq" and len(pos) > 1:
+        return pos[1:2]
+    if name in AWKS:
+        return [m.group(1) for p in _awk_programs(a) for m in re.finditer(r"\bprintf?\b[^;{}]*?>>?\s*\"([^\"]*)\"", p)]
     return []
 
 
@@ -1070,6 +1247,21 @@ def _repo_dir(ctx, dir_words):
     return None
 
 
+def _opt_is(t, name, min_len=4):
+    """t is the long option name, or an abbreviation of it (git accepts unique prefixes of long options)."""
+    key = t.split("=", 1)[0]
+    if key == name:
+        return True
+    return key.startswith("--") and len(key) >= min_len and name.startswith(key)
+
+
+def _opt_any(t, names):
+    for nm in names:
+        if _opt_is(t, nm):
+            return nm
+    return None
+
+
 def _git_tag(rest):
     write_long = {"--delete", "--annotate", "--sign", "--local-user", "--force", "--message", "--file", "--edit",
                   "--cleanup", "--create-reflog", "--trailer"}
@@ -1085,7 +1277,7 @@ def _git_tag(rest):
             break
         if t.startswith("--"):
             key = t.split("=", 1)[0]
-            if key in write_long:
+            if _opt_any(t, write_long):
                 return MSG_TAG
             if key == "--list" or key in list_implied:
                 listing = True
@@ -1134,8 +1326,9 @@ def _git_push(rest):
             break
         if t.startswith("--"):
             key = t.split("=", 1)[0]
-            if key in blocked and not (key == "--recurse-submodules" and t.endswith("=no")):
-                return blocked[key]
+            hit = _opt_any(t, blocked)
+            if hit and not (hit == "--recurse-submodules" and t.endswith("=no")):
+                return blocked[hit]
             if key == "--repo":
                 val = t.split("=", 1)[1] if "=" in t else (rest[i + 1] if i + 1 < n else "")
                 if not REMOTE_NAME.match(val):
@@ -1186,9 +1379,9 @@ def _git_fetch(sub, rest):
             break
         if t.startswith("--"):
             key = t.split("=", 1)[0]
-            if key in ("--upload-pack", "--receive-pack", "--exec"):
+            if _opt_any(t, ("--upload-pack", "--receive-pack", "--exec")):
                 return MSG_GIT_EXEC
-            if key in ("--recurse-submodules", "--recurse-submodules-default") and not t.endswith("=no"):
+            if _opt_any(t, ("--recurse-submodules", "--recurse-submodules-default")) and not t.endswith("=no"):
                 return MSG_GIT_NET
             if key == "--multiple":
                 multiple = True
@@ -1277,9 +1470,17 @@ def _git(words, ctx):
             return r
     if sub == "clone":
         return MSG_GIT_NET
-    if sub == "commit":
-        if "--no-verify" in rest:
+    # options that run a command, change the repository layout or skip hooks, in any subcommand
+    # (also abbreviated: git accepts unique prefixes of long options)
+    for t in rest:
+        if t == "--":
+            break
+        hit = _opt_any(t, ("--upload-pack", "--receive-pack", "--exec", "--extcmd", "--open-files-in-pager", "--no-verify"))
+        if hit == "--no-verify":
             return MSG_NO_VERIFY
+        if hit:
+            return MSG_GIT_EXEC
+    if sub == "commit":
         for t in rest:
             if t.startswith("-") and not t.startswith("--"):
                 for ch in t[1:]:
@@ -1310,20 +1511,30 @@ def _git(words, ctx):
     if sub == "archive" and any(t.startswith("--remote") for t in rest):
         return MSG_GIT_NET
     if sub in ("apply", "am"):
-        if not any(t in ("--check", "--stat", "--numstat", "--summary") for t in rest) or "--apply" in rest:
+        if not any(t in ("--check", "--stat", "--numstat", "--summary") for t in rest) or any(_opt_is(t, "--apply") for t in rest):
             return MSG_APPLY
     if sub in GIT_PLUMBING:
         if not (sub == "update-index" and rest and all(t in ("--refresh", "--really-refresh", "-q") for t in rest)):
             return MSG_PLUMBING
     if sub in GIT_OTHER or sub.startswith(("credential", "remote-", "http-")):
         return MSG_GIT_OTHER
+    if sub not in GIT_ALLOWED:
+        return MSG_GIT_NOT_ALLOWED.format(sub)
+    if sub == "worktree" and first not in (None, "list"):
+        return MSG_GIT_NOT_ALLOWED.format("worktree " + first)
+    if sub == "help" and any(t in ("-w", "--web", "-i", "--info") for t in rest):
+        return MSG_GIT_NOT_ALLOWED.format("help --web/--info")
+    if any(t.startswith("--pathspec-from-file") for t in rest) and sub in ("checkout", "restore", "reset", "rm", "mv"):
+        return MSG_PROTECTED  # the paths it writes are in a file the hook cannot read
 
     # files git writes (it runs outside the sandbox, so the hook checks them)
-    targets = _option_value(rest, ("--output", "--output-directory"))
+    targets = [t.split("=", 1)[1] for t in rest if "=" in t and _opt_any(t, ("--output", "--output-directory"))]
+    targets += [rest[k + 1] for k, t in enumerate(rest[:-1]) if "=" not in t and _opt_any(t, ("--output", "--output-directory"))]
     if sub in ("format-patch", "archive"):
         targets += _option_value(rest, ("-o",))
-    if sub == "checkout" and "--" in rest:
-        targets += rest[rest.index("--") + 1:]
+    if sub == "checkout":
+        # "checkout <tree-ish> <path>" and "checkout -- <path>" both overwrite files; branch names are not protected paths
+        targets += [t for t in rest if t != "--" and not t.startswith("-")]
     if sub in ("restore", "rm", "mv", "init"):
         targets += pos
     if sub in ("worktree", "bundle") and first in ("add", "create") and len(pos) > 1:
@@ -1347,32 +1558,57 @@ def _git(words, ctx):
     return None
 
 
+def _gh_command(rest):
+    """Return (command, subcommand, error). Only -R/--repo/--hostname may come before the command words."""
+    found = []
+    i = 0
+    while i < len(rest):
+        if found and (GH_ALLOWED.get(found[0], ()) is None or len(found) == 2):
+            break
+        t = rest[i]
+        if t == "--":
+            break
+        if t.startswith("-") and t != "-":
+            key = t.split("=", 1)[0]
+            if key in GH_VALUE_FLAGS:
+                i += 1 if "=" in t else 2
+                continue
+            if key in GH_BOOL_FLAGS:
+                i += 1
+                continue
+            if found and found[0] not in GH_ALLOWED:
+                break  # refused below anyway
+            return None, None, MSG_GH_FLAG_FIRST
+        found.append(t)
+        i += 1
+    return (found[0] if found else None), (found[1] if len(found) > 1 else None), None
+
+
 def _gh(words, ctx):
     a = _texts(words)
     rest = a[1:]
     pos = _positionals(rest)
-    sub = pos[0] if pos else None
-    verbs = set(pos[1:])
     r = _repo_dir(ctx, [])
     if r:
         return r
+    sub, verb, err = _gh_command(rest)
+    if err:
+        return err
+    if sub is None:
+        return None  # gh, gh --help, gh --version
     if sub in GH_BLOCKED:
         return MSG_GH
-    if sub == "config" and verbs & {"set", "clear-cache"}:
-        return MSG_GH
-    if sub == "pr" and verbs & {"checkout", "co"}:
+    if sub == "pr" and verb in ("checkout", "co"):
         return MSG_PR_CHECKOUT
-    if sub == "pr":
-        if "merge" in verbs or ("review" in verbs and ("--approve" in rest or "-a" in rest)):
-            return MSG_GH
-        if verbs & {"create", "edit", "close", "reopen", "comment"}:
-            ctx.asks.append("GitHub PR operation")
-    if sub == "issue" and verbs & {"create", "edit", "close", "comment"}:
+    if sub not in GH_ALLOWED:
+        return MSG_GH_NOT_ALLOWED.format(sub)
+    allowed = GH_ALLOWED[sub]
+    if allowed is not None and verb is not None and verb not in allowed:
+        return MSG_GH if (sub, verb) in (("pr", "merge"), ("config", "set")) or sub == "release" else MSG_GH_NOT_ALLOWED.format(sub + " " + verb)
+    if sub == "pr" and verb in ("create", "edit", "close", "reopen", "comment", "ready"):
+        ctx.asks.append("GitHub PR operation")
+    if sub == "issue" and verb in ("create", "comment"):
         ctx.asks.append("GitHub issue operation")
-    if sub == "release" and (not verbs or not (verbs & {"view", "list"}) or verbs & {"create", "edit", "delete", "upload", "delete-asset", "download"}):
-        return MSG_GH
-    if sub == "repo" and verbs & {"delete", "edit", "deploy-key", "rename", "archive", "unarchive"}:
-        return MSG_GH
     if sub == "api":
         for k, t in enumerate(rest):
             method = None
@@ -1389,8 +1625,6 @@ def _gh(words, ctx):
         if any(re.search(r"/(rulesets|branches/[^/\s]+/protection|hooks|keys|actions/secrets)", p) for p in pos):
             return MSG_GH_API_PROTECTED
     targets = _option_value(rest, ("-D", "--dir", "-O", "--output"))
-    if sub in ("repo", "gist") and "clone" in verbs and len(pos) > 3:
-        targets.append(pos[3])
     for t in targets:
         if _protected_target(t, ctx) or _computed(t, ctx):
             return MSG_PROTECTED
@@ -1419,8 +1653,10 @@ def _inv(words, cmd, ctx, allowed_pkgs, allowed_npx):
         return MSG_NODE_OPS
     if name in DOCKER_CMDS:
         return MSG_DOCKER
+    if _stdin_script(name, a):
+        return MSG_PIPE_SHELL  # bash /dev/stdin, source <(...), python3 /dev/fd/0 ...
     if name in SHELLS:
-        if any(t == "-c" or (_is_cluster(t) and "c" in t) for t in args):
+        if any(t == "-c" or (_is_cluster(t) and "c" in t) or t.startswith("--command") for t in args):
             return MSG_SHELL_C
         stdin = not _positionals(args) or any(_is_cluster(t) and "s" in t for t in args)
         if stdin and cmd.piped_in:
@@ -1458,6 +1694,8 @@ def _inv(words, cmd, ctx, allowed_pkgs, allowed_npx):
             return MSG_NPM_EXEC_C
         if sub in ("update", "upgrade", "dedupe") or (sub == "audit" and len(pos) > 1 and pos[1] == "fix"):
             ctx.asks.append("dependency tree change")
+    if name == "npx" and any(t in ("-c", "--call") or t.startswith("--call=") for t in args):
+        return MSG_NPM_EXEC_C
     if name in ("pnpm", "yarn"):
         pos = _positionals(args)
         if pos and (pos[0] in ("publish", "login") or (pos[0] == "config" and len(pos) > 1 and pos[1] == "set")):
@@ -1524,9 +1762,13 @@ def decide(cmd, cwd):
         if _protected_target(w.text, ctx) or (git_gh and w.dynamic and _computed(w.text, ctx)):
             return "block", MSG_PROTECTED
     if git_gh:
-        m = EXEC_ENV.search(SAFE_ENV.sub("", flat))
-        if m:
-            return "block", MSG_GIT_ENV.format(m.group(1))
+        # ${NAME:=value} and ${NAME=value} assign too
+        assigns = ctx.assigns + [(m.group(1), "") for m in re.finditer(r"\$\{([A-Za-z_][A-Za-z0-9_]*):?=", flat)]
+        for nm, value in assigns:
+            if nm is None:
+                return "block", MSG_GIT_ENV_DYNAMIC
+            if EXEC_ENV_NAME.fullmatch(nm) and (nm, value) not in SAFE_ENV:
+                return "block", MSG_GIT_ENV.format(nm)
     if ctx.asks:
         return "ask", ctx.asks[0]
     return None
