@@ -90,6 +90,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   counts. The tool description and the notes no longer define beneficiary as blocks others
   harvested: it is the share paid to the account the harvesting node names as beneficiary, which
   includes the account's own blocks when it is its own node's beneficiary.
+- The `monthly_health_check` prompt reports last month's blocks as two separate items: the blocks
+  the account harvested itself (`totals.blocksHarvested`) and the blocks of delegators or other
+  accounts that paid it only the beneficiary share (`totals.blocksBeneficiaryOnly`). It also tells
+  the model that the beneficiary receipts are not a count of delegators' blocks.
 - The `delegatedHarvesting.note` of `symbol_account_get`, and the summary of
   `symbol_harvesting_income` for a period without receipts, send the question whether an account's
   harvesting works to `symbol_delegation_diagnose`, as the tool descriptions do. They pointed to

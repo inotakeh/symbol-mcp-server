@@ -382,7 +382,7 @@ Claude Desktop で「今いくら？」と聞いたときの流れは、まず�
 | Prompt | 手順 |
 |---|---|
 | `voting_key_renewal_checklist` | `symbol_voting_key_status`（失効予定・推奨ウィンドウ・空き枠）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare` → 運用者がこのサーバーの外で VotingKeyLink を送信 → そのハッシュを `symbol_transaction_status` で確認 → `symbol_voting_key_status` を再度呼んで新キーを確認 → 新キーの startEpoch が確定した後に `symbol_finality_participation` で参加を確認 → 4 行で要約。 |
-| `monthly_health_check` | `symbol_node_status` → `symbol_node_health`（unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare` → `symbol_harvester_watch`（前回スナップショットとの差分。`symbol_harvesting_status` は求められたときだけ） → `symbol_voting_key_status`（30 日以内に失効するなら警告を先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income` → 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
+| `monthly_health_check` | `symbol_node_status` → `symbol_node_health`（unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare` → `symbol_harvester_watch`（前回スナップショットとの差分。`symbol_harvesting_status` は求められたときだけ） → `symbol_voting_key_status`（30 日以内に失効するなら警告を先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income`（収益と、自分でハーベストしたブロック・委任者などのブロックを分けて）→ 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
 
 サーバーは initialize 時に短い `instructions`（読み取り専用であること、アカウントの指定形式、取り違えやすい質問（ハーベスト報酬、Voting キー、
 ノードの同期・健全性・バージョン、トランザクションが通ったか）に使うツール、返された数値をそのまま使うこと）も送ります。
