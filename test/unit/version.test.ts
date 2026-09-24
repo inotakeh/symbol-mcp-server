@@ -64,6 +64,12 @@ describe('versionDistribution', () => {
       newerShare: null,
     });
   });
+  it('keeps the distribution but has no newer share when the own version is not known', () => {
+    const dist = versionDistribution(['1.0.3.9', '1.0.4.0', '1.0.3.9'], null);
+    expect(dist.majorityVersion).toBe('1.0.3.9');
+    expect(dist.distribution.map((b) => b.count)).toEqual([2, 1]);
+    expect(dist.newerShare).toBeNull();
+  });
 });
 
 describe('deriveVersionDriftVerdict', () => {
@@ -112,5 +118,9 @@ describe('deriveVersionDriftVerdict', () => {
   });
   it('is unknown for an empty sample', () => {
     expect(deriveVersionDriftVerdict(own, dist([]))).toBe('unknown');
+  });
+  it('is unknown when the own version is not known, whatever the sample', () => {
+    const sample = ['1.0.4.0', '1.0.4.0', '1.0.4.0', '1.0.4.0'];
+    expect(deriveVersionDriftVerdict(null, versionDistribution(sample, null))).toBe('unknown');
   });
 });

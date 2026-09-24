@@ -277,10 +277,9 @@ describe('symbol_version_drift', () => {
     );
     expect(summary).not.toMatch(/- 0\.0\.0\.0/);
     expect(sc.notes).toContainEqual(
-      expect.stringMatching(
-        /^3 nodes reported version 0\.0\.0\.0, which means the version is not known yet/,
-      ),
+      '3 peers reported version 0.0.0.0: the node does not know their version yet (catapult starts the peers it reads from its peers files at version 0). Counted in sample.unknownVersion and left out of the distribution, the majority and newerShare.',
     );
+    expect(sc.notes).not.toContainEqual(expect.stringMatching(/^\d+ reference node/));
     expect(versionDriftTool.outputSchema.safeParse(sc).success).toBe(true);
   });
 
@@ -338,6 +337,73 @@ describe('symbol_version_drift', () => {
     expect(result.structuredContent?.summary).toMatch(
       /; 1 node reported no version \(0\.0\.0\.0\) and is not counted\.$/,
     );
+    // The peers-file explanation is about peers; a reference node reports its own version.
+    expect(result.structuredContent?.notes).toContainEqual(
+      '1 reference node(s) reported version 0.0.0.0 for themselves in /node/info, so their version is not known. Counted in sample.unknownVersion and left out of the distribution, the majority and newerShare.',
+    );
+    expect(result.structuredContent?.notes).not.toContainEqual(
+      expect.stringMatching(/peers files/),
+    );
+  });
+
+  it('does not ask to set SYMBOL_REFERENCE_NODES when they are set but gave no version', async () => {
+    server = await startTestServer({
+      env: { SYMBOL_REFERENCE_NODES: REF_A },
+      routes: {
+        ...perHostNodeInfo({ 'reference-a.test:3001': { version: 0 } }),
+        'GET /node/peers': peers().map((p) => ({ ...p, version: 0 })),
+      },
+    });
+    const result = await server.callTool('symbol_version_drift');
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      verdict: 'unknown',
+      sample: { size: 0, peers: 0, referenceNodes: 0, unknownVersion: 7 },
+    });
+    expect(result.structuredContent?.summary).toBe(
+      [
+        'version drift: unknown. node.test:3001 runs 1.0.3.9 but the sample is empty (no usable peers or reference nodes; 7 nodes reported no version (0.0.0.0)).',
+        '- The peers node.test:3001 knows have not reported their versions yet: check again later, check peer connectivity with symbol_node_health and symbol_node_status; none of the nodes in SYMBOL_REFERENCE_NODES gave a usable version (see the notes).',
+      ].join('\n'),
+    );
+    expect(result.structuredContent?.notes).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^6 peers reported version 0\.0\.0\.0: /),
+        expect.stringMatching(/^1 reference node\(s\) reported version 0\.0\.0\.0 for themselves/),
+      ]),
+    );
+  });
+
+  // The node's own version 0 is as unknown as a peer's: comparing with it made every sampled node
+  // newer, and the verdict far_behind with "upgrade as soon as possible".
+  it('is unknown when the node reports no version of its own', async () => {
+    server = await startTestServer({
+      routes: perHostNodeInfo({ [TEST_NODE_HOST]: { version: 0 } }),
+    });
+    let result = await server.callTool('symbol_version_drift');
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      verdict: 'unknown',
+      node: { version: '0.0.0.0', versionRaw: 0 },
+      sample: { size: 6, peers: 6, unknownVersion: 0 },
+      majorityVersion: '1.0.3.9',
+      newerShare: null,
+    });
+    expect(result.structuredContent?.summary).toBe(
+      [
+        'version drift: unknown. node.test:3001 reports no version of its own (0.0.0.0), so it cannot be compared; majority of 6 sampled nodes runs 1.0.3.9.',
+        '- The version node.test:3001 runs is not known from its /node/info: check it on the node itself and compare it with 1.0.3.9.',
+      ].join('\n'),
+    );
+    expect(versionDriftTool.outputSchema.safeParse(result.structuredContent).success).toBe(true);
+
+    // detailed still lists the distribution, which does not depend on the node's own version.
+    result = await server.callTool('symbol_version_drift', { format: 'detailed' });
+    expect(String(result.structuredContent?.summary).split('\n').slice(2)).toEqual([
+      '- 1.0.3.9: 4 (67%)',
+      '- 1.0.4.0: 1 (17%)',
+      '- 1.0.3.8: 1 (17%)',
+    ]);
   });
 
   it('tolerates a failing /node/server', async () => {

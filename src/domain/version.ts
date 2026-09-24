@@ -61,18 +61,23 @@ export interface VersionDistribution {
   readonly distribution: readonly VersionBucket[];
   /** The most common version; on a tie the newest of the tied versions. Null when the sample is empty. */
   readonly majorityVersion: string | null;
-  /** Share of the sample running a version newer than `ownVersion`; null when the sample is empty. */
+  /**
+   * Share of the sample running a version newer than `ownVersion`; null when the sample is empty
+   * or the node's own version is not known.
+   */
   readonly newerShare: number | null;
 }
 
 /**
  * Frequency distribution of the sampled versions. Ties are broken towards the newer version: a
  * tie means the network is mid-migration and the newer version is the one it converges on, so
- * the operator gets a warning they can dismiss rather than silence.
+ * the operator gets a warning they can dismiss rather than silence. `ownVersion` is null when the
+ * node reported version 0 for itself (isUnreportedVersion): the distribution and the majority
+ * still stand, but nothing can be newer than an unknown version.
  */
 export function versionDistribution(
   sample: readonly string[],
-  ownVersion: string,
+  ownVersion: string | null,
 ): VersionDistribution {
   const counts = new Map<string, number>();
   for (const version of sample) {
@@ -83,12 +88,16 @@ export function versionDistribution(
   const distribution = [...counts.entries()]
     .map(([version, count]) => ({ version, count, share: roundTo(count / size, 4) }))
     .sort((a, b) => b.count - a.count || compareVersions(b.version, a.version));
-  const newer = sample.filter((v) => compareVersions(v, ownVersion) > 0).length;
+  let newerShare: number | null = null;
+  if (size > 0 && ownVersion !== null) {
+    const newer = sample.filter((v) => compareVersions(v, ownVersion) > 0).length;
+    newerShare = roundTo(newer / size, 4);
+  }
   return {
     size,
     distribution,
     majorityVersion: distribution[0]?.version ?? null,
-    newerShare: size === 0 ? null : roundTo(newer / size, 4),
+    newerShare,
   };
 }
 
@@ -100,15 +109,20 @@ export const BEHIND_SHARE = 0.5;
 export type VersionDriftVerdict = 'ok' | 'behind' | 'far_behind' | 'unknown';
 
 /**
- * Empty sample -> unknown. newerShare >= 0.75 -> far_behind. Older than the majority, or
- * newerShare >= 0.5 (own version is still the mode but newer versions together dominate) ->
- * behind. Otherwise ok, including when the node is newer than the majority.
+ * Own version not known (null) or empty sample -> unknown. newerShare >= 0.75 -> far_behind.
+ * Older than the majority, or newerShare >= 0.5 (own version is still the mode but newer versions
+ * together dominate) -> behind. Otherwise ok, including when the node is newer than the majority.
  */
 export function deriveVersionDriftVerdict(
-  ownVersion: string,
+  ownVersion: string | null,
   dist: VersionDistribution,
 ): VersionDriftVerdict {
-  if (dist.size === 0 || dist.majorityVersion === null || dist.newerShare === null) {
+  if (
+    ownVersion === null ||
+    dist.size === 0 ||
+    dist.majorityVersion === null ||
+    dist.newerShare === null
+  ) {
     return 'unknown';
   }
   if (dist.newerShare >= FAR_BEHIND_SHARE) return 'far_behind';

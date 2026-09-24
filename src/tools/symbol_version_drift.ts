@@ -62,7 +62,7 @@ const outputSchema = z.object({
   ),
   newerShare: nullable(
     z.number(),
-    'Share of the sample (0 to 1) running a version newer than this node; null when the sample is empty.',
+    'Share of the sample (0 to 1) running a version newer than this node; null when the sample is empty or the node reports no version of its own (0.0.0.0).',
   ),
   farBehindShare: z.number(),
   notes: z.array(z.string()),
@@ -109,7 +109,7 @@ export const versionDriftTool = defineTool({
   name: 'symbol_version_drift',
   title: 'Symbol node version drift',
   description:
-    "Tell whether the configured Symbol node's software version is behind the version most of the network runs. For the node's own version and sync state without a comparison, use symbol_node_status; for whether its services are healthy, symbol_node_health; for how many blocks it trails other nodes, symbol_network_compare. Reads the node's own version (/node/info) and REST version (/node/server), collects the versions of the peers the node knows (/node/peers) and of the reference nodes in SYMBOL_REFERENCE_NODES, and reports the version distribution, the majority version, the share of the sample running something newer, and a verdict: ok (same as or newer than the majority), behind (older than the majority, or newer versions hold at least half the sample), far_behind (newer versions hold at least 75%: peers may start refusing connections), or unknown (no peers). Peers that report no version (0.0.0.0) are counted apart, not as a version. Peer hosts and keys are never reported. Key check after a node OS or tooling migration.",
+    "Tell whether the configured Symbol node's software version is behind the version most of the network runs. For the node's own version and sync state without a comparison, use symbol_node_status; for whether its services are healthy, symbol_node_health; for how many blocks it trails other nodes, symbol_network_compare. Reads the node's own version (/node/info) and REST version (/node/server), collects the versions of the peers the node knows (/node/peers) and of the reference nodes in SYMBOL_REFERENCE_NODES, and reports the version distribution, the majority version, the share of the sample running something newer, and a verdict: ok (same as or newer than the majority), behind (older than the majority, or newer versions hold at least half the sample), far_behind (newer versions hold at least 75%: peers may start refusing connections), or unknown (no usable peers, or the node reports no version of its own). Peers that report no version (0.0.0.0) are counted apart, not as a version. Peer hosts and keys are never reported. Key check after a node OS or tooling migration.",
   inputSchema,
   outputSchema,
   untrustedText: true,
@@ -134,6 +134,8 @@ export const versionDriftTool = defineTool({
       Promise.all(ctx.referenceClients().map((c) => probeReference(c, seed))),
     ]);
     const ownVersion = decodeVersion(info.version);
+    // Version 0 means "not known" for the node itself as for its peers: nothing compares with it.
+    const ownKnownVersion = isUnreportedVersion(info.version) ? null : ownVersion;
     const ownKey = info.publicKey.toUpperCase();
     const notes = [...NOTES];
 
@@ -171,53 +173,79 @@ export const versionDriftTool = defineTool({
       );
     }
 
-    const referenceVersions = references.flatMap((r) => (r.version ? [r.version] : []));
-    const unknownVersion =
-      unreportedPeers + references.filter((r) => r.excluded === 'no_version').length;
-    if (unknownVersion > 0) {
+    const referenceVersions: string[] = [];
+    const excluded: Record<NonNullable<ReferenceProbe['excluded']>, number> = {
+      unreachable: 0,
+      redirect: 0,
+      other_network: 0,
+      no_version: 0,
+    };
+    for (const r of references) {
+      if (r.version !== null) referenceVersions.push(r.version);
+      else if (r.excluded !== null) excluded[r.excluded] += 1;
+    }
+    const unknownVersion = unreportedPeers + excluded.no_version;
+    if (unreportedPeers > 0) {
       notes.push(
-        `${formatInteger(unknownVersion)} ${unknownVersion === 1 ? 'node' : 'nodes'} reported version 0.0.0.0, which means the version is not known yet (catapult starts the peers it reads from its peers files at version 0); counted in sample.unknownVersion and left out of the distribution, the majority and newerShare.`,
+        `${formatInteger(unreportedPeers)} peer${unreportedPeers === 1 ? '' : 's'} reported version 0.0.0.0: the node does not know their version yet (catapult starts the peers it reads from its peers files at version 0). Counted in sample.unknownVersion and left out of the distribution, the majority and newerShare.`,
       );
     }
-    const unreachable = references.filter((r) => r.excluded === 'unreachable').length;
-    const redirected = references.filter((r) => r.excluded === 'redirect').length;
-    const otherNetwork = references.filter((r) => r.excluded === 'other_network').length;
-    if (unreachable > 0)
-      notes.push(`${formatInteger(unreachable)} reference node(s) could not be reached.`);
-    if (redirected > 0) {
+    if (excluded.no_version > 0) {
       notes.push(
-        `${formatInteger(redirected)} reference node(s) answered with a redirect, which is never followed; set their SYMBOL_REFERENCE_NODES entries to the REST API URLs themselves.`,
+        `${formatInteger(excluded.no_version)} reference node(s) reported version 0.0.0.0 for themselves in /node/info, so their version is not known. Counted in sample.unknownVersion and left out of the distribution, the majority and newerShare.`,
       );
     }
-    if (otherNetwork > 0) {
+    if (excluded.unreachable > 0) {
+      notes.push(`${formatInteger(excluded.unreachable)} reference node(s) could not be reached.`);
+    }
+    if (excluded.redirect > 0) {
       notes.push(
-        `${formatInteger(otherNetwork)} reference node(s) are on another network and were excluded.`,
+        `${formatInteger(excluded.redirect)} reference node(s) answered with a redirect, which is never followed; set their SYMBOL_REFERENCE_NODES entries to the REST API URLs themselves.`,
+      );
+    }
+    if (excluded.other_network > 0) {
+      notes.push(
+        `${formatInteger(excluded.other_network)} reference node(s) are on another network and were excluded.`,
       );
     }
 
-    const dist = versionDistribution([...peerVersions, ...referenceVersions], ownVersion);
-    const verdict = deriveVersionDriftVerdict(ownVersion, dist);
+    const dist = versionDistribution([...peerVersions, ...referenceVersions], ownKnownVersion);
+    const verdict = deriveVersionDriftVerdict(ownKnownVersion, dist);
     const source: 'peers' | 'peers+reference' =
       referenceVersions.length > 0 ? 'peers+reference' : 'peers';
 
     const lines: string[] = [];
     const unreported =
       unknownVersion > 0
-        ? `${formatInteger(unknownVersion)} ${unknownVersion === 1 ? 'node' : 'nodes'} reported no version (0.0.0.0)`
+        ? `${formatInteger(unknownVersion)} node${unknownVersion === 1 ? '' : 's'} reported no version (0.0.0.0)`
         : null;
-    if (verdict === 'unknown') {
+    const notCounted = unreported
+      ? `; ${unreported} and ${unknownVersion === 1 ? 'is' : 'are'} not counted`
+      : '';
+    if (ownKnownVersion === null) {
+      lines.push(
+        `version drift: unknown. ${ctx.rest.host} reports no version of its own (0.0.0.0), so it cannot be compared${dist.majorityVersion ? `; majority of ${formatInteger(dist.size)} sampled nodes runs ${dist.majorityVersion}` : ''}${notCounted}.`,
+      );
+      lines.push(
+        `- The version ${ctx.rest.host} runs is not known from its /node/info: check it on the node itself${dist.majorityVersion ? ` and compare it with ${dist.majorityVersion}` : ''}.`,
+      );
+    } else if (verdict === 'unknown') {
       lines.push(
         `version drift: unknown. ${ctx.rest.host} runs ${ownVersion} but the sample is empty (no usable peers${references.length > 0 ? ' or reference nodes' : ''}${unreported ? `; ${unreported}` : ''}).`,
       );
-      lines.push(
+      const peerAdvice =
         unreportedPeers > 0
-          ? `- The peers ${ctx.rest.host} knows have not reported their versions yet: check again later, check peer connectivity with symbol_node_health and symbol_node_status, or set SYMBOL_REFERENCE_NODES to compare against known nodes.`
-          : `- ${ctx.rest.host} knows no peers: check peer connectivity with symbol_node_health and symbol_node_status, or set SYMBOL_REFERENCE_NODES to compare against known nodes.`,
-      );
+          ? `The peers ${ctx.rest.host} knows have not reported their versions yet: check again later, check peer connectivity with symbol_node_health and symbol_node_status`
+          : `${ctx.rest.host} knows no peers: check peer connectivity with symbol_node_health and symbol_node_status`;
+      const referenceAdvice =
+        references.length === 0
+          ? ', or set SYMBOL_REFERENCE_NODES to compare against known nodes.'
+          : '; none of the nodes in SYMBOL_REFERENCE_NODES gave a usable version (see the notes).';
+      lines.push(`- ${peerAdvice}${referenceAdvice}`);
     } else {
       const newerPct = Math.round((dist.newerShare ?? 0) * 100);
       lines.push(
-        `version drift: ${VERDICT_TEXT[verdict]}. ${ctx.rest.host} runs ${ownVersion}; majority of ${formatInteger(dist.size)} sampled nodes runs ${dist.majorityVersion}; ${newerPct}% run something newer${unreported ? `; ${unreported} and ${unknownVersion === 1 ? 'is' : 'are'} not counted` : ''}.`,
+        `version drift: ${VERDICT_TEXT[verdict]}. ${ctx.rest.host} runs ${ownVersion}; majority of ${formatInteger(dist.size)} sampled nodes runs ${dist.majorityVersion}; ${newerPct}% run something newer${notCounted}.`,
       );
       if (verdict === 'far_behind') {
         lines.push(
@@ -228,10 +256,10 @@ export const versionDriftTool = defineTool({
           '- Newer versions are taking over: plan the upgrade before peers stop connecting.',
         );
       }
-      if (format === 'detailed') {
-        for (const b of dist.distribution) {
-          lines.push(`- ${b.version}: ${formatInteger(b.count)} (${Math.round(b.share * 100)}%)`);
-        }
+    }
+    if (format === 'detailed') {
+      for (const b of dist.distribution) {
+        lines.push(`- ${b.version}: ${formatInteger(b.count)} (${Math.round(b.share * 100)}%)`);
       }
     }
 

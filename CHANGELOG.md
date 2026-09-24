@@ -136,7 +136,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the network was reported as ok. Such peers and reference nodes are now left out of the
   distribution, the majority and the newer share, counted in `sample.unknownVersion` and named at
   the end of the summary's first line; when no peer has reported a version, the verdict is
-  `unknown` with a hint to check again later.
+  `unknown` with a hint to check again later. When the configured node reports version 0 for
+  itself, its version is not known either: the verdict is `unknown` and `newerShare` null, instead
+  of `far_behind` with every sampled node counted as newer. When the sample is empty although
+  `SYMBOL_REFERENCE_NODES` is set, the hint points to the notes instead of asking to set it.
 - `symbol_harvesting_status` no longer says that a balance above `maxHarvesterBalance` is capped.
   Such an account cannot harvest at all: catapult accepts a block only from a harvester whose
   balance is from `minHarvesterBalance` to `maxHarvesterBalance`, both inclusive, and nodes drop
