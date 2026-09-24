@@ -20,6 +20,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `symbol_time_convert`, `symbol_network_compare`, `symbol_harvester_watch`) show no such text and
   have no such field. The published output schemas do not allow extra fields, and MCP clients
   check results against the tool list they cached, so restart the MCP host after upgrading.
+- `symbol_version_drift`: `sample.unknownVersion`, the peers and reference nodes that report version
+  0 (0.0.0.0), which are counted apart from the distribution (see Fixed). A new output field too:
+  restart the MCP host after upgrading.
+- `symbol_harvesting_income` counts blocks as well as receipts, in `totals`, `daily[]` and
+  `monthly[]`: `blocks` (blocks in which the account received a receipt), `blocksHarvested` (blocks
+  it harvested; always equal to `receiptsHarvester`) and `blocksBeneficiaryOnly` (blocks another
+  account harvested that paid it only the beneficiary share, typically delegators of its node). An
+  operator that is its own node's beneficiary gets two receipts for each block it harvests, so the
+  beneficiary receipts are not a count of delegators' blocks; these fields are. The daily and
+  monthly CSV get the same three counts as the columns `blocks`, `blocks_harvested` and
+  `blocks_beneficiary_only`, appended at the end: the existing columns keep their positions. The
+  receipt CSV is unchanged. New output fields: restart the MCP host after upgrading.
 - `docs/RELEASING.md`: the release procedure (release PR, tag, approval, the `publish` and
   `github-release` jobs, checking the release, the MCP Registry, what to do when a step fails),
   backfilling an older GitHub Release, and where to read the OpenSSF Scorecard results. The
@@ -70,6 +82,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   model to use it for every harvest income question and not `symbol_transaction_search` or a
   browser. The server instructions now also route node sync, blocks behind other nodes and
   transaction status. Tool names, arguments and outputs are unchanged.
+- The `symbol_harvesting_income` summary counts blocks: the first line says how many blocks the
+  receipts come from and calls the shares receipts ("harvester share … in 9 receipts" instead of
+  "harvester … in 9 blocks"), a new second line splits the blocks into those the account
+  harvested and those others harvested that paid it only the beneficiary share, and says how many
+  beneficiary receipts come from its own blocks, and each monthly line starts with the block
+  counts, including the blocks whose share split was not recognised, so that they add up. The
+  tool description and the notes no longer define beneficiary as blocks others
+  harvested: it is the share paid to the account the harvesting node names as beneficiary, which
+  includes the account's own blocks when it is its own node's beneficiary.
+- The `monthly_health_check` prompt reports last month's blocks as two separate items: the blocks
+  the account harvested itself (`totals.blocksHarvested`) and the blocks of delegators or other
+  accounts that paid it only the beneficiary share (`totals.blocksBeneficiaryOnly`). It also tells
+  the model that the beneficiary receipts are not a count of delegators' blocks.
 - The `delegatedHarvesting.note` of `symbol_account_get`, and the summary of
   `symbol_harvesting_income` for a period without receipts, send the question whether an account's
   harvesting works to `symbol_delegation_diagnose`, as the tool descriptions do. They pointed to
@@ -105,6 +130,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `symbol_version_drift` no longer counts a peer that reports version 0 as running "0.0.0.0". That
+  value means the node does not know the peer's version yet (catapult starts the peers it reads
+  from its peers files at version 0), and counting it made the sample look bigger, lowered the
+  share running something newer and could even make 0.0.0.0 the majority, so that a node behind
+  the network was reported as ok. Such peers and reference nodes are now left out of the
+  distribution, the majority and the newer share, counted in `sample.unknownVersion` and named at
+  the end of the summary's first line; when no peer has reported a version, the verdict is
+  `unknown` with a hint to check again later. When the configured node reports version 0 for
+  itself, its version is not known either: the verdict is `unknown` and `newerShare` null, instead
+  of `far_behind` with every sampled node counted as newer. When the sample is empty although
+  `SYMBOL_REFERENCE_NODES` is set, the hint points to the notes instead of asking to set it.
 - `symbol_harvesting_status` no longer says that a balance above `maxHarvesterBalance` is capped.
   Such an account cannot harvest at all: catapult accepts a block only from a harvester whose
   balance is from `minHarvesterBalance` to `maxHarvesterBalance`, both inclusive, and nodes drop

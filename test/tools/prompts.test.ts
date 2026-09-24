@@ -104,6 +104,12 @@ describe('prompts', () => {
     expect(text).toMatch(/negative deltaCount/);
     expect(text).toMatch(/previous calendar month/);
     expect(text).toMatch(/granularity "daily"/);
+    // Receipts are shares: the blocks the account harvested and the blocks of delegators are
+    // reported from the block counts, never from the beneficiary receipts.
+    expect(text).toMatch(
+      /totals\.blocksHarvested as the blocks the node's account harvested itself, and totals\.blocksBeneficiaryOnly as the blocks of delegators or other accounts/,
+    );
+    expect(text).toMatch(/totals\.receiptsBeneficiary counts receipts, not delegators' blocks/);
     expect(text).toMatch(/within 30 days/);
     expect(text).toMatch(/Action required \/ Attention \/ Normal/);
   });

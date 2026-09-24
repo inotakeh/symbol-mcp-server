@@ -61,12 +61,15 @@
 → `symbol_harvesting_income { "account": "NCV5HR…", "fromDate": "2026-09-01", "toDate": "2026-09-11", "granularity": "monthly" }`
 
 ```
-NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY on mainnet, 2026-09-01 to 2026-09-11 (Asia/Tokyo; heights 5,736,305-5,767,984, 31,680 blocks): 20 harvest receipts totalling 662.574177 symbol.xym (harvester 461.240390 in 9 blocks, beneficiary 201.333787 in 11 blocks).
-2026-09: 20 receipts, 662.574177 symbol.xym (9 harvester / 11 beneficiary)
+NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY on mainnet, 2026-09-01 to 2026-09-11 (Asia/Tokyo; heights 5,736,305-5,767,984, 31,680 blocks): 20 harvest receipts totalling 662.574177 symbol.xym from 11 blocks (harvester share 461.240390 in 9 receipts, beneficiary share 201.333787 in 11 receipts).
+Blocks: 9 harvested by this account, 2 harvested by others that paid it only the beneficiary share (typically delegators on its node). 9 of the 11 beneficiary receipts come from blocks it harvested itself, as its own node's beneficiary.
+2026-09: 20 receipts, 662.574177 symbol.xym; 11 blocks: 9 harvested by this account, 2 by others (receipts 9 harvester / 11 beneficiary)
 ```
 
 これが `summary` です。同じ数値が `totals` と `monthly[]` にも入り、金額はどれも 10 進文字列（`"662.574177"`）と
 生の整数（`"662574177"`）の両方で、サーバーが合算しています。
+レシートはブロック報酬の取り分なので、自分のノードの beneficiary でもある運用者は、自分でハーベストした 1 ブロックから
+2 件を受け取ります。ブロックの数は `blocksHarvested` と `blocksBeneficiaryOnly` で数えます。
 
 ## 要件
 
@@ -284,12 +287,12 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 | `symbol_time_convert` | `height` / `epoch` / `timestamp` のいずれか 1 つ | 高さ、確定エポック、ネットワークタイムスタンプ、実時刻の相互変換。過去は実測、将来は推定（その旨を明記）。 |
 | `symbol_harvesting_status` | `account`（任意） | ノードで解錠中の委任ハーベスター、ハーベスティングの残高制限と受益者割合。アカウントを指定すると、その linked キーがこのノードで解錠されているかと、残高が制限の範囲内か（`minHarvesterBalance` 以上 `maxHarvesterBalance` 以下。上限を超えるとハーベストできない）。 |
 | `symbol_network_compare` | なし | 自ノードと `SYMBOL_REFERENCE_NODES` の高さ・確定高さ、最良ノードとの差、`lagging` フラグ。参照ノード未設定時はその旨と対処を案内。 |
-| `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。`granularity: monthly` で暦月ごと（年次の質問向け）、`output: csv` で表計算向けの CSV テキスト（JSON も併せて返す）。1 年以上を 1 回で指定してよい（約 90 日分ずつに分割して取得。`fetch` にチャンク数・再試行数・ページ数）。 |
+| `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、ブロックの数（`blocksHarvested`: 自分でハーベストしたブロック、`blocksBeneficiaryOnly`: 他のアカウントがハーベストし beneficiary の取り分だけを受け取ったブロック）、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。`granularity: monthly` で暦月ごと（年次の質問向け）、`output: csv` で表計算向けの CSV テキスト（JSON も併せて返す）。1 年以上を 1 回で指定してよい（約 90 日分ずつに分割して取得。`fetch` にチャンク数・再試行数・ページ数）。 |
 | `symbol_transaction_status` | `transactionHashes`（配列、1〜20 件） | 各トランザクションの現在の状態: confirmed（高さ付き）/ unconfirmed / partial（署名待ち）/ failed（ノードのコードとその意味付き）/ not_found。バッチ全体を 1 リクエストで照会。 |
 | `symbol_finality_participation` | `account`, `epoch`（任意、既定は最新の確定エポック）, `epochs`（1〜20、既定 1）, `format` | アカウントの Voting キーが各エポックのファイナリティ proof に実際に署名したか: participated（prevote と precommit の両方）/ missed（署名しなかったステージ付き）/ no_active_key / unavailable。ステージごとの署名数（proof が 1 つのステージを複数のメッセージグループに分けていても 1 ステージとして扱い、どのグループの署名でも署名済みと数える）と、現在のエポックをカバーする鍵が無い／現在のエポックが missed のときの警告（過去のエポックでは警告しない）。 |
 | `symbol_delegation_diagnose` | `account`, `recentDays`（1〜30、既定 7）, `format` | 委任ハーベストが有効か、無効ならどこで止まっているか: アカウントの存在、ハーベスト残高制限、importance（0 なら次の再計算までのブロック数）、linked / VRF / node の各鍵、node 鍵と設定ノードの `nodePublicKey` の一致、そのノードでの解錠、accountType、直近 N 日のハーベスト実績、ノード宛の委任要求トランザクション。判定は `active` / `not_active` / `cannot_verify`（別ノードへの委任はここからは確認できない）。 |
 | `symbol_node_health` | `format` | 設定ノードが今、健全に動いているか: API ノードと DB の状態（`/node/health` の 503 応答も本文を読んで判定）、DB のブロック数とチェーン高さの差、ノード時計とこの端末の時計のずれ、ファイナリティ遅延（ブロック数と分）、ロール。固定順の 6 チェックが ok / warn / fail / unknown とヒントを持ち、判定は `healthy` / `degraded`（warn、または確認できなかった項目あり）/ `unhealthy`。閾値は `/network/properties` から導出。`symbol_node_status` を補完。 |
-| `symbol_version_drift` | `format` | 設定ノードのバージョンがネットワークの多数派から取り残されていないか: ノードが知るピアと参照ノードのバージョン分布、多数派の版、自ノードより新しい版の割合。判定は `ok` / `behind`（多数派より古い、または新しい版が半数以上）/ `far_behind`（75% 以上が新しい。接続を拒否され始める可能性）/ `unknown`（ピアなし）。ピアの host や鍵は出力しません。 |
+| `symbol_version_drift` | `format` | 設定ノードのバージョンがネットワークの多数派から取り残されていないか: ノードが知るピアと参照ノードのバージョン分布、多数派の版、自ノードより新しい版の割合。判定は `ok` / `behind`（多数派より古い、または新しい版が半数以上）/ `far_behind`（75% 以上が新しい。接続を拒否され始める可能性）/ `unknown`（使えるピアが無い、または自ノードが自分の版を報告しない）。まだ版を報告していないピア（0.0.0.0）は版として数えず、`sample.unknownVersion` に別に数えます。ピアの host や鍵は出力しません。 |
 | `symbol_harvester_watch` | `mode`（`compare` / `compare_and_save` / `save_only`）, `format` | 設定ノードで解錠中の委任ハーベスターが前回より増えたか減ったか: 追加・削除されたリモート鍵、件数の差分、直近 30 日のスナップショットの最小・最大・平均。スナップショットは `SYMBOL_STATE_DIR` 配下にノードごと 1 ファイル。未設定なら現在の一覧だけを返し「比較不可」と明記。`compare` は読むだけ、`compare_and_save`（既定）は今回分も保存、`save_only` は比較せず保存。 |
 | `symbol_account_rank` | `account`（任意）, `mosaic`（任意。hex id かエイリアス名、既定は XYM）, `top`（1〜100、既定 20）, `maxRank`（100〜5000、既定 1000）, `format` | あるアカウントがモザイクの保有量で何番目か、上位は誰か（エクスプローラのリッチリスト相当）: アカウントの残高・供給量に対する割合（小数 4 桁、整数演算）・順位、上位 N 件の残高と割合、上位 N 件の合計割合。保有者は `GET /accounts?orderBy=balance` から 100 件ずつ逐次読み、見つかるか `maxRank` に達するまで続けます（達したら `rankBeyond` に出ます）。`account` を省略すると上位一覧だけ。同額の順序はノード依存で、取引所・財団などのラベルは付けません。 |
 | `symbol_holdings_value` | `account`, `unitPrice`（10 進文字列。例 `"12.34"`）, `currency`（大文字 3〜6 文字）, `priceSource`（任意）, `priceAsOf`（任意）, `mosaic`（任意。既定は XYM）, `decimals`（任意。0〜12）, `format` | **呼び出し側が与えた単価**で、アカウントのモザイク残高がいくらになるか: 残高、正規化した単価、丸め前の積、四捨五入（half up）した積。すべて整数演算。丸める桁は Intl（Unicode CLDR）がその通貨に与える桁（JPY 0、USD 2、KWD 3、CLF 4）です。CLDR は一部の通貨で ISO 4217 と異なり（HUF・IDR・IQD・IRR は CLDR では 0 桁。ISO 4217 では IQD が 3 桁、ほかは 2 桁）、桁はサーバーを動かす Node.js に依存するので、固定したいときは `decimals` を渡してください。Intl が知らないコード（BTC、USDT）は丸めず、0 でない値が丸めで 0 になる場合も丸めません。どの規則を使ったかは `value.decimalsSource` に出ます。サーバーは価格を取得も検証もしません。`priceSource` / `priceAsOf` はそのまま出力に echo され、答えに出所が残ります。税務計算ではなく、手数料・スプレッド・税は含みません。 |
@@ -379,7 +382,7 @@ Claude Desktop で「今いくら？」と聞いたときの流れは、まず�
 | Prompt | 手順 |
 |---|---|
 | `voting_key_renewal_checklist` | `symbol_voting_key_status`（失効予定・推奨ウィンドウ・空き枠）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare` → 運用者がこのサーバーの外で VotingKeyLink を送信 → そのハッシュを `symbol_transaction_status` で確認 → `symbol_voting_key_status` を再度呼んで新キーを確認 → 新キーの startEpoch が確定した後に `symbol_finality_participation` で参加を確認 → 4 行で要約。 |
-| `monthly_health_check` | `symbol_node_status` → `symbol_node_health`（unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare` → `symbol_harvester_watch`（前回スナップショットとの差分。`symbol_harvesting_status` は求められたときだけ） → `symbol_voting_key_status`（30 日以内に失効するなら警告を先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income` → 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
+| `monthly_health_check` | `symbol_node_status` → `symbol_node_health`（unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare` → `symbol_harvester_watch`（前回スナップショットとの差分。`symbol_harvesting_status` は求められたときだけ） → `symbol_voting_key_status`（30 日以内に失効するなら警告を先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income`（収益と、自分でハーベストしたブロック・委任者などのブロックを分けて）→ 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
 
 サーバーは initialize 時に短い `instructions`（読み取り専用であること、アカウントの指定形式、取り違えやすい質問（ハーベスト報酬、Voting キー、
 ノードの同期・健全性・バージョン、トランザクションが通ったか）に使うツール、返された数値をそのまま使うこと）も送ります。

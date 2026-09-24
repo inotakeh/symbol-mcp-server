@@ -246,6 +246,166 @@ describe('symbol_version_drift', () => {
     );
   });
 
+  // catapult starts the peers it reads from its peers files at version 0 (0.0.0.0) until it learns
+  // the real version: that is "not known", not a release, so it is counted apart.
+  it('counts peers that report no version (0.0.0.0) apart from the distribution', async () => {
+    const unreported = [1, 2, 3].map((i) => ({
+      ...(peers()[0] as Peer),
+      publicKey: H(`fixture:peer-unreported-${i}`),
+      version: 0,
+    }));
+    server = await startTestServer({
+      routes: routes({ 'GET /node/peers': [...peers(), ...unreported] }),
+    });
+    const result = await server.callTool('symbol_version_drift', { format: 'detailed' });
+    expect(result.isError).toBe(false);
+    const sc = result.structuredContent as Record<string, unknown>;
+    expect(sc).toMatchObject({
+      verdict: 'ok',
+      sample: { size: 6, peers: 6, referenceNodes: 0, ignored: 0, unknownVersion: 3 },
+      distribution: [
+        { version: '1.0.3.9', count: 4, share: 0.6667 },
+        { version: '1.0.4.0', count: 1, share: 0.1667 },
+        { version: '1.0.3.8', count: 1, share: 0.1667 },
+      ],
+      majorityVersion: '1.0.3.9',
+      newerShare: 0.1667,
+    });
+    const summary = sc.summary as string;
+    expect(summary.split('\n')[0]).toBe(
+      'version drift: ok. node.test:3001 runs 1.0.3.9; majority of 6 sampled nodes runs 1.0.3.9; 17% run something newer; 3 nodes reported no version (0.0.0.0) and are not counted.',
+    );
+    expect(summary).not.toMatch(/- 0\.0\.0\.0/);
+    expect(sc.notes).toContainEqual(
+      '3 peers reported version 0.0.0.0: the node does not know their version yet (catapult starts the peers it reads from its peers files at version 0). Counted in sample.unknownVersion and left out of the distribution, the majority and newerShare.',
+    );
+    expect(sc.notes).not.toContainEqual(expect.stringMatching(/^\d+ reference node/));
+    expect(versionDriftTool.outputSchema.safeParse(sc).success).toBe(true);
+  });
+
+  it('does not let unreported versions become the majority', async () => {
+    // own 1.0.3.8; peers 1.0.4.0 x2 and 0 x4. Counted as a version, 0.0.0.0 was the majority, the
+    // node looked newer than it and the verdict was ok; without them every sampled node is newer.
+    const versions = [V_1_0_4_0, V_1_0_4_0, 0, 0, 0, 0];
+    const list = peers().map((p, i) => ({ ...p, version: versions[i] }));
+    server = await startTestServer({
+      routes: {
+        ...perHostNodeInfo({ [TEST_NODE_HOST]: { version: V_1_0_3_8 } }),
+        'GET /node/peers': list,
+      },
+    });
+    const result = await server.callTool('symbol_version_drift');
+    expect(result.structuredContent).toMatchObject({
+      verdict: 'far_behind',
+      sample: { size: 2, peers: 2, unknownVersion: 4 },
+      distribution: [{ version: '1.0.4.0', count: 2, share: 1 }],
+      majorityVersion: '1.0.4.0',
+      newerShare: 1,
+    });
+  });
+
+  it('is unknown when no peer has reported its version yet', async () => {
+    const list = peers().map((p) => ({ ...p, version: 0 }));
+    server = await startTestServer({ routes: routes({ 'GET /node/peers': list }) });
+    const result = await server.callTool('symbol_version_drift');
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      verdict: 'unknown',
+      sample: { size: 0, peers: 0, unknownVersion: 6 },
+      distribution: [],
+      majorityVersion: null,
+      newerShare: null,
+    });
+    expect(result.structuredContent?.summary).toBe(
+      [
+        'version drift: unknown. node.test:3001 runs 1.0.3.9 but the sample is empty (no usable peers; 6 nodes reported no version (0.0.0.0)).',
+        '- The peers node.test:3001 knows have not reported their versions yet: check again later, check peer connectivity with symbol_node_health and symbol_node_status, or set SYMBOL_REFERENCE_NODES to compare against known nodes.',
+      ].join('\n'),
+    );
+  });
+
+  it('counts a reference node that reports no version apart', async () => {
+    server = await startTestServer({
+      env: { SYMBOL_REFERENCE_NODES: REF_A },
+      routes: perHostNodeInfo({ 'reference-a.test:3001': { version: 0 } }),
+    });
+    const result = await server.callTool('symbol_version_drift');
+    expect(result.structuredContent).toMatchObject({
+      verdict: 'ok',
+      sample: { size: 6, source: 'peers', peers: 6, referenceNodes: 0, unknownVersion: 1 },
+    });
+    expect(result.structuredContent?.summary).toMatch(
+      /; 1 node reported no version \(0\.0\.0\.0\) and is not counted\.$/,
+    );
+    // The peers-file explanation is about peers; a reference node reports its own version.
+    expect(result.structuredContent?.notes).toContainEqual(
+      '1 reference node(s) reported version 0.0.0.0 for themselves in /node/info, so their version is not known. Counted in sample.unknownVersion and left out of the distribution, the majority and newerShare.',
+    );
+    expect(result.structuredContent?.notes).not.toContainEqual(
+      expect.stringMatching(/peers files/),
+    );
+  });
+
+  it('does not ask to set SYMBOL_REFERENCE_NODES when they are set but gave no version', async () => {
+    server = await startTestServer({
+      env: { SYMBOL_REFERENCE_NODES: REF_A },
+      routes: {
+        ...perHostNodeInfo({ 'reference-a.test:3001': { version: 0 } }),
+        'GET /node/peers': peers().map((p) => ({ ...p, version: 0 })),
+      },
+    });
+    const result = await server.callTool('symbol_version_drift');
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      verdict: 'unknown',
+      sample: { size: 0, peers: 0, referenceNodes: 0, unknownVersion: 7 },
+    });
+    expect(result.structuredContent?.summary).toBe(
+      [
+        'version drift: unknown. node.test:3001 runs 1.0.3.9 but the sample is empty (no usable peers or reference nodes; 7 nodes reported no version (0.0.0.0)).',
+        '- The peers node.test:3001 knows have not reported their versions yet: check again later, check peer connectivity with symbol_node_health and symbol_node_status; none of the nodes in SYMBOL_REFERENCE_NODES gave a usable version (see the notes).',
+      ].join('\n'),
+    );
+    expect(result.structuredContent?.notes).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^6 peers reported version 0\.0\.0\.0: /),
+        expect.stringMatching(/^1 reference node\(s\) reported version 0\.0\.0\.0 for themselves/),
+      ]),
+    );
+  });
+
+  // The node's own version 0 is as unknown as a peer's: comparing with it made every sampled node
+  // newer, and the verdict far_behind with "upgrade as soon as possible".
+  it('is unknown when the node reports no version of its own', async () => {
+    server = await startTestServer({
+      routes: perHostNodeInfo({ [TEST_NODE_HOST]: { version: 0 } }),
+    });
+    let result = await server.callTool('symbol_version_drift');
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      verdict: 'unknown',
+      node: { version: '0.0.0.0', versionRaw: 0 },
+      sample: { size: 6, peers: 6, unknownVersion: 0 },
+      majorityVersion: '1.0.3.9',
+      newerShare: null,
+    });
+    expect(result.structuredContent?.summary).toBe(
+      [
+        'version drift: unknown. node.test:3001 reports no version of its own (0.0.0.0), so it cannot be compared; majority of 6 sampled nodes runs 1.0.3.9.',
+        '- The version node.test:3001 runs is not known from its /node/info: check it on the node itself and compare it with 1.0.3.9.',
+      ].join('\n'),
+    );
+    expect(versionDriftTool.outputSchema.safeParse(result.structuredContent).success).toBe(true);
+
+    // detailed still lists the distribution, which does not depend on the node's own version.
+    result = await server.callTool('symbol_version_drift', { format: 'detailed' });
+    expect(String(result.structuredContent?.summary).split('\n').slice(2)).toEqual([
+      '- 1.0.3.9: 4 (67%)',
+      '- 1.0.4.0: 1 (17%)',
+      '- 1.0.3.8: 1 (17%)',
+    ]);
+  });
+
   it('tolerates a failing /node/server', async () => {
     server = await startTestServer({
       routes: routes({ 'GET /node/server': () => jsonResponse({}, 503) }),

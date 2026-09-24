@@ -2,11 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   BEHIND_SHARE,
   compareVersions,
+  decodeVersion,
   deriveVersionDriftVerdict,
   FAR_BEHIND_SHARE,
+  isUnreportedVersion,
   parseVersion,
   versionDistribution,
 } from '../../src/domain/version.js';
+
+describe('isUnreportedVersion', () => {
+  it('reads version 0 (0.0.0.0) as not known yet, and any release as reported', () => {
+    expect(isUnreportedVersion(0)).toBe(true);
+    expect(decodeVersion(0)).toBe('0.0.0.0');
+    expect(isUnreportedVersion(16_777_993)).toBe(false); // 1.0.3.9
+    expect(isUnreportedVersion(1)).toBe(false); // 0.0.0.1 is still a reported version
+  });
+});
 
 describe('parseVersion / compareVersions', () => {
   it('compares component-wise, not as strings', () => {
@@ -52,6 +63,12 @@ describe('versionDistribution', () => {
       majorityVersion: null,
       newerShare: null,
     });
+  });
+  it('keeps the distribution but has no newer share when the own version is not known', () => {
+    const dist = versionDistribution(['1.0.3.9', '1.0.4.0', '1.0.3.9'], null);
+    expect(dist.majorityVersion).toBe('1.0.3.9');
+    expect(dist.distribution.map((b) => b.count)).toEqual([2, 1]);
+    expect(dist.newerShare).toBeNull();
   });
 });
 
@@ -101,5 +118,9 @@ describe('deriveVersionDriftVerdict', () => {
   });
   it('is unknown for an empty sample', () => {
     expect(deriveVersionDriftVerdict(own, dist([]))).toBe('unknown');
+  });
+  it('is unknown when the own version is not known, whatever the sample', () => {
+    const sample = ['1.0.4.0', '1.0.4.0', '1.0.4.0', '1.0.4.0'];
+    expect(deriveVersionDriftVerdict(null, versionDistribution(sample, null))).toBe('unknown');
   });
 });

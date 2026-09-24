@@ -9,7 +9,10 @@
  * i.e. (100-B-N):B:N. The three receipts are separate even when the harvester is its own
  * beneficiary (verified on mainnet, 2026-09-11). Older blocks or accounts without a beneficiary
  * show two receipts, (100-N):N. Receipts are not returned in amount order, so the shares are
- * identified by sorting.
+ * identified by sorting. So a node operator that is its own node's beneficiary gets two receipts
+ * for each block it harvests and one (the beneficiary share) for each block a delegator harvests:
+ * beneficiary receipts are not a count of delegators' blocks, which is why the totals also count
+ * blocks (blocksHarvested, blocksBeneficiaryOnly), each block once.
  *
  * Statements are read in height chunks of about CHUNK_DAYS: catapult-rest answers the first page
  * of a wide height range plus targetAddress too slowly (a year timed out on mainnet, 2026-09-19,
@@ -102,6 +105,29 @@ export interface HarvestTotals {
   harvester: KindTotals;
   beneficiary: KindTotals;
   unknown: KindTotals;
+  /** Blocks in which the account received at least one receipt. */
+  blocks: number;
+  /** Blocks the account harvested: it received the harvester share (one receipt per block). */
+  blocksHarvested: number;
+  /**
+   * Blocks another account harvested in which the account received only the beneficiary share
+   * (typically delegators of the node that names it as beneficiary). A block the account harvested
+   * counts in blocksHarvested even when it also paid the account the beneficiary share. Blocks
+   * whose receipts were not recognised count in blocksUnrecognised.
+   */
+  blocksBeneficiaryOnly: number;
+  /**
+   * Blocks whose share split was not recognised (all their receipts are unknown). Every block
+   * counts in exactly one of blocksHarvested, blocksBeneficiaryOnly and blocksUnrecognised. Not
+   * an output field: the summary names them.
+   */
+  blocksUnrecognised: number;
+  /**
+   * Beneficiary receipts from blocks the account harvested itself, which it gets as its own
+   * node's beneficiary. Not an output field: the summary says how many of the beneficiary
+   * receipts these are.
+   */
+  beneficiaryReceiptsInOwnBlocks: number;
 }
 
 export interface DailyBucket extends HarvestTotals {
@@ -145,34 +171,76 @@ function emptyTotals(): HarvestTotals {
     harvester: { receipts: 0, raw: 0n },
     beneficiary: { receipts: 0, raw: 0n },
     unknown: { receipts: 0, raw: 0n },
+    blocks: 0,
+    blocksHarvested: 0,
+    blocksBeneficiaryOnly: 0,
+    blocksUnrecognised: 0,
+    beneficiaryReceiptsInOwnBlocks: 0,
   };
 }
 
-function add(totals: HarvestTotals, row: HarvestRow): void {
-  totals.receipts += 1;
-  totals.raw += row.raw;
-  totals[row.kind].receipts += 1;
-  totals[row.kind].raw += row.raw;
+/** The receipts of ONE block, all at one height; never empty. */
+type Block = readonly [HarvestRow, ...HarvestRow[]];
+
+/** A block and the calendar day (SYMBOL_TIMEZONE or UTC) it falls on. */
+interface DatedBlock {
+  readonly rows: Block;
+  readonly day: string;
+}
+
+/** Adds the receipts of one block and counts the block once, by the role the account had in it. */
+function addBlock(totals: HarvestTotals, block: Block): void {
+  for (const row of block) {
+    totals.receipts += 1;
+    totals.raw += row.raw;
+    totals[row.kind].receipts += 1;
+    totals[row.kind].raw += row.raw;
+  }
+  totals.blocks += 1;
+  if (block.some((row) => row.kind === 'harvester')) {
+    totals.blocksHarvested += 1;
+    totals.beneficiaryReceiptsInOwnBlocks += block.filter(
+      (row) => row.kind === 'beneficiary',
+    ).length;
+  } else if (block.some((row) => row.kind === 'beneficiary')) {
+    totals.blocksBeneficiaryOnly += 1;
+  } else {
+    totals.blocksUnrecognised += 1;
+  }
+}
+
+/** Rows sorted by height, grouped into one block per height. */
+function groupByHeight(rows: readonly HarvestRow[]): Block[] {
+  const blocks: [HarvestRow, ...HarvestRow[]][] = [];
+  for (const row of rows) {
+    const last = blocks[blocks.length - 1];
+    if (last !== undefined && last[0].height === row.height) last.push(row);
+    else blocks.push([row]);
+  }
+  return blocks;
 }
 
 const KIND_ORDER: Record<HarvestKind, number> = { harvester: 0, beneficiary: 1, unknown: 2 };
 
-/** Sums `rows` into buckets keyed by `keys[i]` (same length), returned in ascending key order. */
+/**
+ * Sums the blocks into buckets keyed by `keyOf`, returned in ascending key order. A block's
+ * receipts share its timestamp, so a block always falls into exactly one bucket.
+ */
 function bucketBy<B extends HarvestTotals>(
-  rows: readonly HarvestRow[],
-  keys: readonly string[],
+  blocks: readonly DatedBlock[],
+  keyOf: (block: DatedBlock) => string,
   create: (key: string) => B,
 ): B[] {
   const buckets = new Map<string, B>();
-  rows.forEach((row, i) => {
-    const key = keys[i] ?? '';
+  for (const block of blocks) {
+    const key = keyOf(block);
     let bucket = buckets.get(key);
     if (!bucket) {
       bucket = create(key);
       buckets.set(key, bucket);
     }
-    add(bucket, row);
-  });
+    addBlock(bucket, block.rows);
+  }
   return [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, b]) => b);
 }
 
@@ -209,13 +277,21 @@ export function aggregateHarvestIncome(
 
   rows.sort((a, b) => a.height - b.height || KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
 
+  // Every row of a block carries the block's timestamp, so the first one dates the block.
+  const blocks: DatedBlock[] = groupByHeight(rows).map((block) => ({
+    rows: block,
+    day: calendarDateKey(block[0].time, options.timeZone),
+  }));
   const totals = emptyTotals();
-  for (const row of rows) add(totals, row);
-  const dayKeys = rows.map((row) => calendarDateKey(row.time, options.timeZone));
-  const daily = bucketBy(rows, dayKeys, (date) => ({ date, ...emptyTotals() }));
+  for (const block of blocks) addBlock(totals, block.rows);
+  const daily = bucketBy(
+    blocks,
+    (block) => block.day,
+    (date) => ({ date, ...emptyTotals() }),
+  );
   const monthly = bucketBy(
-    rows,
-    dayKeys.map((key) => key.slice(0, 7)),
+    blocks,
+    (block) => block.day.slice(0, 7),
     (month) => ({ month, ...emptyTotals() }),
   );
   return { rows, totals, daily, monthly, unknownStatements };
