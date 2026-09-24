@@ -17,8 +17,17 @@ It either BLOCKS (exit 2, reason on stderr), forces a human prompt (JSON
 permissionDecision "ask"), or stays silent (exit 0) so the normal permission
 rules / classifier decide.
 
-git and gh run OUTSIDE the OS sandbox (settings.local.json excludedCommands),
-so for them this hook is the only defence, and their subcommands are
+git push / fetch / ls-remote and gh run OUTSIDE the OS sandbox
+(settings.local.json excludedCommands), so for them this hook is the first
+defence; other git commands run inside the sandbox, which refuses writes to the
+protected files, and the rules below are a second layer for them. Outside the
+sandbox gh may only talk to github.com, commands that write on GitHub may only
+target this repository's origin, the files gh reads (--body-file) must be in the
+repository or the scratch area, pushes need an explicit non-main destination
+and never push tags or wildcards, fetches only write remote-tracking refs (or
+the same name without '+') from configured remotes, and lines that run them may
+not contain command substitution (other than "$(cat <<'EOF' ... EOF)").
+git and gh subcommands are
 ALLOWLISTED (GIT_ALLOWED, GH_ALLOWED): anything not on the lists is refused by
 default, including aliases and external git-* / gh-* commands. Within the
 allowed subcommands, long options are also matched when abbreviated (git
@@ -59,6 +68,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 
 PROJECT_DIR = os.path.realpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
 ALLOWED_PACKAGES_FILE = os.path.join(PROJECT_DIR, ".claude", "allowed-packages.txt")
@@ -134,6 +144,19 @@ MSG_PR_CHECKOUT = "Checking out or fetching pull-request refs is forbidden: a pu
 MSG_GH = "This gh operation (merge/release/settings/secrets/auth/alias/extension/config/codespace/keys) is reserved for humans."
 MSG_GH_API_PROTECTED = "Changing repository protection/secrets via gh api is forbidden."
 MSG_GH_API_FIELDS = "gh api with write fields is reserved for humans."
+MSG_GH_HOST = "gh may only talk to github.com (gh runs outside the sandbox, so another host would be a way to send data out): no --hostname, full URLs or HOST/OWNER/REPO for other hosts."
+MSG_GH_TARGET = "gh commands that write (PR and issue changes, comments, workflow reruns) may only target this repository's origin ({}). Reading other repositories is fine."
+MSG_GH_FILE = "gh reads this file outside the sandbox ({}): --body-file/-F may only name a file inside the repository (not .git/, .env*, keys) or under $TMPDIR / the scratchpad, or - for stdin."
+MSG_GH_CONFIG_KEY = "gh config get is limited to git_protocol, editor, prompt, pager, browser, spinner, color_labels, accessible_colors and accessible_prompter (other keys can hold credentials)."
+MSG_OUTSIDE_SUBST = "Command substitution ($(...), backticks, <(...)) is forbidden in a command line that runs gh or git push/fetch/ls-remote: those run outside the sandbox, and the substituted commands may run there too. Write the text to a file in $TMPDIR or the scratchpad and pass it with gh --body-file (a line with a substitution runs inside the sandbox, where gh cannot read its configuration)."
+MSG_PUSH_IMPLICIT = "git push without an explicit destination (no refspec, HEAD or @) is only allowed from a named branch other than main/master. Name the branch: git push -u origin <branch>."
+MSG_PUSH_UNCHECKED = "git push: the hook could not check whether '{}' is a local tag, so the push is refused. Push a branch by its full name (<branch>:refs/heads/<branch>)."
+MSG_PUSH_WILDCARD = "git push with a wildcard refspec (*) is forbidden: it can push main or tags. Push one branch by name."
+MSG_FETCH_DST = "git fetch may only write remote-tracking refs (refs/remotes/...), a local branch of the same name without '+', or a tag of the same name without '+': fetching into another local branch or tag (or forcing one) can put an unreviewed commit where a human expects a reviewed one (for example a release tag)."
+MSG_FETCH_REMOTE = "git fetch/pull/ls-remote may only name a configured remote ('{}' is not one, and git would read a name that is not a remote as a path)."
+MSG_FETCH_TAGS = "Tags may only be fetched from origin: a tag from another remote could take the name of a release tag."
+MSG_FETCH_HEAD_OK = "git fetch --update-head-ok is forbidden (it moves the checked-out branch without updating the working tree)."
+MSG_PKG_CONFIG_FILE = "Pointing a package manager at another configuration file ({}) is forbidden (it can change the registry or re-enable install scripts)."
 MSG_RM_OUTSIDE = "rm target '{}' is outside the safe set (absolute/home/parent/variable paths are forbidden; \"$TMPDIR/<name>\" and paths under /tmp/claude-<uid>/ are allowed)."
 MSG_RM_RECURSIVE = "Recursive rm is only allowed on build artefacts (dist/, coverage/, node_modules/, .tmp/) and temporary directories. Got '{}'."
 
@@ -187,6 +210,9 @@ PROTECTED_MENTION = re.compile(
 # Checked on the awk program with the contents of its string literals removed, so FS="|" or print $1 "|" $2 are
 # not pipes, while print | "cmd" and "cmd" | getline still are.
 AWK_EXEC = re.compile(r"\bsystem\s*\(|\|\s*&|\|\s*getline|\bprintf?\b[^;{}]*?\|\s*[\"A-Za-z_(]")
+# Also checked on the program as written: a quote inside a regular expression (/"/) makes the string removal pair
+# the wrong quotes and can remove a command. Narrow enough that "|" as a field separator or in output still passes.
+AWK_EXEC_RAW = re.compile(r"\bsystem\s*\(|\|\s*&|\|\s*getline|\|\s*\"[^\"\n]*\"\s*($|[;}\n])")
 AWK_STRING = re.compile(r"\"(\\.|[^\"\\])*\"")
 
 # Protected paths are compared without regard to case: APFS (this machine) and the default macOS / Windows
@@ -658,6 +684,8 @@ class Ctx(object):
         self.problems = []  # block reasons found while collecting
         self.asks = []     # reasons to ask a human
         self.assigns = []  # (name, value): variables this command line sets; name None = computed at run time
+        self.subs = []     # the text of every command substitution ($(...), `...`, <(...), >(...))
+        self.outside = False  # the line runs gh or git push/fetch/ls-remote (excludedCommands: outside the sandbox)
         without = re.sub(r"\$\{?TMPDIR", "", flat)
         # TMPDIR may be changed in this command line (assigned, exported, read, unset...); decide() also
         # counts a sourced file
@@ -715,6 +743,7 @@ def _collect(s, ctx, depth):
     toks = _lex(s, subs)
     for cmd in _build(toks):
         _process(cmd, ctx, depth)
+    ctx.subs.extend(subs)
     for sub in subs:
         _collect(sub, ctx, depth + 1)
 
@@ -759,6 +788,21 @@ def _skip_opts(a, i, with_value=()):
             return i + 1
         i += 2 if a[i] in with_value else 1
     return i
+
+
+def _skip_value_opts(a, names):
+    """a without the options in names and their values (separate or --opt=value)."""
+    out = []
+    i = 0
+    while i < len(a):
+        t = a[i]
+        if t in names:
+            i += 2
+            continue
+        if not any(nm.startswith("--") and t.startswith(nm + "=") for nm in names):
+            out.append(t)
+        i += 1
+    return out
 
 
 def _option_value(a, names):
@@ -1103,6 +1147,8 @@ def _pm_command(tool, args):
                 i += 1
             elif key in values:
                 i += 2
+            elif key == "--color" and i + 1 < len(args) and args[i + 1] in ("always", "true", "false"):
+                i += 2  # npm's --color takes an optional value ("--color always install x" installs x)
             elif key in PM_BOOL_OPTS:
                 i += 1
             else:
@@ -1296,9 +1342,11 @@ def _write_targets(name, a):
     return []
 
 
-# Commands that write when find runs them through -exec / -execdir / -ok
-FIND_WRITERS = {"rm", "rmdir", "unlink", "mv", "cp", "ln", "truncate", "chmod", "chown", "chgrp", "shred", "tee", "dd",
-                "install", "touch", "mkdir"}
+# Commands find may run through -exec / -execdir / -ok that only read: any other command counts as a writer
+# (a list of writers misses the many programs that can write, such as gzip, patch, tar or an interpreter)
+FIND_READERS = {"grep", "egrep", "fgrep", "rg", "cat", "head", "tail", "wc", "ls", "stat", "file", "echo", "printf", "test",
+                "[", "basename", "dirname", "realpath", "readlink", "sha256sum", "sha1sum", "md5sum", "shasum", "md5",
+                "cksum", "diff", "cmp", "du", "jq", "true", "false", "sed"}
 FIND_WALK_LIMIT = 20000
 
 
@@ -1325,7 +1373,7 @@ def _find_writes(words):
     for inner in _find_execs(words):
         name = _base(inner[0].text)
         args = [w.text for w in inner[1:]]
-        if name in FIND_WRITERS or (name in ("sed", "perl") and any(t.startswith("-i") or (_is_cluster(t) and "i" in t) for t in args)):
+        if name not in FIND_READERS or (name == "sed" and any(t.startswith(("-i", "--in-place")) or (_is_cluster(t) and "i" in t) for t in args)):
             return True
     return False
 
@@ -1394,6 +1442,8 @@ def _rm(words, ctx):
 def _in_rm_allowed(t):
     """t is one of the build-artefact directories or inside one ("distsrc" is not "dist")."""
     s = t.rstrip("/")
+    if ".." in s.split("/"):
+        return False  # dist/.. is the repository
     return any(s == p or s.startswith(p + "/") for p in RM_ALLOWED_PREFIXES)
 
 
@@ -1468,16 +1518,17 @@ def _is_exclude_spec(spec):
     return bool(m) and "exclude" in [w.strip() for w in m.group(1).split(",")]
 
 
-def _pathspecs_cover(specs, f, prefix):
+def _pathspecs_cover(specs, f, prefix, top=None):
     """Whether a set of git pathspecs covers file f. Exclude pathspecs (':!x', ':^x', ':(exclude)x') only take files
     away, and a set of excludes alone means "everything except" (git), so excludes are ignored here: the hook may
     ask when the excluded part is all that changes, but never misses a protected file."""
     positives = [s for s in specs if not _is_exclude_spec(s)]
-    return not positives or any(_pathspec_covers(s, f, prefix) for s in positives)
+    return not positives or any(_pathspec_covers(s, f, prefix, top) for s in positives)
 
 
-def _pathspec_covers(spec, f, prefix):
-    """Whether a git pathspec given in the subdirectory prefix covers the repository-relative file f."""
+def _pathspec_covers(spec, f, prefix, top=None):
+    """Whether a git pathspec given in the subdirectory prefix covers the repository-relative file f. An absolute
+    path is taken relative to the top of the working tree top (git accepts absolute paths inside it)."""
     s = spec
     base = prefix
     if s.startswith(":"):
@@ -1485,6 +1536,13 @@ def _pathspec_covers(spec, f, prefix):
             s, base = s[2:], ""
         else:
             return True  # other pathspec magic: assume it may cover
+    elif os.path.isabs(s):
+        if top is None:
+            return True  # cannot tell: assume it may cover
+        rel = os.path.relpath(os.path.realpath(s), os.path.realpath(top))
+        if rel == ".." or rel.startswith(".." + os.sep):
+            return False  # outside the working tree (git refuses it)
+        s, base = rel, ""
     q = os.path.normpath(os.path.join(base, s)).lower() if (base or s) else "."
     fl = f.lower()
     if q in (".", ""):
@@ -1501,24 +1559,7 @@ def _worktree_changes(sub, rest, cwd):
     kind "tree" (the working tree becomes target), "index" (the index becomes target), "from-index" (the working
     tree becomes the index), or "unknown" (git cannot tell whether an argument is a commit or a path)."""
     if sub == "checkout":
-        before, after, newbranch = [], None, False
-        i = 0
-        while i < len(rest):
-            t = rest[i]
-            if t == "--":
-                after = rest[i + 1:]
-                break
-            if t in ("-b", "-B", "--orphan") or (_is_cluster(t) and t[-1] in "bB"):
-                newbranch = True
-                i += 2
-                continue
-            if t.startswith("--orphan="):
-                newbranch = True
-            if t.startswith("-") and t != "-":
-                i += 1
-                continue
-            before.append("@{-1}" if t == "-" else t)
-            i += 1
+        before, after, newbranch = _checkout_args(rest)
         if after is not None:
             return [("tree", before[0], after)] if before else [("from-index", None, after)]
         if not before:
@@ -1579,11 +1620,12 @@ def _worktree_changes(sub, rest, cwd):
         i = 0
         while i < len(rest):
             t = rest[i]
-            if t in ("-s", "--source") and i + 1 < len(rest):
+            # --source also abbreviated (--sou, --sour=...): git accepts unique prefixes of long options
+            if (t == "-s" or (_opt_is(t, "--source") and "=" not in t)) and i + 1 < len(rest):
                 source = rest[i + 1]
                 i += 2
                 continue
-            if t.startswith("--source="):
+            if _opt_is(t, "--source") and "=" in t:
                 source = t.split("=", 1)[1]
             elif t.startswith("-s") and len(t) > 2 and not t.startswith("--"):
                 source = t[2:]
@@ -1608,7 +1650,7 @@ def _worktree_ask(sub, rest, ctx, dir_words):
     in the working tree or the index with another version, or when that cannot be checked; else None.
     Checked from every directory the command may run in (the session cwd and each literal cd before it), since
     relative pathspecs such as '..' depend on it."""
-    if sub not in ("checkout", "switch", "reset", "restore", "merge", "rebase") and not (
+    if sub not in ("checkout", "switch", "reset", "restore", "merge", "rebase", "cherry-pick") and not (
             sub == "stash" and rest[:1] and rest[0] in ("pop", "apply", "branch")):
         return None
     bases = ctx.bases() or [ctx.cwd]
@@ -1635,6 +1677,15 @@ def _worktree_ask_in(sub, rest, cwd):
         # (a word that is not one, such as a -m message, makes the check fail, which asks)
         refs = [t for t in rest if not t.startswith("-") and t != "--"]
         changes = [("range", "HEAD..." + r, None) for r in (refs or ["@{upstream}"])]
+        if sub == "rebase":
+            # --onto X rebuilds the branch on X: compare with X directly, which also catches the commits it drops
+            for k, t in enumerate(rest):
+                if _opt_is(t, "--onto"):
+                    onto = t.split("=", 1)[1] if "=" in t else (rest[k + 1] if k + 1 < len(rest) else "")
+                    changes.append(("range", "HEAD.." + onto, None))
+    elif sub == "cherry-pick":
+        # each commit's own change (c^!), or a range as written
+        changes = [("range", c if ".." in c else c + "^!", None) for c in rest if not c.startswith("-") and c != "--"]
     elif sub == "stash" and rest[:1] and rest[0] in ("pop", "apply", "branch"):
         args = [t for t in rest[1:] if not t.startswith("-")]
         if rest[0] == "branch":
@@ -1649,7 +1700,7 @@ def _worktree_ask_in(sub, rest, cwd):
         return "git stash {} would change protected files ({})".format(rest[0], ", ".join(files[:3])) if files else None
     else:
         return None
-    prefix = None
+    prefix = top = None
     for kind, target, paths in changes:
         if kind == "unknown":
             return "git {}: could not check whether '{}' is a commit or a path".format(sub, target)
@@ -1667,7 +1718,12 @@ def _worktree_ask_in(sub, rest, cwd):
                 if rc != 0:
                     return "git {}: could not check whether it changes protected files".format(sub)
                 prefix = out.strip().rstrip("/")
-            changed = [f for f in changed if _pathspecs_cover(paths, f, prefix)]
+            if top is None and any(os.path.isabs(p) for p in paths):
+                rc, out = _git_probe(["rev-parse", "--show-toplevel"], cwd)
+                if rc != 0:
+                    return "git {}: could not check whether it changes protected files".format(sub)
+                top = out.strip()
+            changed = [f for f in changed if _pathspecs_cover(paths, f, prefix, top)]
         if changed:
             more = " and {} more".format(len(changed) - 3) if len(changed) > 3 else ""
             return "git {} would change protected files ({}{}); the hooks are read from the working tree".format(
@@ -1693,10 +1749,10 @@ def _grep_opens_pager(rest):
     return False
 
 
-def _checkout_paths(rest, cwd):
-    """The paths "git checkout" writes: after "--"; otherwise the words after a first word that is a commit, or
-    every word when the first is not a commit or git cannot tell. New branch names (-b/-B/--orphan) are not paths."""
-    before, after = [], None
+def _checkout_args(rest):
+    """git checkout's arguments: (words before "--", the words after it or None, whether -b/-B/--orphan creates a
+    branch). New branch names are left out, and "-" (the previous branch) becomes @{-1}."""
+    before, after, newbranch = [], None, False
     i = 0
     while i < len(rest):
         t = rest[i]
@@ -1704,30 +1760,58 @@ def _checkout_paths(rest, cwd):
             after = rest[i + 1:]
             break
         if t in ("-b", "-B", "--orphan") or (_is_cluster(t) and t[-1] in "bB"):
+            newbranch = True
             i += 2
             continue
+        if t.startswith("--orphan="):
+            newbranch = True
         if t.startswith("-") and t != "-":
             i += 1
             continue
-        before.append(t)
+        before.append("@{-1}" if t == "-" else t)
         i += 1
+    return before, after, newbranch
+
+
+def _checkout_paths(rest, cwd):
+    """The paths "git checkout" writes: after "--"; otherwise the words after a first word that is a commit, or
+    every word when the first is not a commit or git cannot tell. New branch names (-b/-B/--orphan) are not paths."""
+    before, after, _ = _checkout_args(rest)
     if after is not None:
         return after
     if not before:
         return []
-    return before[1:] if _is_commit("@{-1}" if before[0] == "-" else before[0], cwd) else before
+    return before[1:] if _is_commit(before[0], cwd) else before
 
 
-def _branch_refspec(ref):
-    """A fetch refspec that only names branches or tags (not pull requests, arbitrary refs or commit ids)."""
+def _fetch_src_ok(ref):
+    """The source of a fetch refspec only names branches or tags (not pull requests, arbitrary refs or commit ids)."""
     r = ref[1:] if ref.startswith("+") else ref
-    src, _, dst = r.partition(":")
-    src_ok = src == "HEAD" or src.startswith(("refs/heads/", "refs/tags/")) or (
+    src = r.partition(":")[0]
+    return src == "HEAD" or src.startswith(("refs/heads/", "refs/tags/")) or (
         src != "" and not src.startswith("refs/") and "pull/" not in src and "*" not in src
         and not re.fullmatch(r"[0-9a-fA-F]{7,64}", src))
-    dst_ok = dst == "" or dst.startswith(("refs/remotes/", "refs/heads/", "refs/tags/")) or (
-        not dst.startswith("refs/") and "*" not in dst)
-    return src_ok and dst_ok
+
+
+def _fetch_dst_ok(ref):
+    """Where a fetch refspec writes: nothing (FETCH_HEAD), remote-tracking refs (also forced), or, without '+', a local
+    branch or tag of the same name as the source. Anything else can put another commit under a name a human
+    trusts, such as main or a release tag."""
+    force = ref.startswith("+")
+    src, colon, dst = (ref[1:] if force else ref).partition(":")
+    if not colon or dst == "" or dst.startswith("refs/remotes/"):
+        return True
+    if force:
+        return False
+    if dst.startswith("refs/tags/") or src.startswith("refs/tags/"):
+        return src == dst
+
+    def branch(x):
+        return x[len("refs/heads/"):] if x.startswith("refs/heads/") else x
+    if (dst.startswith("refs/") and not dst.startswith("refs/heads/")) or (
+            src.startswith("refs/") and not src.startswith("refs/heads/")):
+        return False
+    return branch(src) == branch(dst)
 
 
 def _opt_is(t, name, min_len=4):
@@ -1794,7 +1878,7 @@ def _git_tag(rest):
     return None
 
 
-def _git_push(rest):
+def _git_push(rest, cwd):
     blocked = {"--force": MSG_FORCE, "--force-with-lease": MSG_FORCE, "--force-if-includes": MSG_FORCE,
                "--delete": MSG_FORCE, "--mirror": MSG_FORCE, "--prune": MSG_FORCE, "--tags": MSG_TAG_PUSH,
                "--follow-tags": MSG_TAG_PUSH, "--all": MSG_MAIN, "--branches": MSG_MAIN, "--no-verify": MSG_NO_VERIFY,
@@ -1831,28 +1915,65 @@ def _git_push(rest):
             continue
         pos.append(t)
         i += 1
-    if not pos:
-        return None
-    if not REMOTE_NAME.match(pos[0]):
+    if pos and not REMOTE_NAME.match(pos[0]):
         return MSG_GIT_NET
+    if len(pos) < 2:
+        return _push_current(cwd)  # no refspec: the checked-out branch goes to its push destination
     for ref in pos[1:]:
         if ref.startswith(("+", ":")):
             return MSG_FORCE
+        if "*" in ref:
+            return MSG_PUSH_WILDCARD
+        src = ref.split(":", 1)[0]
         dst = ref.split(":", 1)[1] if ":" in ref else ref
         if "refs/tags" in ref or TAG_LIKE.match(dst):
             return MSG_TAG_PUSH
+        if ":" not in ref and src in ("HEAD", "@"):
+            r = _push_current(cwd)
+            if r:
+                return r
+            continue
         if dst.startswith("refs/heads/"):
             dst = dst[len("refs/heads/"):]
         if dst in ("main", "master"):
             return MSG_MAIN
+        r = _push_src_tag(src, cwd)
+        if r:
+            return r
     return None
 
 
-def _git_fetch(sub, rest):
+def _push_current(cwd):
+    """A reason to refuse a push of the checked-out branch without a named destination: on main/master, a detached
+    HEAD, a push destination (@{push}) of main/master, or when git cannot tell."""
+    rc, out = _git_probe(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd)
+    if rc != 0:
+        return MSG_PUSH_IMPLICIT
+    if out.strip() in ("main", "master"):
+        return MSG_MAIN
+    rc, out = _git_probe(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{push}"], cwd)
+    if rc == 0 and out.strip().split("/", 1)[-1] in ("main", "master"):
+        return MSG_MAIN
+    return None
+
+
+def _push_src_tag(src, cwd):
+    """Refuse a push whose source names a local tag (git push origin foo, where foo is a tag), also when git cannot
+    tell."""
+    if not src or src.startswith("refs/") or not re.match(r"^[A-Za-z0-9._/-]+$", src):
+        return None  # full ref names, and revisions such as HEAD~1 (not tag names) are not tags here
+    rc, _ = _git_probe(["show-ref", "--verify", "--quiet", "refs/tags/" + src], cwd)
+    if rc == 1:
+        return None
+    return MSG_TAG_PUSH if rc == 0 else MSG_PUSH_UNCHECKED.format(src)
+
+
+def _git_fetch(sub, rest, cwd):
     with_value = {"--depth", "--deepen", "--shallow-since", "--shallow-exclude", "--jobs", "--server-option",
                   "--negotiation-tip", "--refmap", "--filter", "--strategy", "--strategy-option"}
     pos = []
-    multiple = False
+    multiple = every = tags = False
+    refmaps = []
     i = 0
     n = len(rest)
     while i < n:
@@ -1866,8 +1987,16 @@ def _git_fetch(sub, rest):
                 return MSG_GIT_EXEC
             if _opt_any(t, ("--recurse-submodules", "--recurse-submodules-default")) and not t.endswith("=no"):
                 return MSG_GIT_NET
+            if sub == "fetch" and _opt_is(t, "--update-head-ok"):
+                return MSG_FETCH_HEAD_OK
             if key == "--multiple":
                 multiple = True
+            if key == "--all":
+                every = True
+            if sub != "ls-remote" and _opt_is(t, "--tags"):
+                tags = True
+            if _opt_is(t, "--refmap"):
+                refmaps.append(t.split("=", 1)[1] if "=" in t else (rest[i + 1] if i + 1 < n else ""))
             if key in with_value and "=" not in t:
                 i += 1
             i += 1
@@ -1875,19 +2004,43 @@ def _git_fetch(sub, rest):
         if t.startswith("-") and t != "-":
             if sub == "ls-remote" and "u" in t[1:]:
                 return MSG_GIT_EXEC
+            if sub == "fetch" and _is_cluster(t) and "u" in t:
+                return MSG_FETCH_HEAD_OK
+            if sub != "ls-remote" and _is_cluster(t) and "t" in t:
+                tags = True
             if t in ("-j", "-o", "-s", "-X"):
                 i += 1
             i += 1
             continue
         pos.append(t)
         i += 1
-    for repo in (pos if multiple else pos[:1]):
+    repos = pos if multiple else pos[:1]
+    for repo in repos:
         if not REMOTE_NAME.match(repo):
             return MSG_GIT_NET
+    remotes = None
+    if repos or tags:
+        rc, out = _git_probe(["remote"], cwd)
+        if rc != 0:
+            return MSG_FETCH_REMOTE.format(repos[0] if repos else "?")
+        remotes = out.split()
+        for repo in repos:
+            if repo not in remotes:
+                return MSG_FETCH_REMOTE.format(repo)
+    # tags only from origin: with --tags, a named remote other than origin (or all remotes, when there are others)
+    if tags and ((repos and any(r != "origin" for r in repos)) or ((every or multiple) and any(r != "origin" for r in remotes))):
+        return MSG_FETCH_TAGS
+    if sub not in ("fetch", "pull") or multiple:
+        return None
+    specs = pos[1:] + [m for m in refmaps if m]
     # only branches and tags: pull-request heads (refs/pull/...), other refs and commit ids can bring in a
     # version of these hooks the maintainer has not merged
-    if sub in ("fetch", "pull") and not multiple and not all(_branch_refspec(ref) for ref in pos[1:]):
+    if not all(_fetch_src_ok(ref) for ref in specs):
         return MSG_PR_CHECKOUT
+    if not all(_fetch_dst_ok(ref) for ref in specs):
+        return MSG_FETCH_DST
+    if repos and repos[0] != "origin" and any("refs/tags/" in ref.partition(":")[2] for ref in specs):
+        return MSG_FETCH_TAGS
     return None
 
 
@@ -1941,18 +2094,31 @@ def _git(words, ctx):
     pos = _positionals(rest)
     first = pos[0] if pos else None
 
+    if sub in ("push", "fetch", "ls-remote"):
+        ctx.outside = True
+    # the directories the command may run in (session cwd and literal cd targets, then -C)
+    run_dirs = []
+    for base in ctx.bases() or [ctx.cwd]:
+        d = base
+        for w in dirs:
+            d = os.path.normpath(os.path.join(d, os.path.expanduser(w.text)))
+        run_dirs.append(d)
     if sub == "tag":
         return _git_tag(rest)
     if sub == "push":
-        r = _git_push(rest)
-        if r:
-            return r
+        for d in run_dirs:
+            r = _git_push(rest, d)
+            if r:
+                return r
         ctx.asks.append("git push to a feature branch")
         return None
     if sub in ("fetch", "pull", "ls-remote"):
-        r = _git_fetch(sub, rest)
-        if r:
-            return r
+        for d in run_dirs:
+            r = _git_fetch(sub, rest, d)
+            if r:
+                return r
+        if sub == "fetch" and any(_opt_is(t, "--prune-tags") or (_is_cluster(t) and "P" in t) for t in rest):
+            ctx.asks.append("git fetch --prune-tags (deletes local tags)")
     if sub == "clone":
         return MSG_GIT_NET
     # options that run a command, change the repository layout or skip hooks, in any subcommand
@@ -2132,16 +2298,134 @@ def _gh_api_write(rest):
     return None
 
 
+GH_HOSTS = {"github.com", "api.github.com", "www.github.com"}
+# gh commands that change something on GitHub: they may only target this repository's origin
+GH_WRITE_VERBS = {("pr", "create"), ("pr", "edit"), ("pr", "close"), ("pr", "reopen"), ("pr", "comment"), ("pr", "ready"),
+                  ("issue", "create"), ("issue", "comment"), ("run", "rerun"), ("run", "cancel")}
+GH_CONFIG_KEYS = {"git_protocol", "editor", "prompt", "pager", "browser", "spinner", "color_labels", "accessible_colors",
+                  "accessible_prompter"}
+URL_START = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+SECRET_NAME = re.compile(r"^(\.env(\..*)?|.*\.(pem|key)|id_(rsa|ed25519|ecdsa|dsa)(\.pub)?|\.netrc|\.npmrc)$", re.IGNORECASE)
+
+
+def _origin_slug(cwd):
+    """OWNER/REPO (lower case) of the origin remote on github.com, or None."""
+    rc, out = _git_probe(["remote", "get-url", "origin"], cwd)
+    if rc != 0:
+        return None
+    m = re.match(r"^(?:https://(?:[^@/]+@)?github\.com/|ssh://git@github\.com/|git@github\.com:)([^/\s]+)/([^/\s]+?)(?:\.git)?/?$",
+                 out.strip(), re.IGNORECASE)
+    return (m.group(1) + "/" + m.group(2)).lower() if m else None
+
+
+def _gh_repo_values(rest):
+    """Values of -R/--repo anywhere in the arguments (-R v, -Rv, --repo v, --repo=v)."""
+    out = []
+    for k, t in enumerate(rest):
+        if t in ("-R", "--repo"):
+            out.append(rest[k + 1] if k + 1 < len(rest) else "")
+        elif t.startswith("--repo="):
+            out.append(t.split("=", 1)[1])
+        elif t.startswith("-R") and len(t) > 2:
+            out.append(t[2:].lstrip("="))
+    return out
+
+
+def _gh_repo_host_slug(v):
+    """(host, OWNER/REPO) of a -R value: OWNER/REPO, HOST/OWNER/REPO or a URL."""
+    if URL_START.match(v):
+        u = urllib.parse.urlsplit(v)
+        parts = [p for p in u.path.split("/") if p]
+        return (u.hostname or "").lower(), "/".join(parts[:2]).lower()
+    parts = v.split("/")
+    if len(parts) == 3:
+        return parts[0].lower(), "/".join(parts[1:]).lower()
+    return "github.com", v.lower()
+
+
+def _gh_host_problem(rest):
+    for k, t in enumerate(rest):
+        if t == "--hostname" or t.startswith("--hostname="):
+            host = t.split("=", 1)[1] if "=" in t else (rest[k + 1] if k + 1 < len(rest) else "")
+            if host.lower() not in GH_HOSTS:
+                return MSG_GH_HOST
+        if URL_START.match(t):
+            if (urllib.parse.urlsplit(t).hostname or "").lower() not in GH_HOSTS:
+                return MSG_GH_HOST
+    for v in _gh_repo_values(rest):
+        if _gh_repo_host_slug(v)[0] not in GH_HOSTS:
+            return MSG_GH_HOST
+    return None
+
+
+def _gh_target_problem(rest, ctx):
+    """For a command that writes: every -R value and every github.com URL must name the origin repository."""
+    slugs = [_gh_repo_host_slug(v)[1] for v in _gh_repo_values(rest)]
+    for t in _positionals(rest):
+        if URL_START.match(t):
+            slugs.append(_gh_repo_host_slug(t)[1])
+    if not slugs:
+        return None  # gh resolves the repository from this checkout
+    origin = None
+    for base in ctx.bases() or [None]:
+        if base is None:
+            return MSG_GH_TARGET.format("unknown")
+        origin = _origin_slug(base)
+        if origin is None or any(s != origin for s in slugs):
+            return MSG_GH_TARGET.format(origin or "unknown")
+    return None
+
+
+def _gh_file_ok(t, ctx):
+    """Whether gh may read the file t (it runs outside the sandbox): stdin, a file in the repository that is not
+    under .git/ and does not look like a secret, "$TMPDIR/<name>" or the Claude scratch area."""
+    if t == "-":
+        return True
+    if TMP_VAR.match(t):
+        return not _computed(t, ctx)
+    if not t or re.search(r"[$`*?\[]", t):
+        return False
+    bases = ctx.bases()
+    if bases is None and not os.path.isabs(os.path.expanduser(t)):
+        return False
+    for base in bases or [ctx.cwd]:
+        ab = os.path.realpath(os.path.join(base, os.path.expanduser(t)))
+        if ab.startswith(PROJECT_DIR + os.sep):
+            parts = os.path.relpath(ab, PROJECT_DIR).split(os.sep)
+            if any(p.lower() == ".git" for p in parts) or SECRET_NAME.match(parts[-1]):
+                return False
+        elif not CLAUDE_TMP.match(ab):
+            return False
+    return True
+
+
+def _gh_body_files(rest):
+    """Values of --body-file / -F (gh pr and gh issue)."""
+    out = []
+    for k, t in enumerate(rest):
+        if t in ("-F", "--body-file"):
+            out.append(rest[k + 1] if k + 1 < len(rest) else "")
+        elif t.startswith("--body-file="):
+            out.append(t.split("=", 1)[1])
+        elif t.startswith("-F") and len(t) > 2:
+            out.append(t[2:].lstrip("="))
+    return out
+
+
 def _gh(words, ctx):
     a = _texts(words)
     rest = a[1:]
     pos = _positionals(rest)
+    ctx.outside = True
     r = _repo_dir(ctx, [])
     if r:
         return r
     sub, verb, err = _gh_command(rest)
     if err:
         return err
+    r = _gh_host_problem(rest)
+    if r:
+        return r
     if sub is None:
         return None  # gh, gh --help, gh --version
     if sub in GH_BLOCKED:
@@ -2153,10 +2437,24 @@ def _gh(words, ctx):
     allowed = GH_ALLOWED[sub]
     if allowed is not None and verb is not None and verb not in allowed:
         return MSG_GH if (sub, verb) in (("pr", "merge"), ("config", "set")) or sub == "release" else MSG_GH_NOT_ALLOWED.format(sub + " " + verb)
+    if (sub, verb) in GH_WRITE_VERBS:
+        r = _gh_target_problem(rest, ctx)
+        if r:
+            return r
+    if sub in ("pr", "issue"):
+        for t in _gh_body_files(rest):
+            if not _gh_file_ok(t, ctx):
+                return MSG_GH_FILE.format(t or "missing")
+    if sub == "config" and verb == "get":
+        keys = _positionals(_skip_value_opts(rest[rest.index("get") + 1:], ("-h", "--host")))
+        if not keys or keys[0] not in GH_CONFIG_KEYS:
+            return MSG_GH_CONFIG_KEY
     if sub == "pr" and verb in ("create", "edit", "close", "reopen", "comment", "ready"):
         ctx.asks.append("GitHub PR operation")
     if sub == "issue" and verb in ("create", "comment"):
         ctx.asks.append("GitHub issue operation")
+    if sub == "run" and verb in ("rerun", "cancel"):
+        ctx.asks.append("GitHub Actions run change")
     if sub == "api":
         r = _gh_api_write(rest)
         if r:
@@ -2227,8 +2525,15 @@ def _inv(words, cmd, ctx, allowed_pkgs, allowed_npx):
         if key == "--no-ignore-scripts" or (key == "--ignore-scripts" and eq and val.lower() not in ("true", "1", "yes", "on")) or (
                 t in ("--ignore-scripts", "ignore-scripts") and k + 1 < len(args) and args[k + 1].lower() in ("false", "0", "no", "off")):
             return MSG_SCRIPTS
+        # another configuration file, or pnpm's --config.<key>=<value> (any setting, such as the registry)
+        if (name in ("npm", "npx", "pnpm", "pnpx", "yarn") and key in ("--userconfig", "--globalconfig", "--config-dir",
+                                                                       "--use-yarnrc")) or (
+                name in ("pnpm", "pnpx") and key.startswith("--config.")):
+            return MSG_PKG_CONFIG_FILE.format(key)
     if name in PM_VALUE_OPTS:
         idx, err = _pm_command(name, args)
+        if name == "bun" and any(t.split("=", 1)[0] in ("-c", "--config") for t in args[:idx if idx is not None else len(args)]):
+            return MSG_PKG_CONFIG_FILE.format("--config")
         if err:
             return err
         sub = args[idx] if idx is not None else None
@@ -2261,7 +2566,7 @@ def _inv(words, cmd, ctx, allowed_pkgs, allowed_npx):
         r = _gh(words, ctx)
         if r:
             return r
-    if name in AWKS and any(AWK_EXEC.search(AWK_STRING.sub('""', p)) for p in _awk_programs(a)):
+    if name in AWKS and any(AWK_EXEC.search(AWK_STRING.sub('""', p)) or AWK_EXEC_RAW.search(p) for p in _awk_programs(a)):
         return MSG_AWK
     if name == "rm":
         r = _rm(words, ctx)
@@ -2279,6 +2584,21 @@ def _inv(words, cmd, ctx, allowed_pkgs, allowed_npx):
         return ("npx/dlx of unapproved package: " + ", ".join(problems)
                 + ". npx downloads and runs arbitrary code; only packages listed in .claude/allowed-npx.txt may be run.")
     return None
+
+
+def _heredoc_cat(sub):
+    """True for the text of "$(cat <<'EOF' ... EOF)": cat reading a heredoc with a quoted delimiter (no expansions),
+    and nothing else runs."""
+    try:
+        inner = []
+        cmds = _build(_lex(sub, inner))
+    except ParseError:
+        return False
+    if inner or len(cmds) != 1:
+        return False
+    c = cmds[0]
+    return (len(c.words) == 1 and c.words[0].text == "cat" and not c.words[0].quoted and not c.redirs
+            and len(c.heredocs) == 1 and c.heredocs[0].quoted)
 
 
 def decide(cmd, cwd):
@@ -2307,6 +2627,8 @@ def decide(cmd, cwd):
         r = _inv(words, c, ctx, allowed_pkgs, allowed_npx)
         if r:
             return "block", r
+    if ctx.outside and not all(_heredoc_cat(s) for s in ctx.subs):
+        return "block", MSG_OUTSIDE_SUBST
     for lang, code in ctx.codes:
         if SPAWN_API.search(code) or (lang in ("perl", "ruby", "php") and SCRIPT_SPAWN.search(code)):
             return "block", MSG_INLINE_SPAWN
