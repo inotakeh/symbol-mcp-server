@@ -116,14 +116,15 @@
 - 置き場所: 正本は `.claude/hooks/watch-hooks.py`（PR でレビューし、`test-hooks.sh` でテストする）。動くのは、人間が `~/.claude/hooks/symbol-mcp-server/watch-hooks.py` に写したもの。記録は同じディレクトリの `accepted.json`。登録は `~/.claude/settings.json`（ユーザー設定）の `PreToolUse`（matcher `Bash|Edit|Write|MultiEdit|NotebookEdit`）と `ConfigChange`（matcher `project_settings|local_settings`）。例は `docs/user-settings-snippet.json`（コマンドは `~` を使わず絶対パスで書く）。`~/.claude/hooks/` と `~/.claude/settings.json` はサンドボックスの書き込み拒否に入っていて、guard-files はプロジェクトの外への Edit/Write を止めるので、エージェントはどちらも書けない。
 - 見るファイル: `.claude/hooks/*.py`（名前の大文字小文字は区別しない）、`.claude/settings.json`、`.claude/settings.local.json`、`.claude/allowed-*.txt`。ファイルが増えても減っても変更として扱う。シンボリックリンクは一致しない。
 - 判定: `CLAUDE_PROJECT_DIR` が記録のリポジトリと同じときだけ検査し、見るファイルの集合と SHA-256 が、承認済みの組（最大 5 つ。main と作業ブランチを行き来するため）のどれか 1 つと完全に一致すれば通す。組をまたいでファイルごとに一致するだけでは通さない。一致しない、記録が読めない、入力が JSON でない、内部エラーは止める（exit 2）。記録が読めないときは、見張りの正本を持つプロジェクトだけを止め、ほかのプロジェクトには効かない。
-- 記録の更新は人間が **Claude Code の外のターミナル**で行う（`!` のコマンドに PreToolUse が効くかは公式に書かれておらず、効くなら不一致の間は `record` 自体が止まるため）:
+- 確認済みの動作（2026-09-25、導入時に人間が確認）: `.claude/hooks/guard-files.py` と `.claude/settings.local.json` を別のターミナルで変えると、見張りがエージェントの次のツール呼び出し（`git status`）を止め、止めた理由に変わったファイル名が出た。元に戻すと通った。人間が `!` で打った `git status` は止められなかった（下記）。
+- 記録の更新は人間が行う。Claude Code の外のターミナルでも、`!` でもよい（`!` のコマンドには PreToolUse フックが効かないので、不一致の間でも `record` を実行できる。2026-09-25 に確認）:
   - 初回の導入（hooks-5 の merge の後）:
     1. `git pull` で main を最新にし、`bash .claude/hooks/test-hooks.sh` が `failed=0` になることを確かめる。
     2. `mkdir -p ~/.claude/hooks/symbol-mcp-server && install -m 0644 .claude/hooks/watch-hooks.py ~/.claude/hooks/symbol-mcp-server/`
     3. `python3 ~/.claude/hooks/symbol-mcp-server/watch-hooks.py record --repo <リポジトリの絶対パス> --id main-<短い SHA>`（変更点を表示して `y` を求める）
     4. `~/.claude/settings.json` に `docs/user-settings-snippet.json` の watch-hooks の 2 か所を足す。Claude Code の `/hooks` で、見張りが User として出ることを確かめる。
     5. 止まることの確認: 別のターミナルで `echo '#' >> .claude/hooks/guard-files.py` → Claude Code の `git status` が止まる → `git checkout -- .claude/hooks/guard-files.py` → 通る。
-    6. `ConfigChange` の確認: Claude Code の起動中に、別のターミナルで `.claude/settings.local.json` に意味の無い変更（空白など）を足す → 見張りが変更を止めたと表示されるか、その後の Bash が止まるかを見る。ドキュメントの「変更を止める」が「ファイルは変わったままで、セッションが読み込まない」の意味かを確かめ、結果を §5 に書く。元に戻して、Bash が通ることを確かめる。
+    6. `ConfigChange` の確認: Claude Code の起動中に、別のターミナルで `.claude/settings.local.json` に意味の無い変更（空白など）を足す → その後の Bash が止まることを見る。`~/claude-config-audit.log`（既存の監査フック）に変更の時刻の行が足されれば、ConfigChange のフックが呼ばれている。元に戻して、Bash が通ることを確かめる。（2026-09-25 の導入時の結果: Bash は止まり、監査ログに行が足された。画面には何も表示されなかった。止めた効果は §5。）
   - フックや設定が変わる pull の後（見張りが止めたとき）: `watch-hooks.py status --repo <パス>` で違うファイルを確かめ、`git diff <記録の commit> HEAD -- .claude/hooks .claude/settings.json` で前回承認した版との差を読む（**`disableAllHooks` が入っていないことも見る**）。`test-hooks.sh` を通し、`watch-hooks.py` の正本が変わっていれば写し直し（`status` が教える）、`record --id main-<短い SHA>` で記録する。古い組は `forget --id <名前>` で消す。
   - 作業ブランチでフックのパッチを当てたとき: パッチを当てて `test-hooks.sh` を通し、`record --id <ブランチ名>` で記録する（未コミットなら dirty として記録される）。merge と pull の後に上の手順を行い、ブランチの組を消す。
 
@@ -182,7 +183,7 @@
 - **`excludedCommands` の一致規則**は公式に書かれていない。2026-09-24 に Claude Code 2.1.281 で、結果が中と外で変わる読むだけのコマンドを使って確かめた: 外で動いたのは、パターンに一致するコマンドを**単独で**書いたとき（`gh --version`、`git ls-remote origin HEAD`）だけ。`;` や `&&` でつないだ行（`gh --version; ls …`）、前にオプションがある形（`git -C . ls-remote origin HEAD`）、コマンド置換を含む行（`gh pr view … --jq "$(…)"`）は、行全体がサンドボックスの中で動いた（gh は設定を読めずに失敗し、SSH の git はプロキシに拒否された）。パイプとリダイレクトも同じ（以前の観察）。したがって今は、外で動くコマンドの行のコマンド置換が外で実行されることはなく、フックの置換の規則（§2.2）は Claude Code の挙動が変わったときのための備え。PR の本文は `--body-file <scratchpad のファイル>` で渡す（`"$(cat <<'EOF' …)"` はフックは通すが、行がサンドボックスで動くので gh が失敗する）。スクリプトやインラインコードから起動した git と gh もサンドボックスの中で動く。
 - **サンドボックスの中の git の制約**: `.git/config` を書けないので、`git branch -m`・`--set-upstream-to`・`switch --track` などは失敗するか警告になる（`git push -u` は外で動くので影響しない）。保護ファイルに差がある切り替えは、HEAD と index だけが移る中途半端な状態になる（§2.2）。サンドボックスは作業ツリーを守るだけで、index やコミットに古いフックが入ることは止めない。それが外に出るのは push と PR で、次の層は CI の protected-files・CODEOWNERS・人間のレビュー。
 - **エージェントのコミットは署名しない**（2026-09-25 に人間が決定）。`git commit` はサンドボックスの中で動き、SSH 署名の鍵（`~/.ssh`、denyRead）を読めないので、署名つきのコミットは失敗する。そこでエージェントは `git -c commit.gpgsign=false commit …` でコミットする（フックの `git -c` の許可リストに `commit.gpgsign` がある）。これは人間が明示的に許可した例外で、鍵の読み取りを許したり commit をサンドボックスの外に出したりはしない。人間のコミットは署名する。main の履歴は GitHub の squash merge が署名する（ブランチの未署名のコミットは main に残らない）。
-- **`!` で打つコマンド**はサンドボックスの外で動く（公式）。人間の `! git pull` などは、サンドボックスでは守られない。
+- **`!` で人間が打つコマンドには、見張りも guard-bash もサンドボックスも効かない**（サンドボックスの外で動くことは公式。PreToolUse フックが効かないことは 2026-09-25 に確認: 見張りが止めている間も `! git status` は動いた）。人間の `! git pull` などは、どの層にも守られない。エージェントが `!` のコマンドを勧めてきたときは、人間が中身を読んでから打つ。
 - **呼び出しの間の状態**: フックは 1 回の Bash 呼び出しのコマンド行だけを見る。環境変数は呼び出しの間で残らないことを 2026-09-24 に Claude Code 2.1.281 で確認した（1 回目 `export ZZ_T=1`、2 回目 `echo "${ZZ_T:-unset}"` が `unset`）。そのため環境変数の規則は「git や gh と同じ行」に限っている。Claude Code の更新で残るようになったら、`EXEC_ENV` の変数の `export`・`declare -x`・`typeset -x`・`set -a` を行に関係なく止める必要がある。作業ディレクトリは残るので、git と gh はフック入力の `cwd` で判定している。
 - **git と gh の許可リスト**: リストに無いサブコマンドは、安全なもの（`git notes`、`gh workflow run` など）でも止まる。必要になったら人間が実行するか、理由を添えて `GIT_ALLOWED`・`GH_ALLOWED` に足し、`test-hooks.sh` に通るテストと、そのサブコマンドで止め続ける使い方のテストを対で足す。許可したサブコマンドの中の細かい規則（書き込み先、オプションの省略形など）は、サブコマンドやオプションを増やすときに見直す。
 - **フックが作業ツリーから読まれる問題**: 根本の対策のうち、手元で完結する git をサンドボックスに入れること（B-1）は採用済みで、エージェントの git は保護ファイルを書き換えられない。作業ツリーの切り替えの確認は、中途半端な状態を避けるための案内として残している。判定に使う git は 2 秒で打ち切るので、とても大きなリポジトリでは判定できずに確認になることがある。`test-hooks.sh` は、この判定の結果がリポジトリの状態に左右されないように、テストの中で小さな git リポジトリを作ってそこで確かめる。
@@ -191,7 +192,7 @@
   - 見張りが止めるのは次のツール呼び出しから。すでに実行中のコマンドは止められない。
   - 見張りはフックの**内容**が承認した版と同じことを確かめるだけで、フックが**正しい**ことは確かめない（それは PR のレビューとテスト）。
   - 見張りと記録はこのマシンの `~/.claude` にあり、記録したクローンにだけ効く。別のマシンや別のクローンには効かない。
-  - `ConfigChange` で変更を止めたときの挙動（ファイルは変わったままでセッションが読み込まないだけか）は、導入時に確かめて、ここに書く。
+  - `ConfigChange`: 設定ファイルの変更でフックが呼ばれることは確認した（2026-09-25、監査ログに行が足された。画面には何も表示されなかった）。止めたときの効果（変更後の設定がセッションに読み込まれないか）は**未確認**。確かめるには、効果の見える項目（例: `permissions.allow` の 1 行）を変えて、セッションに反映されるかを見る必要がある。確認できるまでは、見張りの PreToolUse（次のツール呼び出しを止める）を頼りにする。
 - **サンドボックスのネットワーク**: 既定ではプロキシは TLS を終端せず、ホスト名だけで判定する。公式が domain fronting の可能性を認めている。`github.com`/`registry.npmjs.org` を許可している以上、理論上の持ち出し経路は残る。
 - **`gh` トークン**: 3.1 の通り読める。被害範囲の限定で対処。
 - **PostToolUse は取り消せない**: 秘密情報スキャンは「書いてしまった後」に警告する。コミット前に人間が diff を見ること、push protection が次の層。
