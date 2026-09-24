@@ -48,7 +48,7 @@
 │       ├── scan-secrets.py          # PostToolUse(Edit|Write): 書いた直後に秘密情報を検出
 │       ├── stop-gate.sh             # 任意: lint/test が通るまで終了させない Stop フック
 │       ├── watch-hooks.py           # 見張りのフックの正本（人間がリポジトリの外に写し、ユーザー設定から動かす。§2.4）
-│       └── test-hooks.sh            # フックの自己テスト（831 ケース。誤検知と危険な類似コマンドを対で）
+│       └── test-hooks.sh            # フックの自己テスト（835 ケース。誤検知と危険な類似コマンドを対で）
 ├── .github/
 │   ├── CODEOWNERS                   # 全変更にメンテナのレビューを要求
 │   ├── dependabot.yml               # npm / actions を月次更新
@@ -88,7 +88,7 @@
       - `gh config get` はトークンに関わらないキー（git_protocol・editor・prompt・pager・browser など）だけ。
       - 外で動くコマンドを含む行では、コマンド置換（`$(...)`・バッククォート・`<(...)`）を止める（中のコマンドも外で動きうるため）。例外は `"$(cat <<'EOF' … EOF)"`（区切りを引用した heredoc を cat するだけ）。PR の本文は `--body-file <scratchpad のファイル>` を勧める。
       - git push: refspec が無い・`HEAD`・`@` のときは、今の枝（と `@{push}`）が main・master なら止め、detached HEAD でも止める。ワイルドカードの refspec と、送る元がローカルのタグであるもの（名前が版の形でなくても）を止める。
-      - git fetch・pull・ls-remote: リモートは設定済みの名前だけ（`git remote` の一覧にない名前は、git がパスとして読むことがある）。fetch の書き込み先は、無し（FETCH_HEAD）・`refs/remotes/…`（`+` 可）・同じ名前の枝またはタグ（`+` 無し）だけ。`--refmap` の値も同じ。`--update-head-ok`（`-u`）は止め、`--prune-tags` は確認にする。タグは origin からだけ取る。
+      - git push・fetch・pull・ls-remote: リモートは設定済みの名前だけ（`git remote` の一覧にない名前は、git がパスとして読むことがある。push ならその先のリポジトリのフックがサンドボックスの外で動く）。fetch の書き込み先は、無し（FETCH_HEAD）・`refs/remotes/…`（`+` 可）・同じ名前の枝またはタグ（`+` 無し）だけ。`--refmap` の値も同じ。`--update-head-ok`（`-u`）は止め、`--prune-tags` は確認にする。タグは origin からだけ取る。
     - git: status、diff、log、show、add、commit、restore、switch、checkout、branch、fetch、pull、push、stash、rev-parse、ls-files、grep、blame、tag、config、apply、am、merge-base、describe、remote、shortlog、cat-file、ls-tree、reflog、show-ref、for-each-ref、hash-object、merge、rebase、cherry-pick、reset、clean、mv、rm、worktree（list のみ）、version、help（`--web`・`--info` 以外）、var、それに以前から通していた ls-remote・rev-list・submodule（status・summary のみ）・update-index（`--refresh` のみ）。git の alias と外部の `git-*` コマンドもリストに無いので止まる
     - gh: pr の create・view・list・diff・checks・edit・comment・close・reopen・ready・status、issue の view・list・create・comment、run の list・view・watch・rerun・cancel、workflow の list・view、release の view・list、repo の view、search、config の get・list、api（書き込みなし）、status、browse。`-R`・`--repo`・`--hostname` は飛ばしてコマンド名を取り出し、それ以外のフラグがコマンド名より前にあれば止める（値を取るフラグでコマンド名を隠せるため）。gh の alias と拡張もリストに無いので止まる
     - 許可したサブコマンドの中でも次を止める。git の長いオプションは省略形（`--no-verif`、`--tag`、`--del` など。git は一意な前方一致を受け付ける）でも一致させる: 設定経由のコマンド実行（`git -c` は `commit.gpgsign`・`core.quotepath`・`color.*`・`advice.*` 以外、`git config` の書き込み、`--git-dir`・`--work-tree`・`--exec-path=`・`--config-env`）、同じ行で git・gh やそれらが起動する子プロセス（pre-push などのフック、ページャ、エディタ、ssh、gpg。push・fetch・ls-remote と gh では、これもサンドボックスの外で動く）の読み込むものを変える環境変数の**代入**（`NAME=…`、`export`・`declare`・`typeset`・`local`・`readonly`、`env NAME=…`、`read`・`mapfile`・`printf -v`・`for NAME in`・`getopts`、`${NAME:=…}`、`declare -n` の参照先。名前が実行時に決まる代入も止める。コミットメッセージや grep のパターンの中の語は止めない。対象: `HOME`・`PATH`・`CDPATH`・`GIT_*`・`GH_*`・`EDITOR`・`PAGER`・`XDG_CONFIG_*`・`BASH_ENV`・`ENV`・`SHELL`・`LD_PRELOAD`・`LD_LIBRARY_PATH`・`LD_AUDIT`・`DYLD_*`・`PYTHONPATH`・`PYTHONHOME`・`PYTHONSTARTUP`・`NODE_OPTIONS`・`NODE_PATH`・`PERL5LIB`・`PERL5OPT`・`RUBYOPT`・`RUBYLIB`・`SSH_ASKPASS`・`GNUPGHOME`、`git help` が起動する man の `MANPAGER`・`MANOPT`・`MANPATH`・`MANROFFOPT`・`MANSECT`・`GROFF_*`・`LESS`・`LESSKEY` 系）、サブコマンドの中での実行（`submodule foreach`、`bisect run`、`rebase -x`、`difftool -x`、`grep -O`、`--upload-pack` など）、`git maintenance`（`register`・`start` がグローバル設定と launchd / cron にジョブを登録し、サンドボックスの外に常駐の仕組みを作れる）、pull request の取り込み（`gh pr checkout`・`co`、`pull/…` の ref への checkout・switch。fetch・pull の refspec は枝（`refs/heads/…` と枝名）とタグだけを許し、`refs/pull/…`・`refs/*`・コミット id などは止める。フックは呼び出しのたびに作業ツリーから読まれるので、フォークの PR を checkout するとフック自体が差し替わりうる。PR の checkout は人間が行う）、remote の設定を書き換える `remote set-branches`・`set-head`、設定済みリモートを名前で指す以外の通信（`clone`、URL、パス、`submodule add`）、パッチの適用（`apply`・`am` は `--check`・`--stat`・`--numstat`・`--summary` だけ）、index や worktree を直接書く plumbing、`checkout <tree-ish> <path>` と `checkout -- <path>`・`restore`・`rm`・`mv` による保護ファイルの上書き、`--pathspec-from-file`、このリポジトリ以外（`-C`、`cd`・`pushd`・`builtin cd`・`command cd` で別のディレクトリ・入れ子のリポジトリ、行き先の分からない `cd`、`CDPATH`・`cdable_vars`）での実行、タグの作成と push、force push・削除・`--mirror`・`--all`、main への push、`--no-verify`、remote の変更、`gh pr merge`、`gh release`（`view`・`list` 以外）、`gh secret/variable/auth/alias/extension/config set/codespace/ssh-key/gpg-key`、書込系 `gh api`
@@ -164,7 +164,7 @@
 
 1. リポジトリで `claude` を起動 → workspace trust ダイアログで allow ルールとフックを確認して承認。
 2. `/hooks` で 3 つのフック（と、ユーザー設定の見張りのフック）が表示されること、`/permissions` で deny/ask が読み込まれていること、`/sandbox` の Config タブで denyRead/denyWrite と allowedDomains を確認。
-3. `bash .claude/hooks/test-hooks.sh` を実行し `failed=0` を確認（831 ケース）。
+3. `bash .claude/hooks/test-hooks.sh` を実行し `failed=0` を確認（835 ケース）。
 4. 見張りのフックを導入する（§2.4 の「初回の導入」）。
 5. `claude doctor` で設定の警告（無効なルール等）が無いことを確認。
 
