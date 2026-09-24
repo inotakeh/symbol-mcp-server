@@ -153,7 +153,7 @@ MSG_PUSH_IMPLICIT = "git push without an explicit destination (no refspec, HEAD 
 MSG_PUSH_UNCHECKED = "git push: the hook could not check whether '{}' is a local tag, so the push is refused. Push a branch by its full name (<branch>:refs/heads/<branch>)."
 MSG_PUSH_WILDCARD = "git push with a wildcard refspec (*) is forbidden: it can push main or tags. Push one branch by name."
 MSG_FETCH_DST = "git fetch may only write remote-tracking refs (refs/remotes/...), a local branch of the same name without '+', or a tag of the same name without '+': fetching into another local branch or tag (or forcing one) can put an unreviewed commit where a human expects a reviewed one (for example a release tag)."
-MSG_FETCH_REMOTE = "git fetch/pull/ls-remote may only name a configured remote ('{}' is not one, and git would read a name that is not a remote as a path)."
+MSG_FETCH_REMOTE = "git push/fetch/pull/ls-remote may only name a configured remote ('{}' is not one, and git would read a name that is not a remote as a path)."
 MSG_FETCH_TAGS = "Tags may only be fetched from origin: a tag from another remote could take the name of a release tag."
 MSG_FETCH_HEAD_OK = "git fetch --update-head-ok is forbidden (it moves the checked-out branch without updating the working tree)."
 MSG_PKG_CONFIG_FILE = "Pointing a package manager at another configuration file ({}) is forbidden (it can change the registry or re-enable install scripts)."
@@ -1884,6 +1884,7 @@ def _git_push(rest, cwd):
                "--follow-tags": MSG_TAG_PUSH, "--all": MSG_MAIN, "--branches": MSG_MAIN, "--no-verify": MSG_NO_VERIFY,
                "--receive-pack": MSG_GIT_EXEC, "--exec": MSG_GIT_EXEC, "--recurse-submodules": MSG_GIT_NET}
     pos = []
+    repos = []
     i = 0
     n = len(rest)
     while i < n:
@@ -1900,6 +1901,7 @@ def _git_push(rest, cwd):
                 val = t.split("=", 1)[1] if "=" in t else (rest[i + 1] if i + 1 < n else "")
                 if not REMOTE_NAME.match(val):
                     return MSG_GIT_NET
+                repos.append(val)
                 if "=" not in t:
                     i += 1
             elif key == "--push-option" and "=" not in t:
@@ -1917,6 +1919,15 @@ def _git_push(rest, cwd):
         i += 1
     if pos and not REMOTE_NAME.match(pos[0]):
         return MSG_GIT_NET
+    # a name that is not a configured remote is read as a path: git would push into that repository and run its
+    # hooks (receive-pack) outside the sandbox
+    repos += pos[:1]
+    if repos:
+        rc, out = _git_probe(["remote"], cwd)
+        remotes = out.split() if rc == 0 else []
+        for repo in repos:
+            if repo not in remotes:
+                return MSG_FETCH_REMOTE.format(repo)
     if len(pos) < 2:
         return _push_current(cwd)  # no refspec: the checked-out branch goes to its push destination
     for ref in pos[1:]:
