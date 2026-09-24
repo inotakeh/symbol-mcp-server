@@ -1,5 +1,5 @@
 {
-  "$comment": "Merge into ~/.claude/settings.json (your user settings). Some keys are honored only at user/managed level, not in the repo's .claude/settings.json.",
+  "$comment": "Merge into ~/.claude/settings.json (your user settings). Some keys are honored only at user/managed level, not in the repo's .claude/settings.json. The watch-hooks entries run a copy of .claude/hooks/watch-hooks.py installed outside the repository (GUARDRAILS.md, 'The watcher hook'); replace /Users/YOUR_NAME with your home directory (write the absolute path, not ~).",
 
   "permissions": {
     "disableBypassPermissionsMode": "disable"
@@ -13,10 +13,28 @@
   },
 
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 /Users/YOUR_NAME/.claude/hooks/symbol-mcp-server/watch-hooks.py check",
+            "timeout": 5,
+            "statusMessage": "watch-hooks: checking the repository's hooks"
+          }
+        ]
+      }
+    ],
     "ConfigChange": [
       {
         "matcher": "project_settings|local_settings",
         "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 /Users/YOUR_NAME/.claude/hooks/symbol-mcp-server/watch-hooks.py check",
+            "timeout": 5
+          },
           {
             "type": "command",
             "command": "python3 -c \"import json,sys,datetime; d=json.load(sys.stdin); open(__import__('os').path.expanduser('~/claude-config-audit.log'),'a').write(json.dumps({'t':datetime.datetime.now().isoformat(),'source':d.get('source'),'file':d.get('file_path')})+'\\n'); print(json.dumps({'decision':'block','reason':'Settings changed during the session. Review the change and restart the session to apply it.'}))\""

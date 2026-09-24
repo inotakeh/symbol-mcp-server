@@ -30,6 +30,7 @@ Run `npm run lint && npm run typecheck && npm test` before every commit.
 
 - Work on a feature branch (`feat/...`, `fix/...`). Never commit to `main`.
 - Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`, `chore:`). Small, reviewable PRs with a "How verified" section.
+- Commit with `git -c commit.gpgsign=false commit ...`: the sandbox cannot read the signing key, and a human allowed unsigned agent commits (GUARDRAILS.md section 5). Never change the signing configuration.
 - Never put session URLs (`claude.ai/code/session_...`) or links to conversations in PR bodies or commit messages.
 - Open PRs with `gh pr create`; a human merges. Never merge, approve, tag, or publish.
 - `package-lock.json` changes only through `npm install`/`npm ci`, never by hand.

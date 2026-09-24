@@ -72,9 +72,15 @@ dependency review, protected files, CodeQL).
 git switch main
 git pull --ff-only
 git log -1 --format=%s     # chore: release X.Y.Z (#NN)
+git tag -l vX.Y.Z          # must print nothing
 git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
+
+`git tag -l vX.Y.Z` must be empty: a tag of that name that already exists locally was not made by
+this step, and pushing it would release whatever commit it points to. Never use `git tag -f`. If it
+prints the tag, stop and find out where it came from (the guardrails refuse tag creation and fetches
+into `refs/tags/` for the agent).
 
 A pushed tag that matches `v*.*.*` starts `.github/workflows/release.yml`.
 
