@@ -52,10 +52,12 @@ Exit codes (per Claude Code hooks reference):
   0  -> no decision (or JSON on stdout with a decision)
   2  -> block; stderr is shown to Claude as the reason
 """
+import fnmatch
 import glob
 import json
 import os
 import re
+import subprocess
 import sys
 
 PROJECT_DIR = os.path.realpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
@@ -86,6 +88,9 @@ MSG_GIT_NOT_ALLOWED = "git {} is not on the guardrail's allowlist of git subcomm
 MSG_GH_NOT_ALLOWED = "gh {} is not on the guardrail's allowlist of gh commands (gh runs outside the sandbox, so commands not on the list are refused by default). If it is needed, a human runs it, or adds it to GH_ALLOWED in .claude/hooks/guard-bash.py."
 MSG_GH_FLAG_FIRST = "Put the gh command words before their flags: an unknown flag in front of them can hide which command runs. Only -R/--repo/--hostname may come first."
 MSG_GIT_ENV_DYNAMIC = "A variable whose name is computed at run time is set in a command that runs git or gh, which hides whether it changes the configuration or programs they load. Write variable names literally."
+MSG_PM_FLAG_FIRST = "Put the package manager's subcommand before its options: an unknown option in front of it can hide which subcommand runs. Options such as --prefix, -C, --cwd, -w and -g may come first."
+MSG_PKG_ENV = "Setting package-manager configuration ({}) through the environment or the command line is forbidden (it can change the registry or re-enable install scripts). Only npm_config_cache may be set."
+MSG_FIND_WRITE = "find with -delete, -fprint/-fls or an -exec that writes is forbidden when a start point is or contains protected files. Start from a narrower directory that has none."
 MSG_PARSE = "The command could not be parsed ({}). Fix the quoting or the heredoc/substitution; commands the guardrail cannot read are refused."
 MSG_DYNAMIC = "The command name is computed at run time (variable, substitution, glob or brace expansion), which hides the real command from the guardrails. Write the command name literally."
 MSG_NETWORK = "curl/wget are disabled for the agent. Use the WebFetch tool for documentation; the MCP server itself uses fetch() in code."
@@ -165,19 +170,31 @@ SPAWN_API = re.compile(
 )
 # perl / ruby / php also call these without parentheses, and run commands with backquotes or piped opens
 SCRIPT_SPAWN = re.compile(r"\b(system|exec|fork|spawn|popen|qx|syscall|pipe)\b|%x|`|\|\s*['\"]|['\"]\s*-?\|")
+# open() counts as a write only when its mode argument writes (open(p, 'w'), mode='a', perl's open(F, '>', p),
+# Path(p).open('w')); a read-only open() of a protected path is fine.
 WRITE_API = re.compile(
-    r"writeFile|appendFile|createWriteStream|copyFile|\bcp(Sync)?\s*\(|\brename|\bunlink|\brmSync\b|\brm\s*\(|\brmdir|symlink|\bchmod"
-    r"|\btruncate|\bopen\s*\([^)]*['\"][^'\"]*[wax+>]|write_text|write_bytes|\bshutil\b|\bos\.(remove|replace|rename)\b|File\.(write|open)|IO\.write"
+    r"\b(writeFile|appendFile|copyFile|cp|rename|unlink|rm|rmdir|symlink|link|chmod|chown|truncate|mkdir|touch|utimes)(Sync)?\s*\("
+    r"|createWriteStream|write_text|write_bytes|\bshutil\b|\bos\.(remove|replace|rename|unlink|rmdir|chmod|symlink|link|truncate)\b"
+    r"|File\.(write|open)|IO\.write"
+    r"|\bopen\s*\([^,()]*(\([^()]*\)[^,()]*)*,\s*['\"][^'\"]*[wax+>|]|\bmode\s*=\s*['\"][^'\"]*[wax+]"
+    r"|\.open\s*\(\s*['\"][^'\"]*[wax+]|\bopen\s*\(\s*(my\s+)?[$\w]+\s*,\s*['\"]\+?[>|]"
 )
 PROTECTED_MENTION = re.compile(
     r"(?<![\w.-])(\.claude\b|\.github/workflows|CLAUDE\.md|AGENTS\.md|\.npmrc|package-lock\.json|LICENSE|SECURITY\.md|CODEOWNERS"
-    r"|server\.json|mcpb/manifest\.json|\.gitignore|\.git/)|\bCLAUDE_ENV_FILE\b"
+    r"|server\.json|mcpb/manifest\.json|\.gitignore|\.git/)|\bCLAUDE_ENV_FILE\b",
+    re.IGNORECASE,  # the file system is case-insensitive: .CLAUDE/ is .claude/
 )
-AWK_EXEC = re.compile(r"\bsystem\s*\(|\|\s*&|\|\s*\"|\|\s*getline|\bprintf?\b[^;{}\"|]*\|\s*[A-Za-z_(]")
+# Checked on the awk program with the contents of its string literals removed, so FS="|" or print $1 "|" $2 are
+# not pipes, while print | "cmd" and "cmd" | getline still are.
+AWK_EXEC = re.compile(r"\bsystem\s*\(|\|\s*&|\|\s*getline|\bprintf?\b[^;{}]*?\|\s*[\"A-Za-z_(]")
+AWK_STRING = re.compile(r"\"(\\.|[^\"\\])*\"")
 
-PROTECTED_COMPONENT = re.compile(r"(^|/)(\.claude|\.git|\.husky)(/|$)|(^|/)\.github/(workflows(/|$)|CODEOWNERS$|dependabot\.yml$)")
+# Protected paths are compared without regard to case: APFS (this machine) and the default macOS / Windows
+# file systems are case-insensitive, so ".CLAUDE/hooks/x" and "agents.md" name the protected files.
+PROTECTED_COMPONENT = re.compile(r"(^|/)(\.claude|\.git|\.husky)(/|$)|(^|/)\.github/(workflows(/|$)|CODEOWNERS$|dependabot\.yml$)", re.IGNORECASE)
 PROTECTED_NAMES = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", ".npmrc", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
                    "SECURITY.md", "CODEOWNERS", "server.json", ".gitignore", ".mcp.json", "lefthook.yml", ".pre-commit-config.yaml"}
+PROTECTED_NAMES_LC = {n.lower() for n in PROTECTED_NAMES}
 
 GIT_C_ALLOWED = {"commit.gpgsign", "core.quotepath"}
 GIT_C_ALLOWED_PREFIXES = ("color.", "advice.")
@@ -221,8 +238,29 @@ TAG_LIKE = re.compile(r"^v?\d+(\.\d+)+")
 EXEC_ENV_NAME = re.compile(
     r"(HOME|PATH|CDPATH|XDG_CONFIG_HOME|XDG_CONFIG_DIRS|EDITOR|VISUAL|PAGER|BROWSER|LESSOPEN|LESSCLOSE|GH_[A-Z0-9_]+|GIT_[A-Z0-9_]+"
     r"|BASH_ENV|ENV|SHELL|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|DYLD_[A-Z0-9_]+|PYTHONPATH|PYTHONHOME|PYTHONSTARTUP"
-    r"|NODE_OPTIONS|NODE_PATH|PERL5LIB|PERL5OPT|RUBYOPT|RUBYLIB|SSH_ASKPASS|GNUPGHOME)"
+    r"|NODE_OPTIONS|NODE_PATH|PERL5LIB|PERL5OPT|RUBYOPT|RUBYLIB|SSH_ASKPASS|GNUPGHOME"
+    # git help runs man, and man runs its pager and formatter through these
+    r"|MANPAGER|MANOPT|MANPATH|MANROFFOPT|MANSECT|GROFF_[A-Z0-9_]+|LESS|LESSKEY|LESSKEYIN|LESSKEY_SYSTEM)"
 )
+# Package-manager configuration through the environment (registry, ignore-scripts, userconfig, ...), refused in
+# any command line; npm_config_cache (the cache directory) is allowed.
+PKG_ENV = re.compile(r"^(npm_config_|yarn_|bun_config_|pnpm_config_)", re.IGNORECASE)
+PKG_ENV_ALLOWED = {"npm_config_cache", "npm_config_loglevel", "npm_config_fund", "npm_config_audit",
+                   "npm_config_update_notifier", "npm_config_progress", "npm_config_color"}  # output-only settings
+# Package-manager options that may come before the subcommand: those that take a value, and flags.
+PM_VALUE_OPTS = {
+    "npm": {"--prefix", "-C", "-w", "--workspace", "--userconfig", "--globalconfig", "--cache", "--loglevel", "--tag", "--otp", "--scope",
+            "--logs-dir", "--omit", "--include"},
+    "pnpm": {"-C", "--dir", "--filter", "-F", "--reporter", "--loglevel", "--store-dir", "--config-dir"},
+    "yarn": {"--cwd", "--cache-folder", "--modules-folder", "--network-timeout"},
+    "bun": {"--cwd", "-c", "--config"},
+}
+PM_BOOL_OPTS = {"-g", "--global", "-s", "--silent", "-q", "--quiet", "-d", "-dd", "-ddd", "--verbose", "-y", "--yes", "--json",
+                "--offline", "--prefer-offline", "--prefer-online", "--ignore-scripts", "--dry-run", "--no-audit", "--no-fund",
+                "--no-progress", "--workspaces", "-ws", "--include-workspace-root", "-l", "--long", "-p", "--parseable", "-f",
+                "--force", "--foreground-scripts", "-r", "--recursive", "-w", "--workspace-root", "--frozen-lockfile",
+                "-v", "--version", "-h", "--help", "--color", "--no-color", "--no-update-notifier", "--if-present",
+                "--no-save", "--no-package-lock"}
 SAFE_ENV = {("GIT_TERMINAL_PROMPT", "0"), ("GIT_OPTIONAL_LOCKS", "0"), ("PAGER", "cat"), ("GIT_PAGER", "cat"), ("GH_PAGER", "cat")}
 # Builtins whose arguments name variables (NAME or NAME=value)
 SETTERS = {"export", "declare", "typeset", "local", "readonly"}
@@ -430,14 +468,23 @@ def _read_heredocs(s, i, pending, subs):
         while True:
             j = s.find("\n", i)
             line = s[i:] if j < 0 else s[i:j]
+            nxt = n if j < 0 else j + 1
+            if not hd.quoted:
+                # With an unquoted delimiter bash removes backslash-newline before it looks for the
+                # delimiter, so "EO\<newline>F" ends the heredoc (checked with bash 3.2 on macOS).
+                while j >= 0 and (len(line) - len(line.rstrip("\\"))) % 2 == 1:
+                    k = s.find("\n", nxt)
+                    line = line[:-1] + (s[nxt:] if k < 0 else s[nxt:k])
+                    j = k
+                    nxt = n if k < 0 else k + 1
             cmp = line.lstrip("\t") if hd.strip else line
             if cmp == hd.delim:
-                i = n if j < 0 else j + 1
+                i = nxt
                 break
             if j < 0:
                 raise ParseError("unterminated heredoc (no line '{}')".format(hd.delim))
             lines.append(line)
-            i = j + 1
+            i = nxt
         hd.body = "\n".join(lines)
         if not hd.quoted:
             _collect_expansions(hd.body, subs)
@@ -625,7 +672,7 @@ class Ctx(object):
         cur = self.cwd
         for c in self.cmds:
             words = c.words
-            while words and words[0].text in ("builtin", "command") and len(words) > 1:
+            while words and _base(words[0].text) in ("builtin", "command") and len(words) > 1:
                 words = words[1:]
             if not words:
                 continue
@@ -644,7 +691,9 @@ MAX_DEPTH = 8
 
 
 def _base(text):
-    return os.path.basename(text)
+    """The command name: basename, lower-cased. On a case-insensitive file system "CURL" or "/usr/bin/Curl" finds
+    curl through PATH, so every name-based rule compares lower-case names."""
+    return os.path.basename(text).lower()
 
 
 def _texts(words):
@@ -1039,19 +1088,53 @@ NPM_INSTALL = {"install", "i", "in", "ins", "inst", "insta", "instal", "isnt", "
                "install-test", "it"}
 
 
+def _pm_command(tool, args):
+    """Index of the package manager's subcommand in args (None if there is none), or an error when an option the
+    hook does not know comes before it (it could take the next word as its value and hide the subcommand)."""
+    values = PM_VALUE_OPTS.get(tool, set())
+    i = 0
+    while i < len(args):
+        t = args[i]
+        if t == "--":
+            return (i + 1 if i + 1 < len(args) else None), None
+        if t.startswith("-") and t != "-":
+            key = t.split("=", 1)[0]
+            if "=" in t:
+                i += 1
+            elif key in values:
+                i += 2
+            elif key in PM_BOOL_OPTS:
+                i += 1
+            else:
+                return None, MSG_PM_FLAG_FIRST
+            continue
+        return i, None
+    return None, None
+
+
+def _pm_sub(tool, args):
+    """(subcommand, the arguments after it) for npm, pnpm, yarn and bun; (None, []) when there is none."""
+    idx, err = _pm_command(tool, args)
+    if err or idx is None:
+        return None, []
+    return args[idx], args[idx + 1:]
+
+
 def check_installs(argv, allowed):
     """Block 'npm install <pkg>' etc. unless every package is in the allowlist."""
     tool = _base(argv[0])
-    rest = argv[1:]
+    sub, after = _pm_sub(tool, argv[1:]) if tool in PM_VALUE_OPTS else (None, [])
     pkgs = None
-    if tool == "npm" and rest and rest[0] in NPM_INSTALL:
-        pkgs = [a for a in rest[1:] if not a.startswith("-")]
-    elif tool == "pnpm" and rest and rest[0] in ("add", "install", "i"):
-        pkgs = [a for a in rest[1:] if not a.startswith("-")]
-    elif tool == "yarn" and rest and rest[0] == "add":
-        pkgs = [a for a in rest[1:] if not a.startswith("-")]
-    elif tool == "bun" and rest and rest[0] in ("add", "install", "i"):
-        pkgs = [a for a in rest[1:] if not a.startswith("-")]
+    if tool == "npm" and sub in NPM_INSTALL:
+        pkgs = [a for a in after if not a.startswith("-")]
+    elif tool == "pnpm" and sub in ("add", "install", "i"):
+        pkgs = [a for a in after if not a.startswith("-")]
+    elif tool == "yarn" and sub == "add":
+        pkgs = [a for a in after if not a.startswith("-")]
+    elif tool == "yarn" and sub == "global" and after[:1] == ["add"]:
+        pkgs = [a for a in after[1:] if not a.startswith("-")]
+    elif tool == "bun" and sub in ("add", "install", "i"):
+        pkgs = [a for a in after if not a.startswith("-")]
     problems = []
     for p in pkgs or []:
         if re.match(r"^(https?:|git\+|git:|github:|file:|\.|/)", p) or p.endswith((".tgz", ".tar.gz")):
@@ -1069,22 +1152,40 @@ def _initializer(pkg):
     return "create-" + pkg
 
 
+def _npx_packages(rest):
+    """Packages npx / npm exec / dlx install or run: every --package / -p given before the command, and the command.
+    Options after the command belong to the command (npx tsc -p tsconfig.json)."""
+    pkgs = []
+    i = 0
+    while i < len(rest):
+        t = rest[i]
+        if t == "--":
+            pkgs += rest[i + 1:i + 2]
+            break
+        if t in ("-p", "--package"):
+            pkgs += rest[i + 1:i + 2]
+            i += 2
+            continue
+        if t.startswith("--package="):
+            pkgs.append(t.split("=", 1)[1])
+        elif t in ("-c", "--call"):
+            i += 2
+            continue
+        elif not t.startswith("-"):
+            pkgs.append(t)
+            break
+        i += 1
+    return pkgs
+
+
 def check_npx(argv, allowed):
     tool = _base(argv[0])
-    rest = argv[1:]
-    if tool == "npm" and rest and rest[0] in ("exec", "x"):
-        pkgs = _option_value(rest, ("--package", "-p"))
-        if not pkgs:
-            args = [a for a in rest[1:] if not a.startswith("-")]
-            pkgs = args[:1]
-    elif tool in ("npx", "bunx") or (tool in ("pnpm", "yarn") and rest and rest[0] == "dlx"):
-        if tool in ("pnpm", "yarn"):
-            rest = rest[1:]
-        values = set(_option_value(rest, ("--package", "-p")))
-        args = [a for a in rest if not a.startswith("-") and a not in values]
-        pkgs = sorted(values) + args[:1]  # every --package is installed, and the first word is run
-    elif (tool == "npm" and rest and rest[0] in ("init", "create", "innit")) or (tool in ("pnpm", "yarn", "bun") and rest and rest[0] == "create"):
-        args = [a for a in rest[1:] if not a.startswith("-")]
+    sub, after = _pm_sub(tool, argv[1:]) if tool in PM_VALUE_OPTS else (None, [])
+    if (tool == "npm" and sub in ("exec", "x")) or tool in ("npx", "bunx") or (tool in ("pnpm", "yarn") and sub == "dlx") or (
+            tool == "bun" and sub == "x"):
+        pkgs = _npx_packages(argv[1:] if tool in ("npx", "bunx") else after)
+    elif (tool == "npm" and sub in ("init", "create", "innit")) or (tool in ("pnpm", "yarn", "bun") and sub == "create"):
+        args = [a for a in after if not a.startswith("-")]
         pkgs = [_initializer(args[0])] if args else []
     else:
         return []
@@ -1095,10 +1196,10 @@ def _is_protected_path(p):
     p = p.replace(os.sep, "/")
     if PROTECTED_COMPONENT.search(p):
         return True
-    name = p.rstrip("/").rsplit("/", 1)[-1]
-    if name in PROTECTED_NAMES or name == "LICENSE" or name.startswith("LICENSE."):
+    name = p.rstrip("/").rsplit("/", 1)[-1].lower()
+    if name in PROTECTED_NAMES_LC or name == "license" or name.startswith("license."):
         return True
-    return p.endswith("mcpb/manifest.json")
+    return p.lower().endswith("mcpb/manifest.json")
 
 
 def _brace_expand(s, limit=64):
@@ -1190,7 +1291,71 @@ def _write_targets(name, a):
         return pos[1:2]
     if name in AWKS:
         return [m.group(1) for p in _awk_programs(a) for m in re.finditer(r"\bprintf?\b[^;{}]*?>>?\s*\"([^\"]*)\"", p)]
+    if name == "find":
+        return _option_value(args, ("-fprint", "-fprint0", "-fprintf", "-fls"))
     return []
+
+
+# Commands that write when find runs them through -exec / -execdir / -ok
+FIND_WRITERS = {"rm", "rmdir", "unlink", "mv", "cp", "ln", "truncate", "chmod", "chown", "chgrp", "shred", "tee", "dd",
+                "install", "touch", "mkdir"}
+FIND_WALK_LIMIT = 20000
+
+
+def _find_start_points(words):
+    """find's start points (BSD and GNU): after the leading -H/-L/-P/-E/-X/-d/-s/-x and -f <path>, up to the expression."""
+    pts = []
+    i = 1
+    n = len(words)
+    while i < n and words[i].text in ("-H", "-L", "-P", "-E", "-X", "-d", "-s", "-x", "-f"):
+        if words[i].text == "-f" and i + 1 < n:
+            pts.append(words[i + 1])
+            i += 1
+        i += 1
+    while i < n and not words[i].text.startswith(("-", "(", "!", ")")) and words[i].text != ",":
+        pts.append(words[i])
+        i += 1
+    return pts
+
+
+def _find_writes(words):
+    a = _texts(words)
+    if "-delete" in a:
+        return True
+    for inner in _find_execs(words):
+        name = _base(inner[0].text)
+        args = [w.text for w in inner[1:]]
+        if name in FIND_WRITERS or (name in ("sed", "perl") and any(t.startswith("-i") or (_is_cluster(t) and "i" in t) for t in args)):
+            return True
+    return False
+
+
+def _contains_protected(w, ctx):
+    """True if the path is, or is a directory that contains, a protected path (looked up on disk, bounded)."""
+    if _tmp_target(w) and not (TMP_VAR.match(w.text) and ctx.tmpdir_tainted):
+        return False  # "$TMPDIR/<name>" or /tmp/claude-<uid>/..., as for rm
+    if w.dynamic or w.glob or _protected_target(w.text, ctx):
+        return True
+    if _in_rm_allowed(w.text):
+        return False  # build artefacts, like rm -rf dist
+    bases = ctx.bases()
+    if bases is None:
+        return True
+    for base in bases:
+        root = os.path.realpath(os.path.join(base, os.path.expanduser(w.text)))
+        if PROJECT_DIR == root or PROJECT_DIR.startswith(root + os.sep):
+            return True  # the repository itself or a directory above it
+        if not os.path.isdir(root):
+            continue
+        seen = 0
+        for dirpath, dirnames, filenames in os.walk(root):
+            for entry in dirnames + filenames:
+                if _is_protected_path(os.path.join(dirpath, entry)):
+                    return True
+            seen += len(dirnames) + len(filenames)
+            if seen > FIND_WALK_LIMIT:
+                return True  # too large to check: assume it may
+    return False
 
 
 def _tmp_target(w):
@@ -1221,9 +1386,15 @@ def _rm(words, ctx):
             continue
         if t.startswith(("/", "~", "$")) or w.dynamic or ".." in t or t in ("*", ".", "./"):
             return MSG_RM_OUTSIDE.format(t)
-        if recursive and not t.rstrip("/").startswith(RM_ALLOWED_PREFIXES):
+        if recursive and not _in_rm_allowed(t):
             return MSG_RM_RECURSIVE.format(t)
     return None
+
+
+def _in_rm_allowed(t):
+    """t is one of the build-artefact directories or inside one ("distsrc" is not "dist")."""
+    s = t.rstrip("/")
+    return any(s == p or s.startswith(p + "/") for p in RM_ALLOWED_PREFIXES)
 
 
 def _repo_dir(ctx, dir_words):
@@ -1245,6 +1416,318 @@ def _repo_dir(ctx, dir_words):
                 return MSG_GIT_DIR
             p = os.path.dirname(p)
     return None
+
+
+GIT_PROBE_TIMEOUT = 2  # seconds; a probe that takes longer counts as "cannot tell"
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def _git_probe(args, cwd):
+    """Run a read-only git command for the hook itself: (returncode, stdout), or (None, "") when it cannot run.
+
+    The hook runs outside the sandbox, so git here must not start other programs: no fsmonitor, no hooks, no system
+    config, no external diff or textconv drivers, no pager, no lazy fetch, and none of the caller's GIT_* variables."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0", "GIT_NO_LAZY_FETCH": "1", "LC_ALL": "C"})
+    cmd = ["git", "--no-pager", "-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null"] + args
+    try:
+        r = subprocess.run(cmd, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.DEVNULL, timeout=GIT_PROBE_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        return None, ""
+    return r.returncode, r.stdout.decode("utf-8", "replace")
+
+
+def _is_commit(ref, cwd):
+    """True / False when git can tell whether ref names a tree-ish, None when it cannot run."""
+    rc, _ = _git_probe(["rev-parse", "--verify", "--quiet", "--end-of-options", ref + "^{tree}"], cwd)
+    if rc == 0:
+        return True
+    return False if rc == 1 else None
+
+
+def _changed_protected(cwd, target=None, cached=False, rng=None):
+    """Protected files that differ between the working tree (or the index, cached=True) and target, or across the
+    range rng. target None compares the working tree with the index. None when git cannot tell."""
+    args = ["diff", "--name-only", "-z", "--no-ext-diff", "--no-textconv", "--no-relative"]
+    if cached:
+        args.append("--cached")
+    if rng is not None or target is not None:
+        args += ["--end-of-options", rng if rng is not None else target]
+    args.append("--")
+    rc, out = _git_probe(args, cwd)
+    if rc != 0:
+        return None
+    return [f for f in out.split("\0") if f and _is_protected_path(f)]
+
+
+def _is_exclude_spec(spec):
+    if spec.startswith((":!", ":^")):
+        return True
+    m = re.match(r"^:\(([^)]*)\)", spec)
+    return bool(m) and "exclude" in [w.strip() for w in m.group(1).split(",")]
+
+
+def _pathspecs_cover(specs, f, prefix):
+    """Whether a set of git pathspecs covers file f. Exclude pathspecs (':!x', ':^x', ':(exclude)x') only take files
+    away, and a set of excludes alone means "everything except" (git), so excludes are ignored here: the hook may
+    ask when the excluded part is all that changes, but never misses a protected file."""
+    positives = [s for s in specs if not _is_exclude_spec(s)]
+    return not positives or any(_pathspec_covers(s, f, prefix) for s in positives)
+
+
+def _pathspec_covers(spec, f, prefix):
+    """Whether a git pathspec given in the subdirectory prefix covers the repository-relative file f."""
+    s = spec
+    base = prefix
+    if s.startswith(":"):
+        if s.startswith(":/"):
+            s, base = s[2:], ""
+        else:
+            return True  # other pathspec magic: assume it may cover
+    q = os.path.normpath(os.path.join(base, s)).lower() if (base or s) else "."
+    fl = f.lower()
+    if q in (".", ""):
+        return True
+    if q.startswith(".."):
+        return False
+    if re.search(r"[*?\[]", s):
+        return fnmatch.fnmatch(fl, q) or fnmatch.fnmatch(fl, q + "/*")
+    return fl == q or fl.startswith(q + "/")
+
+
+def _worktree_changes(sub, rest, cwd):
+    """How a git command replaces files in the working tree or the index, as a list of (kind, target, paths):
+    kind "tree" (the working tree becomes target), "index" (the index becomes target), "from-index" (the working
+    tree becomes the index), or "unknown" (git cannot tell whether an argument is a commit or a path)."""
+    if sub == "checkout":
+        before, after, newbranch = [], None, False
+        i = 0
+        while i < len(rest):
+            t = rest[i]
+            if t == "--":
+                after = rest[i + 1:]
+                break
+            if t in ("-b", "-B", "--orphan") or (_is_cluster(t) and t[-1] in "bB"):
+                newbranch = True
+                i += 2
+                continue
+            if t.startswith("--orphan="):
+                newbranch = True
+            if t.startswith("-") and t != "-":
+                i += 1
+                continue
+            before.append("@{-1}" if t == "-" else t)
+            i += 1
+        if after is not None:
+            return [("tree", before[0], after)] if before else [("from-index", None, after)]
+        if not before:
+            return []  # "checkout -b new": a branch at HEAD, nothing changes
+        if newbranch:
+            return [("tree", before[0], None)]  # start point
+        is_commit = _is_commit(before[0], cwd)
+        if is_commit is None:
+            return [("unknown", before[0], None)]
+        if is_commit:
+            return [("tree", before[0], before[1:] or None)]
+        return [("from-index", None, before)]
+    if sub == "switch":
+        pos, orphan = [], False
+        i = 0
+        while i < len(rest):
+            t = rest[i]
+            if t in ("-c", "-C", "--create", "--force-create", "--orphan"):
+                orphan = orphan or t == "--orphan"
+                i += 2
+                continue
+            if t.startswith("--orphan"):
+                orphan = True
+            if t.startswith("-") and t != "-":
+                i += 1
+                continue
+            pos.append("@{-1}" if t == "-" else t)
+            i += 1
+        if orphan:
+            return [("tree", EMPTY_TREE, None)]  # switch --orphan empties the working tree
+        return [("tree", pos[0], None)] if pos else []
+    if sub == "reset":
+        mode = "mixed"
+        before, after = [], None
+        for k, t in enumerate(rest):
+            if t == "--":
+                after = rest[k + 1:]
+                break
+            hit = _opt_any(t, ("--soft", "--mixed", "--hard", "--keep", "--merge"))
+            if hit:
+                mode = hit[2:]
+            elif not t.startswith("-"):
+                before.append(t)
+        if mode == "soft":
+            return []  # moves HEAD only; a later checkout or reset --hard is checked then
+        commit, paths = "HEAD", after
+        if before:
+            if after is not None:
+                commit = before[0]
+            else:
+                is_commit = _is_commit(before[0], cwd)
+                if is_commit is None:
+                    return [("unknown", before[0], None)]
+                commit, paths = (before[0], before[1:] or None) if is_commit else ("HEAD", before)
+        return [("tree" if mode in ("hard", "keep", "merge") else "index", commit, paths)]
+    if sub == "restore":
+        source, worktree, staged, paths = None, False, False, []
+        i = 0
+        while i < len(rest):
+            t = rest[i]
+            if t in ("-s", "--source") and i + 1 < len(rest):
+                source = rest[i + 1]
+                i += 2
+                continue
+            if t.startswith("--source="):
+                source = t.split("=", 1)[1]
+            elif t.startswith("-s") and len(t) > 2 and not t.startswith("--"):
+                source = t[2:]
+            elif _opt_is(t, "--worktree") or (_is_cluster(t) and "W" in t):
+                worktree = True
+            elif _opt_is(t, "--staged") or (_is_cluster(t) and "S" in t):
+                staged = True
+            elif t != "--" and not t.startswith("-"):
+                paths.append(t)
+            i += 1
+        out = []
+        if staged:
+            out.append(("index", source or "HEAD", paths or None))
+        if worktree or not staged:
+            out.append(("tree", source, paths or None) if source else ("from-index", None, paths or None))
+        return out
+    return []
+
+
+def _worktree_ask(sub, rest, ctx, dir_words):
+    """A reason to ask when this git command would replace protected files (hooks, settings, workflows, ...)
+    in the working tree or the index with another version, or when that cannot be checked; else None.
+    Checked from every directory the command may run in (the session cwd and each literal cd before it), since
+    relative pathspecs such as '..' depend on it."""
+    if sub not in ("checkout", "switch", "reset", "restore", "merge", "rebase") and not (
+            sub == "stash" and rest[:1] and rest[0] in ("pop", "apply", "branch")):
+        return None
+    bases = ctx.bases() or [ctx.cwd]
+    for base in bases:
+        d = base
+        for w in dir_words:
+            d = os.path.normpath(os.path.join(d, os.path.expanduser(w.text)))
+        if not os.path.isdir(d):
+            return "git {}: could not check whether it changes protected files".format(sub)
+        reason = _worktree_ask_in(sub, rest, d)
+        if reason:
+            return reason
+    return None
+
+
+def _worktree_ask_in(sub, rest, cwd):
+    if sub in ("rebase", "merge", "cherry-pick") and any(
+            t in ("--continue", "--abort", "--skip", "--quit", "--edit-todo", "--show-current-patch") for t in rest):
+        return None  # continuing or abandoning an operation already in progress (still asked as history-affecting)
+    if sub in ("checkout", "switch", "reset", "restore"):
+        changes = _worktree_changes(sub, rest, cwd)
+    elif sub in ("merge", "rebase"):
+        # the other side's changes since the merge base; every word that is not an option is tried as a ref
+        # (a word that is not one, such as a -m message, makes the check fail, which asks)
+        refs = [t for t in rest if not t.startswith("-") and t != "--"]
+        changes = [("range", "HEAD..." + r, None) for r in (refs or ["@{upstream}"])]
+    elif sub == "stash" and rest[:1] and rest[0] in ("pop", "apply", "branch"):
+        args = [t for t in rest[1:] if not t.startswith("-")]
+        if rest[0] == "branch":
+            stash = args[1] if len(args) > 1 else "stash@{0}"
+        else:
+            stash = args[0] if args else "stash@{0}"
+        rc, out = _git_probe(["stash", "show", "--name-only", "-z", "--no-ext-diff", "--no-textconv",
+                              "--include-untracked", "--end-of-options", stash], cwd)
+        if rc != 0:
+            return "git stash {}: could not check whether it changes protected files".format(rest[0])
+        files = [f for f in out.split("\0") if f and _is_protected_path(f)]
+        return "git stash {} would change protected files ({})".format(rest[0], ", ".join(files[:3])) if files else None
+    else:
+        return None
+    prefix = None
+    for kind, target, paths in changes:
+        if kind == "unknown":
+            return "git {}: could not check whether '{}' is a commit or a path".format(sub, target)
+        if kind == "range":
+            changed = _changed_protected(cwd, rng=target)
+        elif kind == "from-index":
+            changed = _changed_protected(cwd)
+        else:
+            changed = _changed_protected(cwd, target=target, cached=(kind == "index"))
+        if changed is None:
+            return "git {}: could not check whether it changes protected files".format(sub)
+        if paths:
+            if prefix is None:
+                rc, out = _git_probe(["rev-parse", "--show-prefix"], cwd)
+                if rc != 0:
+                    return "git {}: could not check whether it changes protected files".format(sub)
+                prefix = out.strip().rstrip("/")
+            changed = [f for f in changed if _pathspecs_cover(paths, f, prefix)]
+        if changed:
+            more = " and {} more".format(len(changed) - 3) if len(changed) > 3 else ""
+            return "git {} would change protected files ({}{}); the hooks are read from the working tree".format(
+                sub, ", ".join(changed[:3]), more)
+    return None
+
+
+def _grep_opens_pager(rest):
+    """git grep -O / --open-files-in-pager (runs a program), skipping the values of -e/-f and the context options."""
+    skip = False
+    for t in rest:
+        if skip:
+            skip = False
+            continue
+        if t == "--":
+            break
+        if t in ("-e", "-f", "-A", "-B", "-C", "-m", "--max-depth", "--max-count", "--context", "--after-context",
+                 "--before-context", "--threads"):
+            skip = True
+            continue
+        if t.startswith("-O") or _opt_is(t, "--open-files-in-pager") or (_is_cluster(t) and "O" in t):
+            return True
+    return False
+
+
+def _checkout_paths(rest, cwd):
+    """The paths "git checkout" writes: after "--"; otherwise the words after a first word that is a commit, or
+    every word when the first is not a commit or git cannot tell. New branch names (-b/-B/--orphan) are not paths."""
+    before, after = [], None
+    i = 0
+    while i < len(rest):
+        t = rest[i]
+        if t == "--":
+            after = rest[i + 1:]
+            break
+        if t in ("-b", "-B", "--orphan") or (_is_cluster(t) and t[-1] in "bB"):
+            i += 2
+            continue
+        if t.startswith("-") and t != "-":
+            i += 1
+            continue
+        before.append(t)
+        i += 1
+    if after is not None:
+        return after
+    if not before:
+        return []
+    return before[1:] if _is_commit("@{-1}" if before[0] == "-" else before[0], cwd) else before
+
+
+def _branch_refspec(ref):
+    """A fetch refspec that only names branches or tags (not pull requests, arbitrary refs or commit ids)."""
+    r = ref[1:] if ref.startswith("+") else ref
+    src, _, dst = r.partition(":")
+    src_ok = src == "HEAD" or src.startswith(("refs/heads/", "refs/tags/")) or (
+        src != "" and not src.startswith("refs/") and "pull/" not in src and "*" not in src
+        and not re.fullmatch(r"[0-9a-fA-F]{7,64}", src))
+    dst_ok = dst == "" or dst.startswith(("refs/remotes/", "refs/heads/", "refs/tags/")) or (
+        not dst.startswith("refs/") and "*" not in dst)
+    return src_ok and dst_ok
 
 
 def _opt_is(t, name, min_len=4):
@@ -1401,7 +1884,9 @@ def _git_fetch(sub, rest):
     for repo in (pos if multiple else pos[:1]):
         if not REMOTE_NAME.match(repo):
             return MSG_GIT_NET
-    if sub in ("fetch", "pull") and any("pull/" in ref for ref in pos[1:]):
+    # only branches and tags: pull-request heads (refs/pull/...), other refs and commit ids can bring in a
+    # version of these hooks the maintainer has not merged
+    if sub in ("fetch", "pull") and not multiple and not all(_branch_refspec(ref) for ref in pos[1:]):
         return MSG_PR_CHECKOUT
     return None
 
@@ -1481,16 +1966,30 @@ def _git(words, ctx):
         if hit:
             return MSG_GIT_EXEC
     if sub == "commit":
+        # -n is --no-verify; skip the values of -m/-F/-c/-C/-t (a message line such as "- new tool" is not -n)
+        skip = False
         for t in rest:
+            if skip:
+                skip = False
+                continue
+            if t == "--":
+                break
+            if t in ("--message", "--file", "--template", "--reuse-message", "--reedit-message", "--author", "--date",
+                     "--fixup", "--squash", "--trailer", "--cleanup", "--pathspec-from-file"):
+                skip = True
+                continue
             if t.startswith("-") and not t.startswith("--"):
-                for ch in t[1:]:
+                for k, ch in enumerate(t[1:], start=1):
                     if ch == "n":
                         return MSG_NO_VERIFY
-                    if ch in "mFcCtuS":
+                    if ch in "mFcCt":
+                        skip = k == len(t) - 1  # the value is the next word
                         break
+                    if ch in "uS":
+                        break  # optional value, attached only
     if sub == "config":
         return _git_config(rest)
-    if sub == "remote" and first in ("add", "set-url", "remove", "rm", "rename"):
+    if sub == "remote" and first in ("add", "set-url", "remove", "rm", "rename", "set-branches", "set-head"):
         return MSG_REMOTE_CHANGE
     if sub in ("filter-branch", "filter-repo"):
         return MSG_HISTORY
@@ -1506,7 +2005,7 @@ def _git(words, ctx):
         return MSG_GIT_EXEC
     if sub == "difftool" and any(t.startswith(("-x", "--extcmd")) or (_is_cluster(t) and "x" in t) for t in rest):
         return MSG_GIT_EXEC
-    if sub == "grep" and any(t.startswith(("-O", "--open-files-in-pager")) or (_is_cluster(t) and "O" in t) for t in rest):
+    if sub == "grep" and _grep_opens_pager(rest):
         return MSG_GIT_EXEC
     if sub == "archive" and any(t.startswith("--remote") for t in rest):
         return MSG_GIT_NET
@@ -1522,8 +2021,10 @@ def _git(words, ctx):
         return MSG_GIT_NOT_ALLOWED.format(sub)
     if sub == "worktree" and first not in (None, "list"):
         return MSG_GIT_NOT_ALLOWED.format("worktree " + first)
-    if sub == "help" and any(t in ("-w", "--web", "-i", "--info") for t in rest):
+    if sub == "help" and any(_opt_any(t, ("--web", "--info")) or (_is_cluster(t) and ("w" in t or "i" in t)) for t in rest):
         return MSG_GIT_NOT_ALLOWED.format("help --web/--info")
+    if sub in ("checkout", "switch") and any(re.search(r"(^|/)pull/\d", t) for t in rest if not t.startswith("-")):
+        return MSG_PR_CHECKOUT
     if any(t.startswith("--pathspec-from-file") for t in rest) and sub in ("checkout", "restore", "reset", "rm", "mv"):
         return MSG_PROTECTED  # the paths it writes are in a file the hook cannot read
 
@@ -1533,8 +2034,11 @@ def _git(words, ctx):
     if sub in ("format-patch", "archive"):
         targets += _option_value(rest, ("-o",))
     if sub == "checkout":
-        # "checkout <tree-ish> <path>" and "checkout -- <path>" both overwrite files; branch names are not protected paths
-        targets += [t for t in rest if t != "--" and not t.startswith("-")]
+        # "checkout <tree-ish> <path>" and "checkout -- <path>" overwrite those paths
+        d = ctx.cwd
+        for w in dirs:
+            d = os.path.normpath(os.path.join(d, os.path.expanduser(w.text)))
+        targets += _checkout_paths(rest, d)
     if sub in ("restore", "rm", "mv", "init"):
         targets += pos
     if sub in ("worktree", "bundle") and first in ("add", "create") and len(pos) > 1:
@@ -1543,15 +2047,27 @@ def _git(words, ctx):
         if _protected_target(t, ctx) or _computed(t, ctx):
             return MSG_PROTECTED
 
+    # Switching the working tree (or the index) to another version can bring back older hooks and settings:
+    # ask when protected files would change, or when that cannot be checked. pull is always asked, because what
+    # it brings in is only known after the fetch (fetch alone is not asked).
+    if sub == "pull":
+        ctx.asks.insert(0, "git pull (fetch and merge) may change protected files such as .claude/hooks, which the hook cannot check before the fetch")
+    else:
+        reason = _worktree_ask(sub, rest, ctx, dirs)
+        if reason:
+            ctx.asks.insert(0, reason)
     if sub in ("rebase", "merge", "cherry-pick"):
         ctx.asks.append("history-affecting git operation")
     discard = (
-        (sub == "reset" and "--hard" in rest)
-        or (sub == "clean" and any("--force" == t or (_is_cluster(t) and "f" in t) for t in rest))
+        (sub == "reset" and any(_opt_is(t, "--hard") for t in rest))
+        or (sub == "clean" and any(_opt_is(t, "--force") or (_is_cluster(t) and "f" in t) for t in rest))
         or (sub == "checkout" and "--" in rest and "." in rest[rest.index("--") + 1:])
         or (sub == "restore" and "." in pos)
         or (sub == "stash" and first in ("drop", "clear"))
-        or (sub == "branch" and "-D" in rest)
+        or (sub == "branch" and (
+            "-D" in rest
+            or any(_is_cluster(t) and "d" in t.lower() and "f" in t for t in rest)
+            or (any(_opt_is(t, "--delete") or t == "-d" for t in rest) and any(_opt_is(t, "--force") or t == "-f" for t in rest))))
     )
     if discard:
         ctx.asks.append("operation that discards work")
@@ -1584,6 +2100,38 @@ def _gh_command(rest):
     return (found[0] if found else None), (found[1] if len(found) > 1 else None), None
 
 
+# gh api's short flags that take a value (pflag: "-Xv", "-X v", "-X=v", and bundled like "-iXv")
+GH_API_VALUE_SHORT = set("XfFHqtp")
+
+
+def _gh_api_write(rest):
+    """A reason when gh api would write: a method other than GET/HEAD, or fields/input (which switch it to POST)."""
+    k = 0
+    while k < len(rest):
+        t = rest[k]
+        if t == "--":
+            break
+        if t.startswith("--"):
+            key, eq, val = t.partition("=")
+            if key in ("--field", "--raw-field", "--input"):
+                return MSG_GH_API_FIELDS
+            if key == "--method":
+                method = val if eq else (rest[k + 1] if k + 1 < len(rest) else "")
+                if method.upper() not in ("GET", "HEAD"):
+                    return MSG_GH
+        elif t.startswith("-") and len(t) > 1:
+            for j, ch in enumerate(t[1:], start=1):
+                if ch in "fF":
+                    return MSG_GH_API_FIELDS
+                if ch in GH_API_VALUE_SHORT:
+                    value = t[j + 1:] or (rest[k + 1] if k + 1 < len(rest) else "")
+                    if ch == "X" and value.lstrip("=").upper() not in ("GET", "HEAD"):
+                        return MSG_GH
+                    break  # the rest of the word (or the next word) is this flag's value
+        k += 1
+    return None
+
+
 def _gh(words, ctx):
     a = _texts(words)
     rest = a[1:]
@@ -1610,19 +2158,12 @@ def _gh(words, ctx):
     if sub == "issue" and verb in ("create", "comment"):
         ctx.asks.append("GitHub issue operation")
     if sub == "api":
-        for k, t in enumerate(rest):
-            method = None
-            if t in ("-X", "--method") and k + 1 < len(rest):
-                method = rest[k + 1]
-            elif t.startswith("--method="):
-                method = t.split("=", 1)[1]
-            elif t.startswith("-X") and len(t) > 2:
-                method = t[2:]
-            if method and method.upper() in GH_WRITE_METHODS:
-                return MSG_GH
-            if t in ("-f", "-F", "--field", "--raw-field", "--input") or t.startswith(("--field=", "--raw-field=", "--input=")) or re.match(r"^-[fF].", t):
-                return MSG_GH_API_FIELDS
-        if any(re.search(r"/(rulesets|branches/[^/\s]+/protection|hooks|keys|actions/secrets)", p) for p in pos):
+        r = _gh_api_write(rest)
+        if r:
+            return r
+        # repository and organisation settings endpoints (not file paths such as contents/.claude/hooks/...)
+        if any(re.match(r"^/?(repos/[^/]+/[^/]+|orgs/[^/]+)/(rulesets|hooks|keys|branches/[^/]+/protection"
+                        r"|(actions|dependabot|codespaces)/secrets|environments/[^/]+/secrets)(/|\?|$)", p) for p in pos):
             return MSG_GH_API_PROTECTED
     targets = _option_value(rest, ("-D", "--dir", "-O", "--output"))
     for t in targets:
@@ -1679,27 +2220,39 @@ def _inv(words, cmd, ctx, allowed_pkgs, allowed_npx):
     if name in ("declare", "typeset") and not [t for t in args if not t.startswith(("-", "+"))]:
         return MSG_ENV_DUMP
     for k, t in enumerate(args):
-        if t.startswith("--registry"):
+        # --registry, and scoped registries (--@scope:registry=...) that serve an allowed package name elsewhere
+        if t.startswith("--registry") or re.match(r"^--@[^=\s]*:registry", t):
             return MSG_REGISTRY
-        if t == "--ignore-scripts=false" or (t in ("--ignore-scripts", "ignore-scripts") and k + 1 < len(args) and args[k + 1] == "false"):
+        key, eq, val = t.partition("=")
+        if key == "--no-ignore-scripts" or (key == "--ignore-scripts" and eq and val.lower() not in ("true", "1", "yes", "on")) or (
+                t in ("--ignore-scripts", "ignore-scripts") and k + 1 < len(args) and args[k + 1].lower() in ("false", "0", "no", "off")):
             return MSG_SCRIPTS
-    if name == "npm":
-        pos = _positionals(args)
-        sub = pos[0] if pos else None
-        if sub in ("publish", "unpublish", "deprecate", "owner", "access", "token", "login", "adduser", "logout", "whoami"):
-            return MSG_NPM
-        if sub == "set" or (sub in ("config", "c") and len(pos) > 1 and pos[1] in ("set", "edit", "delete")):
-            return MSG_NPM
-        if sub in ("exec", "x") and any(t in ("-c", "--call") or t.startswith("--call=") for t in args):
-            return MSG_NPM_EXEC_C
-        if sub in ("update", "upgrade", "dedupe") or (sub == "audit" and len(pos) > 1 and pos[1] == "fix"):
-            ctx.asks.append("dependency tree change")
+    if name in PM_VALUE_OPTS:
+        idx, err = _pm_command(name, args)
+        if err:
+            return err
+        sub = args[idx] if idx is not None else None
+        pos = ([sub] + _positionals(args[idx + 1:])) if idx is not None else []
+        if name == "npm":
+            if sub in ("publish", "unpublish", "deprecate", "owner", "access", "token", "login", "adduser", "logout", "whoami"):
+                return MSG_NPM
+            if sub == "set" or (sub in ("config", "c") and len(pos) > 1 and pos[1] in ("set", "edit", "delete")):
+                return MSG_NPM
+            if sub in ("exec", "x") and any(t in ("-c", "--call") or t.startswith("--call=") for t in args):
+                return MSG_NPM_EXEC_C
+            if sub in ("update", "upgrade", "dedupe") or (sub == "audit" and len(pos) > 1 and pos[1] == "fix"):
+                ctx.asks.append("dependency tree change")
+        if name in ("pnpm", "yarn") and sub is not None and (
+                sub in ("publish", "login") or (sub == "config" and len(pos) > 1 and pos[1] == "set")):
+            return MSG_PNPM
     if name == "npx" and any(t in ("-c", "--call") or t.startswith("--call=") for t in args):
         return MSG_NPM_EXEC_C
-    if name in ("pnpm", "yarn"):
-        pos = _positionals(args)
-        if pos and (pos[0] in ("publish", "login") or (pos[0] == "config" and len(pos) > 1 and pos[1] == "set")):
-            return MSG_PNPM
+    if name == "find" and _find_writes(words):
+        for sp in _find_start_points(words) or [Word()]:
+            if not sp.text:
+                sp.text = "."  # find with no start point searches "."
+            if _contains_protected(sp, ctx):
+                return MSG_FIND_WRITE
     if name == "git":
         r = _git(words, ctx)
         if r:
@@ -1708,7 +2261,7 @@ def _inv(words, cmd, ctx, allowed_pkgs, allowed_npx):
         r = _gh(words, ctx)
         if r:
             return r
-    if name in AWKS and any(AWK_EXEC.search(p) for p in _awk_programs(a)):
+    if name in AWKS and any(AWK_EXEC.search(AWK_STRING.sub('""', p)) for p in _awk_programs(a)):
         return MSG_AWK
     if name == "rm":
         r = _rm(words, ctx)
@@ -1743,7 +2296,10 @@ def decide(cmd, cwd):
         return "block", MSG_PARSE.format("nested too deeply")
     if ctx.problems:
         return "block", ctx.problems[0]
-    if any(words[0].text in ("source", ".") for words, _ in ctx.invs):
+    for nm, _ in ctx.assigns:
+        if nm is not None and PKG_ENV.match(nm) and nm.lower() not in PKG_ENV_ALLOWED:
+            return "block", MSG_PKG_ENV.format(nm)
+    if any(_base(words[0].text) in ("source", ".") for words, _ in ctx.invs):
         ctx.tmpdir_tainted = True  # a sourced file can change TMPDIR
     allowed_pkgs = read_list(ALLOWED_PACKAGES_FILE)
     allowed_npx = read_list(ALLOWED_NPX_FILE)
