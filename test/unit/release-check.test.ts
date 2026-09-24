@@ -9,7 +9,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { type ReleaseFiles, releaseProblems } from '../../scripts/release-files.mjs';
+import {
+  extractSection,
+  type ReleaseFiles,
+  releaseProblems,
+} from '../../scripts/release-files.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = join(ROOT, 'scripts', 'release-check.mjs');
@@ -234,9 +238,15 @@ describe('scripts/release-check.mjs', () => {
       expect(runScript(checker, ['0.0.1']).status).toBe(1);
       expect(runScript(checker, [VERSION]).status).toBe(0);
 
+      // The notes are the whole section as CHANGELOG.md has it: a section may start with a notice
+      // (a blockquote) before its first "### " heading, so the output is not assumed to start with one.
       const notes = runScript(join(linkedRoot, 'scripts', 'release-notes.mjs'), [VERSION]);
       expect(notes.status).toBe(0);
-      expect(notes.stdout).toMatch(/^### /);
+      const section = extractSection(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'), VERSION);
+      expect(section).not.toBeNull();
+      expect(section?.length).toBeGreaterThan(0);
+      expect(notes.stdout).toBe(`${section?.join('\n')}\n`);
+      expect(notes.stdout).toMatch(/^### /m);
     });
   });
 });

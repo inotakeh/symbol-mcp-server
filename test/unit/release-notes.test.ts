@@ -38,6 +38,16 @@ describe('scripts/release-notes.mjs', () => {
     expect(stdout.endsWith('\n\n')).toBe(false);
   });
 
+  it('keeps a notice before the first heading (0.9.0 starts with a blockquote)', () => {
+    const { status, stdout } = run('0.9.0');
+    expect(status).toBe(0);
+    expect(stdout.startsWith('> **After upgrading, restart your MCP host')).toBe(true);
+    expect(stdout).toContain('`invisibleCharactersRemoved`');
+    expect(stdout).toMatch(/^### Added$/m);
+    expect(stdout).toMatch(/^### Fixed$/m);
+    expect(stdout).not.toContain('## [');
+  });
+
   it('stops the last section (0.1.0) before the link references', () => {
     const { status, stdout } = run('0.1.0');
     expect(status).toBe(0);
