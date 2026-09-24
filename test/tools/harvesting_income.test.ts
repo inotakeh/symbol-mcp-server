@@ -119,6 +119,11 @@ describe('symbol_harvesting_income', () => {
         receiptsUnknown: 0,
         xymUnknown: '0.000000',
         rawUnknown: '0',
+        // 11 blocks: 9 the account harvested as its own beneficiary (two receipts each) and 2 where
+        // another account harvested and it only got the beneficiary share.
+        blocks: 11,
+        blocksHarvested: 9,
+        blocksBeneficiaryOnly: 2,
       },
       daily: [
         {
@@ -130,6 +135,9 @@ describe('symbol_harvesting_income', () => {
           xymHarvester: '204.988480',
           receiptsBeneficiary: 4,
           xymBeneficiary: '73.210168',
+          blocks: 4,
+          blocksHarvested: 4,
+          blocksBeneficiaryOnly: 0,
         },
         {
           date: '2026-09-11',
@@ -140,6 +148,9 @@ describe('symbol_harvesting_income', () => {
           xymHarvester: '256.251910',
           receiptsBeneficiary: 7,
           xymBeneficiary: '128.123619',
+          blocks: 7,
+          blocksHarvested: 5,
+          blocksBeneficiaryOnly: 2,
         },
       ],
       receiptsListed: 0,
@@ -151,12 +162,17 @@ describe('symbol_harvesting_income', () => {
       truncationReasons: [],
     });
     expect(sc.receipts).toBeUndefined();
-    expect(sc.summary).toMatch(/20 harvest receipts totalling 662\.574177 symbol\.xym/);
-    expect(sc.summary).toMatch(
-      /harvester 461\.240390 in 9 blocks, beneficiary 201\.333787 in 11 blocks/,
+    const lines = (sc.summary as string).split('\n');
+    expect(lines[0]).toMatch(
+      /: 20 harvest receipts totalling 662\.574177 symbol\.xym from 11 blocks \(harvester share 461\.240390 in 9 receipts, beneficiary share 201\.333787 in 11 receipts\)\.$/,
     );
-    expect(sc.summary).toMatch(
-      /Per day \(UTC\): 2026-09-10 278\.198648 \(8\), 2026-09-11 384\.375529 \(12\)/,
+    // Receipts are shares: 11 beneficiary receipts are not 11 delegators' blocks.
+    expect(lines[1]).toBe(
+      "Blocks: 9 harvested by this account, 2 harvested by others that paid it only the beneficiary share (typically delegators on its node). 9 of the 11 beneficiary receipts come from blocks it harvested itself, as its own node's beneficiary.",
+    );
+    expect(lines[2]).toBe('Per day (UTC): 2026-09-10 278.198648 (8), 2026-09-11 384.375529 (12).');
+    expect((sc.notes as string[]).join(' ')).toMatch(
+      /Receipts are shares, not blocks: blocksHarvested and blocksBeneficiaryOnly count each block once\./,
     );
     expect((sc.notes as string[]).join(' ')).toMatch(/no fiat conversion/);
 
@@ -203,19 +219,71 @@ describe('symbol_harvesting_income', () => {
         receiptsUnknown: 0,
         xymUnknown: '0.000000',
         rawUnknown: '0',
+        blocks: 11,
+        blocksHarvested: 9,
+        blocksBeneficiaryOnly: 2,
       },
     ]);
     const lines = (sc.summary as string).split('\n');
     expect(lines[0]).toMatch(/^NCV5HR.* 20 harvest receipts totalling 662\.574177 symbol\.xym/);
-    expect(lines[1]).toBe(
-      '2026-09: 20 receipts, 662.574177 symbol.xym (9 harvester / 11 beneficiary)',
+    expect(lines[1]).toMatch(/^Blocks: 9 harvested by this account, 2 harvested by others/);
+    expect(lines[2]).toBe(
+      '2026-09: 20 receipts, 662.574177 symbol.xym; 11 blocks: 9 harvested by this account, 2 by others (receipts 9 harvester / 11 beneficiary)',
     );
     expect(result.text).toBe(JSON.stringify(sc, null, 2));
   });
 
+  it('names the blocks whose share split is not recognised in the Blocks line', async () => {
+    const me = '68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53';
+    const other = `68${'A'.repeat(46)}`;
+    const sink = `68${'B'.repeat(46)}`;
+    const receipt = (amount: string, targetAddress: string) => ({
+      version: 1,
+      type: 8515,
+      targetAddress,
+      mosaicId: '6BED913FA20223F8',
+      amount,
+    });
+    const statementAt = (height: number, receipts: unknown[]) => ({
+      statement: { height: String(height), source: { primaryId: 0, secondaryId: 0 }, receipts },
+      id: `synthetic-${height}`,
+      meta: { timestamp: String(ANCHOR_TS + (height - ANCHOR_HEIGHT) * STEP_MS) },
+    });
+    const statements = [
+      statementAt(5_764_900, [receipt('70', other), receipt('25', me), receipt('5', sink)]),
+      statementAt(5_764_901, [receipt('60', me), receipt('35', other), receipt('5', sink)]),
+    ];
+    server = await startTestServer({
+      routes: routes({
+        'GET /statements/transaction': statementsRoute((pageNumber) =>
+          pageNumber === 1 ? statements : [],
+        ),
+      }),
+      now: NOW,
+    });
+    const result = await server.callTool('symbol_harvesting_income', {
+      account: ADDRESS,
+      fromHeight: 5_764_879,
+      toHeight: 5_767_496,
+    });
+    expect(result.isError).toBe(false);
+    const sc = result.structuredContent as Record<string, unknown>;
+    expect(sc.totals).toMatchObject({
+      receipts: 2,
+      blocks: 2,
+      blocksHarvested: 0,
+      blocksBeneficiaryOnly: 1,
+    });
+    expect((sc.summary as string).split('\n')[1]).toBe(
+      'Blocks: 0 harvested by this account, 1 harvested by others that paid it only the beneficiary share (typically delegators on its node), 1 not recognised.',
+    );
+    expect(outputSchema?.safeParse(sc).success).toBe(true);
+  });
+
   describe('output=csv', () => {
+    // The block columns were appended in 0.9.0: the columns before them keep their positions.
     const BUCKET_HEADER =
-      'period,receipts,xym,raw,receipts_harvester,xym_harvester,raw_harvester,receipts_beneficiary,xym_beneficiary,raw_beneficiary,receipts_unknown,xym_unknown,raw_unknown';
+      'period,receipts,xym,raw,receipts_harvester,xym_harvester,raw_harvester,receipts_beneficiary,xym_beneficiary,raw_beneficiary,receipts_unknown,xym_unknown,raw_unknown,blocks,blocks_harvested,blocks_beneficiary_only';
 
     it('puts the daily rows in the text block and repeats them in csv', async () => {
       server = await startTestServer({ routes: routes(), now: NOW });
@@ -231,8 +299,8 @@ describe('symbol_harvesting_income', () => {
       expect(result.text).toBe(
         [
           BUCKET_HEADER,
-          '2026-09-10,8,278.198648,278198648,4,204.988480,204988480,4,73.210168,73210168,0,0.000000,0',
-          '2026-09-11,12,384.375529,384375529,5,256.251910,256251910,7,128.123619,128123619,0,0.000000,0',
+          '2026-09-10,8,278.198648,278198648,4,204.988480,204988480,4,73.210168,73210168,0,0.000000,0,4,4,0',
+          '2026-09-11,12,384.375529,384375529,5,256.251910,256251910,7,128.123619,128123619,0,0.000000,0,7,5,2',
           '',
         ].join('\n'),
       );
@@ -257,7 +325,7 @@ describe('symbol_harvesting_income', () => {
       });
       expect(result.isError).toBe(false);
       expect(result.text).toBe(
-        `${BUCKET_HEADER}\n2026-09,20,662.574177,662574177,9,461.240390,461240390,11,201.333787,201333787,0,0.000000,0\n`,
+        `${BUCKET_HEADER}\n2026-09,20,662.574177,662574177,9,461.240390,461240390,11,201.333787,201333787,0,0.000000,0,11,9,2\n`,
       );
       expect(result.structuredContent?.csv).toBe(result.text);
       expect(outputSchema?.safeParse(result.structuredContent).success).toBe(true);

@@ -9,7 +9,10 @@
  * i.e. (100-B-N):B:N. The three receipts are separate even when the harvester is its own
  * beneficiary (verified on mainnet, 2026-09-11). Older blocks or accounts without a beneficiary
  * show two receipts, (100-N):N. Receipts are not returned in amount order, so the shares are
- * identified by sorting.
+ * identified by sorting. So a node operator that is its own node's beneficiary gets two receipts
+ * for each block it harvests and one (the beneficiary share) for each block a delegator harvests:
+ * beneficiary receipts are not a count of delegators' blocks, which is why the totals also count
+ * blocks (blocksHarvested, blocksBeneficiaryOnly), each block once.
  *
  * Statements are read in height chunks of about CHUNK_DAYS: catapult-rest answers the first page
  * of a wide height range plus targetAddress too slowly (a year timed out on mainnet, 2026-09-19,
@@ -102,6 +105,17 @@ export interface HarvestTotals {
   harvester: KindTotals;
   beneficiary: KindTotals;
   unknown: KindTotals;
+  /** Blocks in which the account received at least one receipt. */
+  blocks: number;
+  /** Blocks the account harvested: it received the harvester share (one receipt per block). */
+  blocksHarvested: number;
+  /**
+   * Blocks another account harvested in which the account received only the beneficiary share
+   * (typically delegators of the node that names it as beneficiary). A block the account harvested
+   * counts in blocksHarvested even when it also paid the account the beneficiary share. Blocks
+   * whose receipts were not recognised count in neither.
+   */
+  blocksBeneficiaryOnly: number;
 }
 
 export interface DailyBucket extends HarvestTotals {
@@ -145,33 +159,56 @@ function emptyTotals(): HarvestTotals {
     harvester: { receipts: 0, raw: 0n },
     beneficiary: { receipts: 0, raw: 0n },
     unknown: { receipts: 0, raw: 0n },
+    blocks: 0,
+    blocksHarvested: 0,
+    blocksBeneficiaryOnly: 0,
   };
 }
 
-function add(totals: HarvestTotals, row: HarvestRow): void {
-  totals.receipts += 1;
-  totals.raw += row.raw;
-  totals[row.kind].receipts += 1;
-  totals[row.kind].raw += row.raw;
+/** Adds the receipts of ONE block (its rows, all at one height) and counts the block once. */
+function addBlock(totals: HarvestTotals, block: readonly HarvestRow[]): void {
+  for (const row of block) {
+    totals.receipts += 1;
+    totals.raw += row.raw;
+    totals[row.kind].receipts += 1;
+    totals[row.kind].raw += row.raw;
+  }
+  totals.blocks += 1;
+  if (block.some((row) => row.kind === 'harvester')) totals.blocksHarvested += 1;
+  else if (block.some((row) => row.kind === 'beneficiary')) totals.blocksBeneficiaryOnly += 1;
+}
+
+/** Rows sorted by height, grouped into one array per block. */
+function groupByHeight(rows: readonly HarvestRow[]): HarvestRow[][] {
+  const blocks: HarvestRow[][] = [];
+  for (const row of rows) {
+    const last = blocks[blocks.length - 1];
+    if (last !== undefined && last[0]?.height === row.height) last.push(row);
+    else blocks.push([row]);
+  }
+  return blocks;
 }
 
 const KIND_ORDER: Record<HarvestKind, number> = { harvester: 0, beneficiary: 1, unknown: 2 };
 
-/** Sums `rows` into buckets keyed by `keys[i]` (same length), returned in ascending key order. */
+/**
+ * Sums `blocks` into buckets keyed by `keys[i]` (same length), returned in ascending key order. A
+ * block's receipts share its timestamp, so a block always falls into exactly one bucket.
+ */
 function bucketBy<B extends HarvestTotals>(
-  rows: readonly HarvestRow[],
+  blocks: readonly (readonly HarvestRow[])[],
   keys: readonly string[],
   create: (key: string) => B,
 ): B[] {
   const buckets = new Map<string, B>();
-  rows.forEach((row, i) => {
+  blocks.forEach((block, i) => {
     const key = keys[i] ?? '';
     let bucket = buckets.get(key);
     if (!bucket) {
       bucket = create(key);
       buckets.set(key, bucket);
     }
-    add(bucket, row);
+    addBlock(bucket, block);
   });
   return [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, b]) => b);
 }
@@ -209,12 +246,16 @@ export function aggregateHarvestIncome(
 
   rows.sort((a, b) => a.height - b.height || KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
 
+  const blocks = groupByHeight(rows);
   const totals = emptyTotals();
-  for (const row of rows) add(totals, row);
-  const dayKeys = rows.map((row) => calendarDateKey(row.time, options.timeZone));
-  const daily = bucketBy(rows, dayKeys, (date) => ({ date, ...emptyTotals() }));
+  for (const block of blocks) addBlock(totals, block);
+  // Every row of a block carries the block's timestamp, so the first one dates the block.
+  const dayKeys = blocks.map((block) =>
+    block[0] ? calendarDateKey(block[0].time, options.timeZone) : '',
+  );
+  const daily = bucketBy(blocks, dayKeys, (date) => ({ date, ...emptyTotals() }));
   const monthly = bucketBy(
-    rows,
+    blocks,
     dayKeys.map((key) => key.slice(0, 7)),
     (month) => ({ month, ...emptyTotals() }),
   );

@@ -61,12 +61,15 @@
 → `symbol_harvesting_income { "account": "NCV5HR…", "fromDate": "2026-09-01", "toDate": "2026-09-11", "granularity": "monthly" }`
 
 ```
-NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY on mainnet, 2026-09-01 to 2026-09-11 (Asia/Tokyo; heights 5,736,305-5,767,984, 31,680 blocks): 20 harvest receipts totalling 662.574177 symbol.xym (harvester 461.240390 in 9 blocks, beneficiary 201.333787 in 11 blocks).
-2026-09: 20 receipts, 662.574177 symbol.xym (9 harvester / 11 beneficiary)
+NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY on mainnet, 2026-09-01 to 2026-09-11 (Asia/Tokyo; heights 5,736,305-5,767,984, 31,680 blocks): 20 harvest receipts totalling 662.574177 symbol.xym from 11 blocks (harvester share 461.240390 in 9 receipts, beneficiary share 201.333787 in 11 receipts).
+Blocks: 9 harvested by this account, 2 harvested by others that paid it only the beneficiary share (typically delegators on its node). 9 of the 11 beneficiary receipts come from blocks it harvested itself, as its own node's beneficiary.
+2026-09: 20 receipts, 662.574177 symbol.xym; 11 blocks: 9 harvested by this account, 2 by others (receipts 9 harvester / 11 beneficiary)
 ```
 
 これが `summary` です。同じ数値が `totals` と `monthly[]` にも入り、金額はどれも 10 進文字列（`"662.574177"`）と
 生の整数（`"662574177"`）の両方で、サーバーが合算しています。
+レシートはブロック報酬の取り分なので、自分のノードの beneficiary でもある運用者は、自分でハーベストした 1 ブロックから
+2 件を受け取ります。ブロックの数は `blocksHarvested` と `blocksBeneficiaryOnly` で数えます。
 
 ## 要件
 
@@ -284,7 +287,7 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 | `symbol_time_convert` | `height` / `epoch` / `timestamp` のいずれか 1 つ | 高さ、確定エポック、ネットワークタイムスタンプ、実時刻の相互変換。過去は実測、将来は推定（その旨を明記）。 |
 | `symbol_harvesting_status` | `account`（任意） | ノードで解錠中の委任ハーベスター、ハーベスティングの残高制限と受益者割合。アカウントを指定すると、その linked キーがこのノードで解錠されているかと、残高が制限の範囲内か（`minHarvesterBalance` 以上 `maxHarvesterBalance` 以下。上限を超えるとハーベストできない）。 |
 | `symbol_network_compare` | なし | 自ノードと `SYMBOL_REFERENCE_NODES` の高さ・確定高さ、最良ノードとの差、`lagging` フラグ。参照ノード未設定時はその旨と対処を案内。 |
-| `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。`granularity: monthly` で暦月ごと（年次の質問向け）、`output: csv` で表計算向けの CSV テキスト（JSON も併せて返す）。1 年以上を 1 回で指定してよい（約 90 日分ずつに分割して取得。`fetch` にチャンク数・再試行数・ページ数）。 |
+| `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、ブロックの数（`blocksHarvested`: 自分でハーベストしたブロック、`blocksBeneficiaryOnly`: 他のアカウントがハーベストし beneficiary の取り分だけを受け取ったブロック）、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。`granularity: monthly` で暦月ごと（年次の質問向け）、`output: csv` で表計算向けの CSV テキスト（JSON も併せて返す）。1 年以上を 1 回で指定してよい（約 90 日分ずつに分割して取得。`fetch` にチャンク数・再試行数・ページ数）。 |
 | `symbol_transaction_status` | `transactionHashes`（配列、1〜20 件） | 各トランザクションの現在の状態: confirmed（高さ付き）/ unconfirmed / partial（署名待ち）/ failed（ノードのコードとその意味付き）/ not_found。バッチ全体を 1 リクエストで照会。 |
 | `symbol_finality_participation` | `account`, `epoch`（任意、既定は最新の確定エポック）, `epochs`（1〜20、既定 1）, `format` | アカウントの Voting キーが各エポックのファイナリティ proof に実際に署名したか: participated（prevote と precommit の両方）/ missed（署名しなかったステージ付き）/ no_active_key / unavailable。ステージごとの署名数（proof が 1 つのステージを複数のメッセージグループに分けていても 1 ステージとして扱い、どのグループの署名でも署名済みと数える）と、現在のエポックをカバーする鍵が無い／現在のエポックが missed のときの警告（過去のエポックでは警告しない）。 |
 | `symbol_delegation_diagnose` | `account`, `recentDays`（1〜30、既定 7）, `format` | 委任ハーベストが有効か、無効ならどこで止まっているか: アカウントの存在、ハーベスト残高制限、importance（0 なら次の再計算までのブロック数）、linked / VRF / node の各鍵、node 鍵と設定ノードの `nodePublicKey` の一致、そのノードでの解錠、accountType、直近 N 日のハーベスト実績、ノード宛の委任要求トランザクション。判定は `active` / `not_active` / `cannot_verify`（別ノードへの委任はここからは確認できない）。 |

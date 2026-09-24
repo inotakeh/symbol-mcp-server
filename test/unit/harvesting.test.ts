@@ -142,12 +142,44 @@ describe('aggregateHarvestIncome', () => {
       harvester: { receipts: 1, raw: 51247120n },
       beneficiary: { receipts: 2, raw: 36605084n },
       unknown: { receipts: 0, raw: 0n },
+      // Two beneficiary receipts, but only one of them is from a block someone else harvested.
+      blocks: 2,
+      blocksHarvested: 1,
+      blocksBeneficiaryOnly: 1,
     });
     expect(out.unknownStatements).toBe(0);
     // Both blocks fall on 2026-09-10 in UTC.
     expect(out.daily.map((d) => [d.date, d.receipts, d.raw.toString()])).toEqual([
       ['2026-09-10', 3, '87852204'],
     ]);
+  });
+
+  it('counts each block once, by the role the account had in it', () => {
+    const out = aggregateHarvestIncome(
+      [
+        // Harvested by ME, which is also the node's beneficiary: two receipts, one block.
+        statement(40, T1, [receipt('70', ME), receipt('25', ME), receipt('5', SINK)]),
+        // Harvested by PEER on a node that names ME as beneficiary: beneficiary share only.
+        statement(41, T1, [receipt('70', PEER), receipt('25', ME), receipt('5', SINK)]),
+        // Harvested by ME without a beneficiary share, (100-N):N.
+        statement(42, T1, [receipt('95', ME), receipt('5', SINK)]),
+        // Split not recognised (60/35/5): counted as a block, but in neither role.
+        statement(43, T1, [receipt('60', ME), receipt('35', PEER), receipt('5', SINK)]),
+      ],
+      opts,
+    );
+    expect(out.totals).toMatchObject({
+      receipts: 5,
+      harvester: { receipts: 2, raw: 165n },
+      beneficiary: { receipts: 2, raw: 50n },
+      unknown: { receipts: 1, raw: 60n },
+      blocks: 4,
+      blocksHarvested: 2,
+      blocksBeneficiaryOnly: 1,
+    });
+    expect(out.unknownStatements).toBe(1);
+    expect(out.daily).toHaveLength(1);
+    expect(out.daily[0]).toMatchObject({ blocks: 4, blocksHarvested: 2, blocksBeneficiaryOnly: 1 });
   });
 
   it('buckets by the configured zone, so the same blocks split across two Tokyo days', () => {
@@ -236,8 +268,14 @@ describe('aggregateHarvestIncome', () => {
           expect(m.harvester.raw).toBe(sum((d) => d.harvester.raw));
           expect(m.beneficiary.raw).toBe(sum((d) => d.beneficiary.raw));
           expect(m.unknown.raw).toBe(sum((d) => d.unknown.raw));
+          const count = (pick: (b: (typeof days)[number]) => number) =>
+            days.reduce((acc, d) => acc + pick(d), 0);
+          expect(m.blocks).toBe(count((d) => d.blocks));
+          expect(m.blocksHarvested).toBe(count((d) => d.blocksHarvested));
+          expect(m.blocksBeneficiaryOnly).toBe(count((d) => d.blocksBeneficiaryOnly));
         }
         expect(out.monthly.reduce((acc, m) => acc + m.raw, 0n)).toBe(out.totals.raw);
+        expect(out.monthly.reduce((acc, m) => acc + m.blocks, 0)).toBe(out.totals.blocks);
       }
     });
 
@@ -281,6 +319,7 @@ describe('aggregateHarvestIncome', () => {
     expect(out.totals.raw.toString()).toBe('18014398509481987');
     expect(out.totals.unknown).toEqual({ receipts: 3, raw: 18014398509481987n });
     expect(out.unknownStatements).toBe(2);
+    expect(out.totals).toMatchObject({ blocks: 2, blocksHarvested: 0, blocksBeneficiaryOnly: 0 });
   });
 
   it('compares addresses and mosaic ids case-insensitively', () => {

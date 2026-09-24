@@ -23,6 +23,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `symbol_version_drift`: `sample.unknownVersion`, the peers and reference nodes that report version
   0 (0.0.0.0), which are counted apart from the distribution (see Fixed). A new output field too:
   restart the MCP host after upgrading.
+- `symbol_harvesting_income` counts blocks as well as receipts, in `totals`, `daily[]` and
+  `monthly[]`: `blocks` (blocks in which the account received a receipt), `blocksHarvested` (blocks
+  it harvested; always equal to `receiptsHarvester`) and `blocksBeneficiaryOnly` (blocks another
+  account harvested that paid it only the beneficiary share, typically delegators of its node). An
+  operator that is its own node's beneficiary gets two receipts for each block it harvests, so the
+  beneficiary receipts are not a count of delegators' blocks; these fields are. The daily and
+  monthly CSV get the same three counts as the columns `blocks`, `blocks_harvested` and
+  `blocks_beneficiary_only`, appended at the end: the existing columns keep their positions. The
+  receipt CSV is unchanged. New output fields: restart the MCP host after upgrading.
 - `docs/RELEASING.md`: the release procedure (release PR, tag, approval, the `publish` and
   `github-release` jobs, checking the release, the MCP Registry, what to do when a step fails),
   backfilling an older GitHub Release, and where to read the OpenSSF Scorecard results. The
@@ -73,6 +82,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   model to use it for every harvest income question and not `symbol_transaction_search` or a
   browser. The server instructions now also route node sync, blocks behind other nodes and
   transaction status. Tool names, arguments and outputs are unchanged.
+- The `symbol_harvesting_income` summary counts blocks: the first line says how many blocks the
+  receipts come from and calls the shares receipts ("harvester share … in 9 receipts" instead of
+  "harvester … in 9 blocks"), a new second line splits the blocks into those the account
+  harvested and those others harvested that paid it only the beneficiary share, and says how many
+  beneficiary receipts come from its own blocks, and each monthly line starts with the block
+  counts. The tool description and the notes no longer define beneficiary as blocks others
+  harvested: it is the share paid to the account the harvesting node names as beneficiary, which
+  includes the account's own blocks when it is its own node's beneficiary.
 - The `delegatedHarvesting.note` of `symbol_account_get`, and the summary of
   `symbol_harvesting_income` for a period without receipts, send the question whether an account's
   harvesting works to `symbol_delegation_diagnose`, as the tool descriptions do. They pointed to

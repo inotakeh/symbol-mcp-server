@@ -122,6 +122,10 @@ const BUCKET_CSV_HEADER = [
   'receipts_unknown',
   'xym_unknown',
   'raw_unknown',
+  // Added in 0.9.0 at the end, so the columns before keep their positions.
+  'blocks',
+  'blocks_harvested',
+  'blocks_beneficiary_only',
 ];
 const RECEIPT_CSV_HEADER = ['height', 'timestamp_utc', 'timestamp_local', 'kind', 'xym', 'raw'];
 
@@ -138,6 +142,17 @@ const TotalsSchema = z.object({
   receiptsUnknown: z.number(),
   xymUnknown: z.string(),
   rawUnknown: z.string(),
+  blocks: z.number().describe('Blocks in which this account received at least one receipt.'),
+  blocksHarvested: z
+    .number()
+    .describe(
+      'Blocks this account harvested, directly or through its delegated node (it received the harvester share); equals receiptsHarvester.',
+    ),
+  blocksBeneficiaryOnly: z
+    .number()
+    .describe(
+      "Blocks another account harvested in which this account received only the beneficiary share (typically delegators of the node that names it as beneficiary). When the account is its own node's beneficiary, the beneficiary receipts also include its own blocks, so receiptsBeneficiary is not a count of delegators' blocks; this is.",
+    ),
 });
 
 const DailySchema = TotalsSchema.extend({
@@ -230,6 +245,9 @@ function bucketCsvRow(period: string, t: z.output<typeof TotalsSchema>): CsvCell
     t.receiptsUnknown,
     t.xymUnknown,
     t.rawUnknown,
+    t.blocks,
+    t.blocksHarvested,
+    t.blocksBeneficiaryOnly,
   ];
 }
 
@@ -293,6 +311,9 @@ function flatTotals(t: HarvestTotals, divisibility: number): z.output<typeof Tot
     receiptsUnknown: t.unknown.receipts,
     xymUnknown: formatAmount(t.unknown.raw, divisibility),
     rawUnknown: t.unknown.raw.toString(),
+    blocks: t.blocks,
+    blocksHarvested: t.blocksHarvested,
+    blocksBeneficiaryOnly: t.blocksBeneficiaryOnly,
   };
 }
 
@@ -401,7 +422,7 @@ export const harvestingIncomeTool = defineTool({
   title: 'Symbol harvesting income',
   description:
     "Total the harvest rewards an account received in a period; use this tool whenever the user asks about harvesting rewards, harvest income, or earnings for a period (e.g. 'last month', 'this year', 'per day'). Do not use symbol_transaction_search or a browser for this (harvest rewards are receipts, not transactions); for why an account earns nothing, use symbol_delegation_diagnose. " +
-    'The rewards are the HarvestFee receipts of the network currency, totalled on the server with exact integer arithmetic: receipt count and XYM total, split into harvester (blocks the account harvested), beneficiary (blocks others harvested with this account as beneficiary) and unknown. Period is a date range (YYYY-MM-DD, resolved to heights from block timestamps) or a height range. granularity=daily gives per-day buckets, granularity=monthly per-calendar-month buckets (yearly questions), granularity=receipt lists each receipt; output=csv returns the same rows as CSV text for a spreadsheet. Periods of a year or more are fine: the range is read in chunks internally. Read-only; no fiat conversion.',
+    'The rewards are the HarvestFee receipts of the network currency, totalled on the server with exact integer arithmetic: receipt count and XYM total, split by share into harvester (the share of blocks the account harvested), beneficiary (the share paid to the account a harvesting node names as beneficiary; a node operator that is its own beneficiary also gets it for its own blocks) and unknown, with block counts: blocksHarvested (blocks the account harvested) and blocksBeneficiaryOnly (blocks others harvested that paid it only the beneficiary share, typically its delegators). Period is a date range (YYYY-MM-DD, resolved to heights from block timestamps) or a height range. granularity=daily gives per-day buckets, granularity=monthly per-calendar-month buckets (yearly questions), granularity=receipt lists each receipt; output=csv returns the same rows as CSV text for a spreadsheet. Periods of a year or more are fine: the range is read in chunks internally. Read-only; no fiat conversion.',
   inputSchema,
   outputSchema,
   untrustedText: true,
@@ -568,8 +589,18 @@ export const harvestingIncomeTool = defineTool({
         ? `${formatCalendarDate(period.from)} to ${formatCalendarDate(period.to)} (${zoneLabel}; heights ${formatInteger(fromHeight)}-${formatInteger(toHeight)}, ${plural(toHeight - fromHeight + 1, 'block')})`
         : `heights ${formatInteger(fromHeight)}-${formatInteger(toHeight)} (${formatInstantText(fromTime)} to ${formatInstantText(toTime)})`;
     const lines: string[] = [
-      `${base32} on ${ctx.network.name}, ${periodText}: ${plural(totals.receipts, 'harvest receipt')} totalling ${totals.xym} ${label} (harvester ${totals.xymHarvester} in ${plural(totals.receiptsHarvester, 'block')}, beneficiary ${totals.xymBeneficiary} in ${plural(totals.receiptsBeneficiary, 'block')}${totals.receiptsUnknown > 0 ? `, unknown ${totals.xymUnknown} in ${plural(totals.receiptsUnknown, 'receipt')}` : ''}).`,
+      `${base32} on ${ctx.network.name}, ${periodText}: ${plural(totals.receipts, 'harvest receipt')} totalling ${totals.xym} ${label} from ${plural(totals.blocks, 'block')} (harvester share ${totals.xymHarvester} in ${plural(totals.receiptsHarvester, 'receipt')}, beneficiary share ${totals.xymBeneficiary} in ${plural(totals.receiptsBeneficiary, 'receipt')}${totals.receiptsUnknown > 0 ? `, unknown ${totals.xymUnknown} in ${plural(totals.receiptsUnknown, 'receipt')}` : ''}).`,
     ];
+    if (totals.receipts > 0) {
+      // Receipts are shares, not blocks: an operator that is its own node's beneficiary gets two
+      // receipts per block it harvests, so the beneficiary receipts overstate delegators' blocks.
+      const unrecognisedBlocks =
+        totals.blocks - totals.blocksHarvested - totals.blocksBeneficiaryOnly;
+      const ownBeneficiaryReceipts = totals.receiptsBeneficiary - totals.blocksBeneficiaryOnly;
+      lines.push(
+        `Blocks: ${formatInteger(totals.blocksHarvested)} harvested by this account, ${formatInteger(totals.blocksBeneficiaryOnly)} harvested by others that paid it only the beneficiary share (typically delegators on its node)${unrecognisedBlocks > 0 ? `, ${formatInteger(unrecognisedBlocks)} not recognised` : ''}.${ownBeneficiaryReceipts > 0 ? ` ${formatInteger(ownBeneficiaryReceipts)} of the ${formatInteger(totals.receiptsBeneficiary)} beneficiary receipts come from blocks it harvested itself, as its own node's beneficiary.` : ''}`,
+      );
+    }
     if (totals.receipts === 0) {
       lines.push(
         'No harvest receipts in this period. Check that the period is not before its first harvested block, and use symbol_delegation_diagnose to see whether its harvesting works.',
@@ -583,7 +614,7 @@ export const harvestingIncomeTool = defineTool({
       // One line per month after the period total; the total stays first however many months.
       for (const m of monthly) {
         lines.push(
-          `${m.month}: ${plural(m.receipts, 'receipt')}, ${groupThousands(m.xym)} ${label} (${formatInteger(m.receiptsHarvester)} harvester / ${formatInteger(m.receiptsBeneficiary)} beneficiary${m.receiptsUnknown > 0 ? ` / ${formatInteger(m.receiptsUnknown)} unknown` : ''})`,
+          `${m.month}: ${plural(m.receipts, 'receipt')}, ${groupThousands(m.xym)} ${label}; ${plural(m.blocks, 'block')}: ${formatInteger(m.blocksHarvested)} harvested by this account, ${formatInteger(m.blocksBeneficiaryOnly)} by others (receipts ${formatInteger(m.receiptsHarvester)} harvester / ${formatInteger(m.receiptsBeneficiary)} beneficiary${m.receiptsUnknown > 0 ? ` / ${formatInteger(m.receiptsUnknown)} unknown` : ''})`,
         );
       }
     } else if (receiptRows) {
@@ -618,7 +649,7 @@ export const harvestingIncomeTool = defineTool({
       `Wide ranges are read in chunks of about ${CHUNK_DAYS} days (${formatInteger(chunkBlocks)} blocks), halved down to about ${MIN_CHUNK_DAYS} days when the node times out on a chunk; the totals are the same as from one query.`,
       'Harvesting is probabilistic: income varies strongly from day to day, so short periods are not representative.',
       `Amounts are in ${label} only; no fiat conversion is applied.`,
-      'harvester = blocks this account harvested (directly or through a delegated node); beneficiary = blocks harvested by others whose node names this account as beneficiary; unknown = receipts whose share split was not recognised.',
+      "harvester = the share of the blocks this account harvested (directly or through a delegated node); beneficiary = the share paid to the account a harvesting node names as beneficiary, from blocks others harvested and, when this account is its own node's beneficiary, from its own blocks too; unknown = receipts whose share split was not recognised. Receipts are shares, not blocks: blocksHarvested and blocksBeneficiaryOnly count each block once.",
     );
 
     return {
