@@ -11,6 +11,7 @@ import {
   decodeVersion,
   deriveVersionDriftVerdict,
   FAR_BEHIND_SHARE,
+  isUnreportedVersion,
   type VersionDriftVerdict,
   versionDistribution,
 } from '../domain/version.js';
@@ -39,11 +40,20 @@ const outputSchema = z.object({
     ),
   }),
   sample: z.object({
-    size: z.number(),
+    size: z
+      .number()
+      .describe('Nodes in the distribution: peers plus reference nodes whose version is known.'),
     source: z.enum(['peers', 'peers+reference']),
-    peers: z.number(),
-    referenceNodes: z.number(),
-    ignored: z.number(),
+    peers: z.number().describe('Peers of the configured node in the distribution.'),
+    referenceNodes: z.number().describe('Reference nodes in the distribution.'),
+    ignored: z
+      .number()
+      .describe('Peer entries left out: malformed, on another network, or the node itself.'),
+    unknownVersion: z
+      .number()
+      .describe(
+        'Peers and reference nodes that reported version 0 (0.0.0.0): their version is not known yet, so they are left out of the distribution, the majority and newerShare.',
+      ),
   }),
   distribution: z.array(z.object({ version: z.string(), count: z.number(), share: z.number() })),
   majorityVersion: nullable(
@@ -76,7 +86,7 @@ export const MAX_REST_VERSION_LENGTH = 64;
 
 interface ReferenceProbe {
   readonly version: string | null;
-  readonly excluded: 'unreachable' | 'redirect' | 'other_network' | null;
+  readonly excluded: 'unreachable' | 'redirect' | 'other_network' | 'no_version' | null;
 }
 
 async function probeReference(client: RestClient, seed: string): Promise<ReferenceProbe> {
@@ -85,6 +95,7 @@ async function probeReference(client: RestClient, seed: string): Promise<Referen
     if (info.networkGenerationHashSeed.toUpperCase() !== seed.toUpperCase()) {
       return { version: null, excluded: 'other_network' };
     }
+    if (isUnreportedVersion(info.version)) return { version: null, excluded: 'no_version' };
     return { version: decodeVersion(info.version), excluded: null };
   } catch (err) {
     if (err instanceof RestError) {
@@ -98,7 +109,7 @@ export const versionDriftTool = defineTool({
   name: 'symbol_version_drift',
   title: 'Symbol node version drift',
   description:
-    "Tell whether the configured Symbol node's software version is behind the version most of the network runs. For the node's own version and sync state without a comparison, use symbol_node_status; for whether its services are healthy, symbol_node_health; for how many blocks it trails other nodes, symbol_network_compare. Reads the node's own version (/node/info) and REST version (/node/server), collects the versions of the peers the node knows (/node/peers) and of the reference nodes in SYMBOL_REFERENCE_NODES, and reports the version distribution, the majority version, the share of the sample running something newer, and a verdict: ok (same as or newer than the majority), behind (older than the majority, or newer versions hold at least half the sample), far_behind (newer versions hold at least 75%: peers may start refusing connections), or unknown (no peers). Peer hosts and keys are never reported. Key check after a node OS or tooling migration.",
+    "Tell whether the configured Symbol node's software version is behind the version most of the network runs. For the node's own version and sync state without a comparison, use symbol_node_status; for whether its services are healthy, symbol_node_health; for how many blocks it trails other nodes, symbol_network_compare. Reads the node's own version (/node/info) and REST version (/node/server), collects the versions of the peers the node knows (/node/peers) and of the reference nodes in SYMBOL_REFERENCE_NODES, and reports the version distribution, the majority version, the share of the sample running something newer, and a verdict: ok (same as or newer than the majority), behind (older than the majority, or newer versions hold at least half the sample), far_behind (newer versions hold at least 75%: peers may start refusing connections), or unknown (no peers). Peers that report no version (0.0.0.0) are counted apart, not as a version. Peer hosts and keys are never reported. Key check after a node OS or tooling migration.",
   inputSchema,
   outputSchema,
   untrustedText: true,
@@ -128,6 +139,7 @@ export const versionDriftTool = defineTool({
 
     const peerVersions: string[] = [];
     let ignored = 0;
+    let unreportedPeers = 0;
     if (rawPeers === null) {
       notes.push(`${ctx.rest.host} did not answer /node/peers, so the sample has no peers.`);
     } else {
@@ -146,6 +158,10 @@ export const versionDriftTool = defineTool({
           ignored++;
           continue;
         }
+        if (isUnreportedVersion(peer.version)) {
+          unreportedPeers++;
+          continue;
+        }
         peerVersions.push(decodeVersion(peer.version));
       }
     }
@@ -156,6 +172,13 @@ export const versionDriftTool = defineTool({
     }
 
     const referenceVersions = references.flatMap((r) => (r.version ? [r.version] : []));
+    const unknownVersion =
+      unreportedPeers + references.filter((r) => r.excluded === 'no_version').length;
+    if (unknownVersion > 0) {
+      notes.push(
+        `${formatInteger(unknownVersion)} ${unknownVersion === 1 ? 'node' : 'nodes'} reported version 0.0.0.0, which means the version is not known yet (catapult starts the peers it reads from its peers files at version 0); counted in sample.unknownVersion and left out of the distribution, the majority and newerShare.`,
+      );
+    }
     const unreachable = references.filter((r) => r.excluded === 'unreachable').length;
     const redirected = references.filter((r) => r.excluded === 'redirect').length;
     const otherNetwork = references.filter((r) => r.excluded === 'other_network').length;
@@ -178,17 +201,23 @@ export const versionDriftTool = defineTool({
       referenceVersions.length > 0 ? 'peers+reference' : 'peers';
 
     const lines: string[] = [];
+    const unreported =
+      unknownVersion > 0
+        ? `${formatInteger(unknownVersion)} ${unknownVersion === 1 ? 'node' : 'nodes'} reported no version (0.0.0.0)`
+        : null;
     if (verdict === 'unknown') {
       lines.push(
-        `version drift: unknown. ${ctx.rest.host} runs ${ownVersion} but the sample is empty (no usable peers${references.length > 0 ? ' or reference nodes' : ''}).`,
+        `version drift: unknown. ${ctx.rest.host} runs ${ownVersion} but the sample is empty (no usable peers${references.length > 0 ? ' or reference nodes' : ''}${unreported ? `; ${unreported}` : ''}).`,
       );
       lines.push(
-        `- ${ctx.rest.host} knows no peers: check peer connectivity with symbol_node_health and symbol_node_status, or set SYMBOL_REFERENCE_NODES to compare against known nodes.`,
+        unreportedPeers > 0
+          ? `- The peers ${ctx.rest.host} knows have not reported their versions yet: check again later, check peer connectivity with symbol_node_health and symbol_node_status, or set SYMBOL_REFERENCE_NODES to compare against known nodes.`
+          : `- ${ctx.rest.host} knows no peers: check peer connectivity with symbol_node_health and symbol_node_status, or set SYMBOL_REFERENCE_NODES to compare against known nodes.`,
       );
     } else {
       const newerPct = Math.round((dist.newerShare ?? 0) * 100);
       lines.push(
-        `version drift: ${VERDICT_TEXT[verdict]}. ${ctx.rest.host} runs ${ownVersion}; majority of ${formatInteger(dist.size)} sampled nodes runs ${dist.majorityVersion}; ${newerPct}% run something newer.`,
+        `version drift: ${VERDICT_TEXT[verdict]}. ${ctx.rest.host} runs ${ownVersion}; majority of ${formatInteger(dist.size)} sampled nodes runs ${dist.majorityVersion}; ${newerPct}% run something newer${unreported ? `; ${unreported} and ${unknownVersion === 1 ? 'is' : 'are'} not counted` : ''}.`,
       );
       if (verdict === 'far_behind') {
         lines.push(
@@ -217,6 +246,7 @@ export const versionDriftTool = defineTool({
         peers: peerVersions.length,
         referenceNodes: referenceVersions.length,
         ignored,
+        unknownVersion,
       },
       distribution: [...dist.distribution],
       majorityVersion: dist.majorityVersion,

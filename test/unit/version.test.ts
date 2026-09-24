@@ -2,11 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   BEHIND_SHARE,
   compareVersions,
+  decodeVersion,
   deriveVersionDriftVerdict,
   FAR_BEHIND_SHARE,
+  isUnreportedVersion,
   parseVersion,
   versionDistribution,
 } from '../../src/domain/version.js';
+
+describe('isUnreportedVersion', () => {
+  it('reads version 0 (0.0.0.0) as not known yet, and any release as reported', () => {
+    expect(isUnreportedVersion(0)).toBe(true);
+    expect(decodeVersion(0)).toBe('0.0.0.0');
+    expect(isUnreportedVersion(16_777_993)).toBe(false); // 1.0.3.9
+    expect(isUnreportedVersion(1)).toBe(false); // 0.0.0.1 is still a reported version
+  });
+});
 
 describe('parseVersion / compareVersions', () => {
   it('compares component-wise, not as strings', () => {

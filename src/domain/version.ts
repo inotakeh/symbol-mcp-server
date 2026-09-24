@@ -17,6 +17,17 @@ export function decodeVersion(version: number): string {
   return `${major}.${minor}.${patch}.${build}`;
 }
 
+/**
+ * A packed version of 0 (0.0.0.0) is not a release: it means the node does not know that peer's
+ * version yet. catapult creates the peers it reads from its peers files with
+ * NodeMetadata(networkFingerprint, name), whose Version is NodeVersion(), i.e. 0
+ * (client/catapult/src/catapult/config/PeersConfiguration.cpp, ionet/Node.h), and /node/peers
+ * returns them as version 0 until the node learns the real one.
+ */
+export function isUnreportedVersion(version: number): boolean {
+  return version === 0;
+}
+
 /** "1.0.3.10" -> [1, 0, 3, 10]. Accepts one or more dot-separated decimal components. */
 export function parseVersion(version: string): number[] {
   if (!/^\d+(\.\d+)*$/.test(version)) throw new Error(`invalid version string: ${version}`);

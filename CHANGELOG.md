@@ -20,6 +20,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `symbol_time_convert`, `symbol_network_compare`, `symbol_harvester_watch`) show no such text and
   have no such field. The published output schemas do not allow extra fields, and MCP clients
   check results against the tool list they cached, so restart the MCP host after upgrading.
+- `symbol_version_drift`: `sample.unknownVersion`, the peers and reference nodes that report version
+  0 (0.0.0.0), which are counted apart from the distribution (see Fixed). A new output field too:
+  restart the MCP host after upgrading.
 - `docs/RELEASING.md`: the release procedure (release PR, tag, approval, the `publish` and
   `github-release` jobs, checking the release, the MCP Registry, what to do when a step fails),
   backfilling an older GitHub Release, and where to read the OpenSSF Scorecard results. The
@@ -105,6 +108,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `symbol_version_drift` no longer counts a peer that reports version 0 as running "0.0.0.0". That
+  value means the node does not know the peer's version yet (catapult starts the peers it reads
+  from its peers files at version 0), and counting it made the sample look bigger, lowered the
+  share running something newer and could even make 0.0.0.0 the majority, so that a node behind
+  the network was reported as ok. Such peers and reference nodes are now left out of the
+  distribution, the majority and the newer share, counted in `sample.unknownVersion` and named at
+  the end of the summary's first line; when no peer has reported a version, the verdict is
+  `unknown` with a hint to check again later.
 - `symbol_harvesting_status` no longer says that a balance above `maxHarvesterBalance` is capped.
   Such an account cannot harvest at all: catapult accepts a block only from a harvester whose
   balance is from `minHarvesterBalance` to `maxHarvesterBalance`, both inclusive, and nodes drop
