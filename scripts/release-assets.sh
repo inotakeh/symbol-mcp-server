@@ -13,8 +13,9 @@
 #
 # Needs bash, node (>= 22, for fetch) and npm; no jq, curl or GNU coreutils, so it also runs on
 # macOS. Reads only public registry data; no token is used. Exit: 0 done, 1 failed, 2 usage.
-# RELEASE_ASSETS_WAIT (seconds, default 300) bounds the wait for a version that was just published
-# (scripts/wait-for-npm.sh, which the release workflow's registry job also uses).
+# RELEASE_ASSETS_WAIT (seconds, default 300) bounds each wait for a version that was just published:
+# for its attestations URL (scripts/wait-for-npm.sh, which the release workflow's registry job also
+# uses), then for the attestations themselves (scripts/wait-for-attestations.sh).
 set -euo pipefail
 
 usage() {
@@ -58,18 +59,23 @@ actual_integrity="$(node -e '
 [ "$actual_integrity" = "$expected_integrity" ] ||
   fail "$tarball_name integrity $actual_integrity does not match the registry's $expected_integrity."
 
-# 3 + 4. npm's SLSA provenance bundle, kept only if its subject is this version and this tarball.
+# 3. The attestations themselves can appear later than the version and its URL (0.9.0 got a 404
+# right after the tarball was served): wait for them the same way.
+work="$(mktemp -d "${TMPDIR:-/tmp}/release-assets.XXXXXX")"
+trap 'rm -rf "$work"' EXIT
+attestations="$work/attestations.json"
+NPM_WAIT="$wait_total" bash "$script_dir/wait-for-attestations.sh" "$attestations_url" "$attestations" ||
+  fail "could not get the attestations of $spec (the line above says why)."
+
+# 4. npm's SLSA provenance bundle, kept only if its subject is this version and this tarball.
 bundle="$tarball.sigstore.json"
-# NODE_USE_ENV_PROXY makes fetch honour HTTPS_PROXY like npm does (no effect without a proxy).
-NODE_USE_ENV_PROXY=1 node - "$attestations_url" "$tarball" "$bundle" "pkg:npm/$spec" <<'NODE'
+node - "$attestations_url" "$attestations" "$tarball" "$bundle" "pkg:npm/$spec" <<'NODE'
 const { createHash } = require('node:crypto');
 const { readFileSync, writeFileSync } = require('node:fs');
-const [url, tarball, bundlePath, purl] = process.argv.slice(2);
+const [url, attestationsPath, tarball, bundlePath, purl] = process.argv.slice(2);
 const SLSA_V1 = 'https://slsa.dev/provenance/v1';
 (async () => {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`GET ${url} answered HTTP ${response.status}`);
-  const { attestations } = await response.json();
+  const { attestations } = JSON.parse(readFileSync(attestationsPath, 'utf8'));
   const found = (attestations ?? []).find((a) => a.predicateType === SLSA_V1);
   if (!found?.bundle?.dsseEnvelope?.payload) throw new Error(`no ${SLSA_V1} bundle at ${url}`);
   const statement = JSON.parse(Buffer.from(found.bundle.dsseEnvelope.payload, 'base64').toString());
