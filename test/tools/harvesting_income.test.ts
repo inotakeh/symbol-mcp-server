@@ -278,6 +278,18 @@ describe('symbol_harvesting_income', () => {
       'Blocks: 0 harvested by this account, 1 harvested by others that paid it only the beneficiary share (typically delegators on its node), 1 not recognised.',
     );
     expect(outputSchema?.safeParse(sc).success).toBe(true);
+
+    // The monthly line names them too, so that its block counts add up.
+    const monthly = await server.callTool('symbol_harvesting_income', {
+      account: ADDRESS,
+      fromHeight: 5_764_879,
+      toHeight: 5_767_496,
+      granularity: 'monthly',
+    });
+    expect(monthly.isError).toBe(false);
+    expect(String(monthly.structuredContent?.summary).split('\n')[2]).toBe(
+      '2026-09: 2 receipts, 0.000085 symbol.xym; 2 blocks: 0 harvested by this account, 1 by others, 1 not recognised (receipts 0 harvester / 1 beneficiary / 1 unknown)',
+    );
   });
 
   describe('output=csv', () => {

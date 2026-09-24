@@ -594,11 +594,9 @@ export const harvestingIncomeTool = defineTool({
     if (totals.receipts > 0) {
       // Receipts are shares, not blocks: an operator that is its own node's beneficiary gets two
       // receipts per block it harvests, so the beneficiary receipts overstate delegators' blocks.
-      const unrecognisedBlocks =
-        totals.blocks - totals.blocksHarvested - totals.blocksBeneficiaryOnly;
-      const ownBeneficiaryReceipts = totals.receiptsBeneficiary - totals.blocksBeneficiaryOnly;
+      const { blocksUnrecognised, beneficiaryReceiptsInOwnBlocks } = aggregate.totals;
       lines.push(
-        `Blocks: ${formatInteger(totals.blocksHarvested)} harvested by this account, ${formatInteger(totals.blocksBeneficiaryOnly)} harvested by others that paid it only the beneficiary share (typically delegators on its node)${unrecognisedBlocks > 0 ? `, ${formatInteger(unrecognisedBlocks)} not recognised` : ''}.${ownBeneficiaryReceipts > 0 ? ` ${formatInteger(ownBeneficiaryReceipts)} of the ${formatInteger(totals.receiptsBeneficiary)} beneficiary receipts come from blocks it harvested itself, as its own node's beneficiary.` : ''}`,
+        `Blocks: ${formatInteger(totals.blocksHarvested)} harvested by this account, ${formatInteger(totals.blocksBeneficiaryOnly)} harvested by others that paid it only the beneficiary share (typically delegators on its node)${blocksUnrecognised > 0 ? `, ${formatInteger(blocksUnrecognised)} not recognised` : ''}.${beneficiaryReceiptsInOwnBlocks > 0 ? ` ${formatInteger(beneficiaryReceiptsInOwnBlocks)} of the ${formatInteger(totals.receiptsBeneficiary)} beneficiary receipts come from blocks it harvested itself, as its own node's beneficiary.` : ''}`,
       );
     }
     if (totals.receipts === 0) {
@@ -612,9 +610,9 @@ export const harvestingIncomeTool = defineTool({
       );
     } else if (monthly) {
       // One line per month after the period total; the total stays first however many months.
-      for (const m of monthly) {
+      for (const m of aggregate.monthly) {
         lines.push(
-          `${m.month}: ${plural(m.receipts, 'receipt')}, ${groupThousands(m.xym)} ${label}; ${plural(m.blocks, 'block')}: ${formatInteger(m.blocksHarvested)} harvested by this account, ${formatInteger(m.blocksBeneficiaryOnly)} by others (receipts ${formatInteger(m.receiptsHarvester)} harvester / ${formatInteger(m.receiptsBeneficiary)} beneficiary${m.receiptsUnknown > 0 ? ` / ${formatInteger(m.receiptsUnknown)} unknown` : ''})`,
+          `${m.month}: ${plural(m.receipts, 'receipt')}, ${groupThousands(formatAmount(m.raw, div))} ${label}; ${plural(m.blocks, 'block')}: ${formatInteger(m.blocksHarvested)} harvested by this account, ${formatInteger(m.blocksBeneficiaryOnly)} by others${m.blocksUnrecognised > 0 ? `, ${formatInteger(m.blocksUnrecognised)} not recognised` : ''} (receipts ${formatInteger(m.harvester.receipts)} harvester / ${formatInteger(m.beneficiary.receipts)} beneficiary${m.unknown.receipts > 0 ? ` / ${formatInteger(m.unknown.receipts)} unknown` : ''})`,
         );
       }
     } else if (receiptRows) {

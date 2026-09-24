@@ -146,6 +146,8 @@ describe('aggregateHarvestIncome', () => {
       blocks: 2,
       blocksHarvested: 1,
       blocksBeneficiaryOnly: 1,
+      blocksUnrecognised: 0,
+      beneficiaryReceiptsInOwnBlocks: 1,
     });
     expect(out.unknownStatements).toBe(0);
     // Both blocks fall on 2026-09-10 in UTC.
@@ -176,10 +178,19 @@ describe('aggregateHarvestIncome', () => {
       blocks: 4,
       blocksHarvested: 2,
       blocksBeneficiaryOnly: 1,
+      // Every block in exactly one role; the beneficiary receipt of block 40 is from its own block.
+      blocksUnrecognised: 1,
+      beneficiaryReceiptsInOwnBlocks: 1,
     });
     expect(out.unknownStatements).toBe(1);
     expect(out.daily).toHaveLength(1);
-    expect(out.daily[0]).toMatchObject({ blocks: 4, blocksHarvested: 2, blocksBeneficiaryOnly: 1 });
+    expect(out.daily[0]).toMatchObject({
+      blocks: 4,
+      blocksHarvested: 2,
+      blocksBeneficiaryOnly: 1,
+      blocksUnrecognised: 1,
+      beneficiaryReceiptsInOwnBlocks: 1,
+    });
   });
 
   it('buckets by the configured zone, so the same blocks split across two Tokyo days', () => {
@@ -273,6 +284,10 @@ describe('aggregateHarvestIncome', () => {
           expect(m.blocks).toBe(count((d) => d.blocks));
           expect(m.blocksHarvested).toBe(count((d) => d.blocksHarvested));
           expect(m.blocksBeneficiaryOnly).toBe(count((d) => d.blocksBeneficiaryOnly));
+          expect(m.blocksUnrecognised).toBe(count((d) => d.blocksUnrecognised));
+          expect(m.beneficiaryReceiptsInOwnBlocks).toBe(
+            count((d) => d.beneficiaryReceiptsInOwnBlocks),
+          );
         }
         expect(out.monthly.reduce((acc, m) => acc + m.raw, 0n)).toBe(out.totals.raw);
         expect(out.monthly.reduce((acc, m) => acc + m.blocks, 0)).toBe(out.totals.blocks);
@@ -319,7 +334,12 @@ describe('aggregateHarvestIncome', () => {
     expect(out.totals.raw.toString()).toBe('18014398509481987');
     expect(out.totals.unknown).toEqual({ receipts: 3, raw: 18014398509481987n });
     expect(out.unknownStatements).toBe(2);
-    expect(out.totals).toMatchObject({ blocks: 2, blocksHarvested: 0, blocksBeneficiaryOnly: 0 });
+    expect(out.totals).toMatchObject({
+      blocks: 2,
+      blocksHarvested: 0,
+      blocksBeneficiaryOnly: 0,
+      blocksUnrecognised: 2,
+    });
   });
 
   it('compares addresses and mosaic ids case-insensitively', () => {

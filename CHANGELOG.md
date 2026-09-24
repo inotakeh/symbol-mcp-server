@@ -87,7 +87,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "harvester … in 9 blocks"), a new second line splits the blocks into those the account
   harvested and those others harvested that paid it only the beneficiary share, and says how many
   beneficiary receipts come from its own blocks, and each monthly line starts with the block
-  counts. The tool description and the notes no longer define beneficiary as blocks others
+  counts, including the blocks whose share split was not recognised, so that they add up. The
+  tool description and the notes no longer define beneficiary as blocks others
   harvested: it is the share paid to the account the harvesting node names as beneficiary, which
   includes the account's own blocks when it is its own node's beneficiary.
 - The `monthly_health_check` prompt reports last month's blocks as two separate items: the blocks
