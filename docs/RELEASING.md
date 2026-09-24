@@ -176,6 +176,14 @@ workflow and the commit of the tag.
   otherwise the re-run stops at "release already exists". Then re-run the failed job. Only the
   workflow can attach the build provenance to the `.mcpb`, so prefer a re-run to a release created
   by hand.
+  - `wait-for-attestations: npm does not serve the attestations … (last: HTTP 404)` (or
+    `wait-for-npm: npm does not show dist.attestations.url …`): npm had not caught up yet. npm can
+    serve a version a while before its provenance; 0.9.0 got a 404 right after the version appeared,
+    and a re-run a few minutes later succeeded. The step now waits up to `RELEASE_ASSETS_WAIT`
+    (300 seconds) for each. If it still fails, wait a few minutes and re-run only the failed job:
+    `gh run rerun <run id> --failed` (the run id is in the run's URL). `publish` is not run again.
+  - `wait-for-attestations: GET … answered HTTP 403` (or another status that is not 404 or 5xx):
+    waiting will not help; find out why the registry refuses before re-running.
 - **`registry` fails**: the version is on npm, the GitHub Release does not depend on this job, and
   nothing needs to be undone. The job's summary says so; the log of the failed step says why:
   - `wait-for-npm: npm does not show mcpName …`, or the Registry answers that the version was not
