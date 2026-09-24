@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-25
+
+> **After upgrading, restart your MCP host (Claude Desktop, Claude Code and others).** This release adds
+> output fields: `invisibleCharactersRemoved` on 17 tools, `sample.unknownVersion` in
+> `symbol_version_drift`, and `blocks`, `blocksHarvested` and `blocksBeneficiaryOnly` in
+> `symbol_harvesting_income`. The published output schemas do not allow extra fields, and MCP clients
+> check results against the tool list they cached, so a host that keeps the old list can reject the
+> new results until it restarts.
+
 ### Added
 
 - `invisibleCharactersRemoved`, the last output field of the 17 tools that show text written by
@@ -489,7 +498,8 @@ Initial release candidate (0.1.0).
 - Every request has a timeout, a `User-Agent`, a 5 MB response cap and a concurrency limit of 4,
   and every response is schema-validated before use.
 
-[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.6.0...v0.7.0
