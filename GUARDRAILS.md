@@ -47,7 +47,7 @@
 │       ├── guard-files.py           # PreToolUse(Edit|Write): 保護ファイル・プロジェクト外への書込ブロック
 │       ├── scan-secrets.py          # PostToolUse(Edit|Write): 書いた直後に秘密情報を検出
 │       ├── stop-gate.sh             # 任意: lint/test が通るまで終了させない Stop フック
-│       └── test-hooks.sh            # フックの自己テスト（112 ケース）
+│       └── test-hooks.sh            # フックの自己テスト（434 ケース。誤検知と危険な類似コマンドを対で）
 ├── .github/
 │   ├── CODEOWNERS                   # 全変更にメンテナのレビューを要求
 │   ├── dependabot.yml               # npm / actions を月次更新
@@ -71,10 +71,14 @@
 
 ### 2.2 フック設計（なぜ deny だけでは足りないか）
 
-公式の permissions リファレンスに明記されている通り、`Bash(rm *)` の deny は `/bin/rm`、`bash -c 'rm ...'` を止めない。`Bash(git push *)` は `git -C . push` を止めない。**フックはコマンド文字列の全体に正規表現を当てる**ので、複合コマンド・サブシェル内も含めて検査できる。加えて:
+公式の permissions リファレンスに明記されている通り、`Bash(rm *)` の deny は `/bin/rm`、`bash -c 'rm ...'` を止めない。`Bash(git push *)` は `git -C . push` を止めない。`guard-bash.py` は**コマンドをシェルと同じ規則で読み**（引用符・エスケープ・演算子・リダイレクト・heredoc・`$(...)`・バッククォート・プロセス置換）、**実際に実行されるコマンド**に規則を当てる。引用符の中の語、コミットメッセージ、grep のパターンはデータとして扱う（以前は全文に正規表現を当てていたので、`grep curl` や `ls .claude/ 2>/dev/null` まで止まっていた）。シェルやラッパーが実行する文字列は取り出して同じように検査する: `$(...)`・バッククォート、シェルへの heredoc と here-string、`trap` の文字列、`env -S`・`flock -c`・`script -c`・`watch`・`parallel`・`find -exec`・`xargs`、`command`・`exec`・`nice`・`timeout` などのラッパー、`coproc`・`select`・`function`。**解析できないコマンド（引用符や heredoc が閉じていない）は止める**（fail closed）。
 
-- **ブロック（exit 2）**: `curl|sh`、`curl`/`wget` 全般、`eval`、`sh -c`、`sudo`、`ssh/scp/rsync/docker/symbol-bootstrap`、環境変数ダンプ、認証ファイル読取、`npm publish/token/login`、registry 変更、`--ignore-scripts=false`、force push、main への push、`--no-verify`、git config/remote 変更、タグ作成、`gh pr merge`/`gh release`/`gh secret`/書込系 `gh api`、`.claude/` 等へのシェル書込、成果物ディレクトリ以外への `rm -r`、許可リスト外の `npm install`/`npx`
-- **確認要求（permissionDecision: ask）**: 通常の `git push`、`rebase/merge`、作業を捨てる git 操作、`gh pr create`、`npm update` — auto モードでも必ず人間に出る
+- **ブロック（exit 2）**:
+  - コマンドとして: `curl`/`wget`/`fetch`、`/dev/tcp`、`eval`、`sh -c`、パイプでシェルやインタープリタにテキストを流し込むこと、コマンド名が実行時に決まるもの（`$c`、`$(...)`、グロブ、ブレース展開、`alias x=`、`hash -p`）、`sudo`、`ssh/scp/rsync/docker/symbol-bootstrap`、環境変数ダンプ（`env`・`printenv`・`set`・`export`・`declare -p`）、`npm publish/token/login`、registry 変更、`--ignore-scripts=false`、成果物ディレクトリと `$TMPDIR/<name>` 以外への `rm -r`（同じ行で TMPDIR を変える・読む・source する場合は例外なし）、許可リスト外の `npm install`/`npx`/`npm exec`
+  - 保護ファイルへの書き込み: リダイレクト先、`tee`・`cp`・`mv`・`ln`・`sed -i` などの書き込み先、git と gh が書くファイルが保護パスなら止める（読むだけは通す）。Claude Code が Bash の呼び出しの前に読み込むファイル（`$CLAUDE_ENV_FILE`、`~/.claude/shell-snapshots/`・`~/.claude/session-env/`）も保護パスとして扱う（サンドボックスもこれらへの書き込みを拒否することを 2026-09-24 に確認）。インラインコード（`node -e`・`python -c`・`perl -e` など）は、保護パスへの書き込みとプロセスの起動を止める。awk の `system()` とコマンドへのパイプも止める
+  - **git と gh（サンドボックスの外で動く。`settings.local.json` の `excludedCommands`）はフックが唯一の防御**なので、次を止める: 設定経由のコマンド実行（`git -c` は `commit.gpgsign`・`core.quotepath`・`color.*`・`advice.*` 以外、`git config` の書き込み、`--git-dir`・`--work-tree`・`--exec-path=`・`--config-env`）、同じ行で git・gh やそれらが起動する子プロセス（pre-push などのフック、ページャ、エディタ、ssh、gpg。これもサンドボックスの外で動く）の読み込むものを変える環境変数（`HOME`・`PATH`・`GIT_*`・`GH_*`・`EDITOR`・`PAGER`・`XDG_CONFIG_*`・`BASH_ENV`・`ENV`・`SHELL`・`LD_PRELOAD`・`LD_LIBRARY_PATH`・`LD_AUDIT`・`DYLD_*`・`PYTHONPATH`・`PYTHONHOME`・`PYTHONSTARTUP`・`NODE_OPTIONS`・`NODE_PATH`・`PERL5LIB`・`PERL5OPT`・`RUBYOPT`・`RUBYLIB`・`SSH_ASKPASS`・`GNUPGHOME`）、サブコマンドの中での実行（`submodule foreach`、`bisect run`、`rebase -x`、`difftool -x`、`grep -O`、`--upload-pack` など）、`git maintenance`（`register`・`start` がグローバル設定と launchd / cron にジョブを登録し、サンドボックスの外に常駐の仕組みを作れる）、pull request の取り込み（`gh pr checkout`・`co`、`pull/` や `refs/pull/` を含む refspec の fetch・pull。フックは呼び出しのたびに作業ツリーから読まれるので、フォークの PR を checkout するとフック自体が差し替わりうる。PR の checkout は人間が行う）、設定済みリモートを名前で指す以外の通信（`clone`、URL、パス、`submodule add`）、パッチの適用（`apply`・`am` は `--check`・`--stat`・`--numstat`・`--summary` だけ）、index や worktree を直接書く plumbing、このリポジトリ以外（`-C` や `cd` で別のディレクトリ・入れ子のリポジトリ）での実行、タグの作成と push、force push・削除・`--mirror`・`--all`、main への push、`--no-verify`、remote の変更、`gh pr merge`、`gh release`（`view`・`list` 以外）、`gh secret/variable/auth/alias/extension/config set/codespace/ssh-key/gpg-key`、書込系 `gh api`
+  - 文字列に出るだけで止めるもの（全文一致）: 資格情報の環境変数の参照、ホームの資格情報ファイル、秘密鍵ファイルの読み取り、`.npmrc` への書き込み、`base64 -d | sh`、`chmod 777`
+- **確認要求（permissionDecision: ask）**: 通常の `git push`、`rebase/merge/cherry-pick`、作業を捨てる git 操作、`gh pr create/edit/close/reopen/comment`、`gh issue` の変更、`npm update` — auto モードでも必ず人間に出る
 - **通過（exit 0）**: それ以外。permissions ルールと分類器に委ねる
 
 `guard-files.py` は `.claude/**`、`CLAUDE.md`、`AGENTS.md`、ワークフロー、CODEOWNERS、`LICENSE`、`server.json`、`.npmrc`、lockfile、`.env*`（`.env.example` は許可）、鍵ファイル、**プロジェクト外のパス**への Edit/Write を止める。
@@ -126,7 +130,7 @@
 
 1. リポジトリで `claude` を起動 → workspace trust ダイアログで allow ルールとフックを確認して承認。
 2. `/hooks` で 3 つのフックが表示されること、`/permissions` で deny/ask が読み込まれていること、`/sandbox` の Config タブで denyRead/denyWrite と allowedDomains を確認。
-3. `bash .claude/hooks/test-hooks.sh` を実行し `failed=0` を確認（112 ケース）。
+3. `bash .claude/hooks/test-hooks.sh` を実行し `failed=0` を確認（434 ケース）。
 4. `claude doctor` で設定の警告（無効なルール等）が無いことを確認。
 
 ### 4.3 日常
@@ -138,7 +142,8 @@
 
 ## 5. 既知の限界（正直に）
 
-- **テキスト一致の限界**: フックの正規表現も万能ではない。難読化された Bash（変数展開の連結など）はすり抜けうる。だからサンドボックスが最終防衛線で、サンドボックス無しでの運用は想定していない。
+- **解析の限界**: フックはコマンド行を読むが、コマンドが読み込むファイルの中身（`bash script.sh`、`node x.mjs`、`npm run` の scripts）は見ない。インラインコードの検査（`node -e` などのプロセス起動・保護ファイルへの書き込み）も語の一致による近似で、難読化はすり抜けうる。これらはサンドボックスの中で動くので、サンドボックスが最終防衛線で、サンドボックス無しでの運用は想定していない。例外は git と gh（`excludedCommands` でサンドボックスの外）で、コマンド行に単独で書いたときだけ外で動く。スクリプトやインラインコードから起動した git はサンドボックスの中で動く。
+- **呼び出しの間の状態**: フックは 1 回の Bash 呼び出しのコマンド行だけを見る。環境変数は呼び出しの間で残らないことを 2026-09-24 に確認した（1 回目 `export ZZ_T=1`、2 回目 `echo "${ZZ_T:-unset}"` が `unset`）。そのため環境変数の規則は「git や gh と同じ行」に限っている。Claude Code の更新で残るようになったら、`EXEC_ENV` の変数の `export`・`declare -x`・`typeset -x`・`set -a` を行に関係なく止める必要がある。作業ディレクトリは残るので、git と gh はフック入力の `cwd` で判定している。
 - **サンドボックスのネットワーク**: 既定ではプロキシは TLS を終端せず、ホスト名だけで判定する。公式が domain fronting の可能性を認めている。`github.com`/`registry.npmjs.org` を許可している以上、理論上の持ち出し経路は残る。
 - **`gh` トークン**: 3.1 の通り読める。被害範囲の限定で対処。
 - **PostToolUse は取り消せない**: 秘密情報スキャンは「書いてしまった後」に警告する。コミット前に人間が diff を見ること、push protection が次の層。
