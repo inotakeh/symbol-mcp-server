@@ -33,6 +33,8 @@ Run `npm run lint && npm run typecheck && npm test` before every commit.
 - Commit with `git -c commit.gpgsign=false commit ...`: the sandbox cannot read the signing key, and a human allowed unsigned agent commits (GUARDRAILS.md section 5). Never change the signing configuration.
 - Never put session URLs (`claude.ai/code/session_...`) or links to conversations in PR bodies or commit messages.
 - Open PRs with `gh pr create`; a human merges. Never merge, approve, tag, or publish.
+- Run `git push` and `gh` as a command on its own: no `cd ... &&`, no pipe, and no `|` inside a `--jq` expression. Only a lone command runs outside the sandbox; otherwise SSH is refused by the proxy or `gh` cannot read its configuration (GUARDRAILS.md section 5). The working directory is already the repository.
+- Write home-directory paths as `~/...` in notes, commit messages and PR bodies, never as absolute paths (scan-secrets refuses them as private identifiers).
 - `package-lock.json` changes only through `npm install`/`npm ci`, never by hand.
 
 ## Security rules (IMPORTANT — these are enforced by hooks; do not try to work around a block)
