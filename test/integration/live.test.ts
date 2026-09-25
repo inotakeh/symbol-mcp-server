@@ -8,6 +8,9 @@
  * network at the current height that answer on https:// (usually port 3001).
  * SYMBOL_INTEGRATION_ACCOUNT selects the account the account-level tools are exercised with;
  * without it the node's own main account is used and the voting-key count test is skipped.
+ * SYMBOL_INTEGRATION_MULTISIG_ACCOUNT=<address of a multisig account> checks that
+ * symbol_account_get reports it as a multisig account and its first cosignatory as a cosignatory;
+ * without it that test is skipped.
  * Never runs in CI (vitest.config.ts excludes this directory unless SYMBOL_INTEGRATION=1).
  */
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
@@ -22,8 +25,14 @@ import { createServer, TOOLS } from '../../src/server.js';
 
 const enabled = process.env.SYMBOL_INTEGRATION === '1';
 const INTEGRATION_ACCOUNT = process.env.SYMBOL_INTEGRATION_ACCOUNT?.trim() || undefined;
+const MULTISIG_ACCOUNT = process.env.SYMBOL_INTEGRATION_MULTISIG_ACCOUNT?.trim() || undefined;
 
 type Structured = Record<string, unknown>;
+interface MultisigOutput {
+  minApproval: number;
+  cosignatoryAddresses: string[];
+  multisigAddresses: string[];
+}
 
 describe.skipIf(!enabled)('live node', () => {
   let ctx: AppContext;
@@ -100,6 +109,24 @@ describe.skipIf(!enabled)('live node', () => {
     async () => {
       const voting = await call('symbol_voting_key_status', { account: INTEGRATION_ACCOUNT });
       expect((voting.votingKeys as unknown[]).length).toBeGreaterThanOrEqual(1);
+    },
+  );
+
+  it.skipIf(!MULTISIG_ACCOUNT)(
+    'symbol_account_get reports SYMBOL_INTEGRATION_MULTISIG_ACCOUNT as a multisig account and its first cosignatory as a cosignatory',
+    async () => {
+      const result = await call('symbol_account_get', { account: MULTISIG_ACCOUNT });
+      const multisig = result.multisig as MultisigOutput | null;
+      expect(multisig, 'multisig entry of SYMBOL_INTEGRATION_MULTISIG_ACCOUNT').not.toBeNull();
+      expect(multisig?.minApproval).toBeGreaterThanOrEqual(1);
+      expect(multisig?.cosignatoryAddresses.length).toBeGreaterThanOrEqual(1);
+      expect(result.summary).toMatch(/; multisig \d+-of-\d+/);
+
+      const self = (result.address as { base32: string }).base32;
+      const cosignatory = multisig?.cosignatoryAddresses[0] ?? '';
+      const cosigner = await call('symbol_account_get', { account: cosignatory });
+      expect((cosigner.multisig as MultisigOutput | null)?.multisigAddresses).toContain(self);
+      expect(cosigner.summary).toMatch(/cosignatory of \d+ multisig account/);
     },
   );
 

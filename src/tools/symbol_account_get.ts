@@ -4,6 +4,7 @@ import {
   type AccountInfo,
   AccountInfoSchema,
   MosaicInfoSchema,
+  type MultisigInfo,
   MultisigInfoSchema,
 } from '../client/schemas.js';
 import type { AppContext } from '../context.js';
@@ -95,7 +96,7 @@ const outputSchema = z.object({
       cosignatoryAddresses: z.array(z.string()),
       multisigAddresses: z.array(z.string()),
     }),
-    'Multisig settings; null when the account is not a multisig account.',
+    'Multisig entry of the account. A multisig account lists its cosignatoryAddresses with minApproval/minRemoval; a cosignatory lists the multisigAddresses it cosigns for (minApproval and minRemoval are then 0); an account can be both. null when the account is neither.',
   ),
 });
 
@@ -141,7 +142,7 @@ export const accountGetTool = defineTool({
   name: 'symbol_account_get',
   title: 'Symbol account details',
   description:
-    'Get what a Symbol account holds and how it is set up, by address, public key or namespace name (alice, alice.pay; resolved to its address alias and reported in accountResolution): balances, importance, keys and multisig settings. For whether its delegated harvesting actually works, use symbol_delegation_diagnose; for its harvesting rewards, symbol_harvesting_income. Returns the address in base32 and hex, public key, account type, all mosaic balances (with alias names and divisibility-adjusted amounts), importance, supplemental keys (linked/node/vrf/voting), whether delegated harvesting is configured (the linked and VRF keys are both registered; whether a node has unlocked the key is not checked), and multisig settings if the account is a multisig account.',
+    'Get what a Symbol account holds and how it is set up, by address, public key or namespace name (alice, alice.pay; resolved to its address alias and reported in accountResolution): balances, importance, keys and multisig settings. For whether its delegated harvesting actually works, use symbol_delegation_diagnose; for its harvesting rewards, symbol_harvesting_income. Returns the address in base32 and hex, public key, account type, all mosaic balances (with alias names and divisibility-adjusted amounts), importance, supplemental keys (linked/node/vrf/voting), whether delegated harvesting is configured (the linked and VRF keys are both registered; whether a node has unlocked the key is not checked), and multisig settings if the account is a multisig account or a cosignatory of one.',
   inputSchema,
   outputSchema,
   untrustedText: true,
@@ -161,7 +162,7 @@ export const accountGetTool = defineTool({
     const [aliases, divisibilities, multisig] = await Promise.all([
       ctx.resolveMosaicAliases(ids),
       resolveDivisibilities(ctx, ids, currency),
-      ctx.rest.getOrNull(`/accounts/${base32}/multisig`, MultisigInfoSchema),
+      ctx.rest.getOrNull(`/account/${base32}/multisig`, MultisigInfoSchema),
     ]);
 
     const mosaics = shown.map((m) => {
@@ -192,7 +193,7 @@ export const accountGetTool = defineTool({
 
     const summary = [
       `${base32} on ${ctx.network.name}: ${balanceText}, ${allMosaics.length} mosaic${allMosaics.length === 1 ? '' : 's'}${truncated ? ` (showing ${CONCISE_MOSAIC_LIMIT}; use format=detailed for all)` : ''}.`,
-      `Account type ${ACCOUNT_TYPES[acct.accountType] ?? acct.accountType}; delegated harvesting ${delegatedConfigured ? 'configured' : 'not configured'}; ${voting.length} voting key${voting.length === 1 ? '' : 's'}; ${multisig ? `multisig ${multisig.multisig.minApproval}-of-${multisig.multisig.cosignatoryAddresses.length}` : 'not a multisig account'}.`,
+      `Account type ${ACCOUNT_TYPES[acct.accountType] ?? acct.accountType}; delegated harvesting ${delegatedConfigured ? 'configured' : 'not configured'}; ${voting.length} voting key${voting.length === 1 ? '' : 's'}; ${describeMultisig(multisig)}.`,
     ].join('\n');
 
     return {
@@ -244,6 +245,26 @@ export const accountGetTool = defineTool({
     };
   },
 });
+
+/**
+ * catapult keeps a multisig entry for both sides of the link: the multisig account lists its
+ * cosignatories (and minApproval/minRemoval), each cosignatory lists the multisig accounts it
+ * cosigns for (with minApproval/minRemoval 0). An account can be both in a multilevel multisig.
+ */
+function describeMultisig(entry: MultisigInfo | null): string {
+  const cosignatories = entry?.multisig.cosignatoryAddresses.length ?? 0;
+  const cosignsFor = entry?.multisig.multisigAddresses.length ?? 0;
+  const parts: string[] = [];
+  if (entry && cosignatories > 0) {
+    parts.push(`multisig ${entry.multisig.minApproval}-of-${cosignatories}`);
+  }
+  if (cosignsFor > 0) {
+    parts.push(
+      `cosignatory of ${cosignsFor} multisig account${cosignsFor === 1 ? '' : 's'}${cosignatories > 0 ? '' : ' (not a multisig account itself)'}`,
+    );
+  }
+  return parts.length > 0 ? parts.join('; ') : 'not a multisig account';
+}
 
 async function resolveDivisibilities(
   ctx: AppContext,

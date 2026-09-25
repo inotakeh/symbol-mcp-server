@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { base32AddressToHex, publicKeyToAddress } from '../../src/domain/address.js';
 import {
   fixture,
+  H,
   mainnetRoutes,
   startTestServer,
   TEST_NODE_HOST,
@@ -17,6 +19,14 @@ afterEach(async () => {
 const ADDRESS = 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY';
 const HEX_ADDRESS = '68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53';
 const PUBLIC_KEY = 'CE1992333C60AFEABDB289A14CC1A593FB797339C6D93DEEDB97052AED51845E';
+// Cosignatories of the synthetic multisig fixtures (test/fixtures/README.md).
+const COSIGNATORY_1_PUBLIC_KEY = H('fixture:cosignatory-1');
+const [COSIGNATORY_1, COSIGNATORY_2, COSIGNATORY_3] = [1, 2, 3].map((n) =>
+  publicKeyToAddress(H(`fixture:cosignatory-${n}`), 104),
+) as [string, string, string];
+const COSIGNATORY_1_HEX = base32AddressToHex(COSIGNATORY_1);
+const COSIGNATORY_2_HEX = base32AddressToHex(COSIGNATORY_2);
+const COSIGNATORY_3_HEX = base32AddressToHex(COSIGNATORY_3);
 
 describe('symbol_account_get', () => {
   it('returns balances with aliases, supplemental keys and harvesting status', async () => {
@@ -138,35 +148,87 @@ describe('symbol_account_get', () => {
     expect(logged).not.toContain(looksLikeSecret);
   });
 
-  it('reports multisig settings when present', async () => {
+  // catapult-rest serves GET /account/{address}/multisig (singular). A node answers the plural
+  // form ("accounts") of that route with a 404 too, so the wrong path used to read as "not a
+  // multisig account" for every account.
+  it('reports a multisig account from GET /account/{address}/multisig', async () => {
     server = await startTestServer({
       routes: {
         ...mainnetRoutes(),
-        [`GET /accounts/${ADDRESS}/multisig`]: {
-          multisig: {
-            version: 1,
-            accountAddress: HEX_ADDRESS,
-            minApproval: 2,
-            minRemoval: 1,
-            cosignatoryAddresses: [
-              '6816B9E6B5FCC12A8E09C5B5D8C4D4A5F1F2C3D4E5F60718',
-              '68AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00',
-            ],
-            multisigAddresses: [],
-          },
-        },
+        [`GET /account/${ADDRESS}/multisig`]: fixture('mainnet/multisig-account.json'),
       },
     });
     const result = await server.callTool('symbol_account_get', { account: ADDRESS });
     expect(result.isError).toBe(false);
-    const multisig = result.structuredContent?.multisig as {
-      minApproval: number;
-      cosignatoryAddresses: string[];
-    };
-    expect(multisig.minApproval).toBe(2);
-    expect(multisig.cosignatoryAddresses).toHaveLength(2);
-    expect(multisig.cosignatoryAddresses[0]).toMatch(/^N[A-Z2-7]{38}$/);
-    expect(result.structuredContent?.summary).toMatch(/multisig 2-of-2/);
+    expect(result.structuredContent?.multisig).toEqual({
+      minApproval: 2,
+      minRemoval: 2,
+      cosignatoryAddresses: [COSIGNATORY_1, COSIGNATORY_2, COSIGNATORY_3],
+      multisigAddresses: [],
+    });
+    const summary = String(result.structuredContent?.summary);
+    expect(summary).toMatch(/; multisig 2-of-3\.$/m);
+    expect(summary).not.toMatch(/cosignatory of/);
+    expect(server.requests.some((u) => u.pathname === `/account/${ADDRESS}/multisig`)).toBe(true);
+  });
+
+  it('reports a cosignatory without calling it a multisig account', async () => {
+    const account = fixture<{ account: Record<string, unknown> }>('mainnet/account-voting.json');
+    account.account.address = COSIGNATORY_1_HEX;
+    account.account.publicKey = COSIGNATORY_1_PUBLIC_KEY;
+    server = await startTestServer({
+      routes: {
+        ...mainnetRoutes(),
+        [`GET /accounts/${COSIGNATORY_1}`]: account,
+        [`GET /account/${COSIGNATORY_1}/multisig`]: fixture('mainnet/multisig-cosignatory.json'),
+      },
+    });
+    const result = await server.callTool('symbol_account_get', { account: COSIGNATORY_1 });
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent?.multisig).toEqual({
+      minApproval: 0,
+      minRemoval: 0,
+      cosignatoryAddresses: [],
+      multisigAddresses: [ADDRESS],
+    });
+    const summary = String(result.structuredContent?.summary);
+    expect(summary).toMatch(
+      /; cosignatory of 1 multisig account \(not a multisig account itself\)\.$/m,
+    );
+    expect(summary).not.toMatch(/-of-/);
+  });
+
+  it('reports both roles of an account in a multilevel multisig', async () => {
+    const both = fixture<{ multisig: Record<string, unknown> }>('mainnet/multisig-account.json');
+    both.multisig.multisigAddresses = [COSIGNATORY_3_HEX, COSIGNATORY_2_HEX];
+    server = await startTestServer({
+      routes: { ...mainnetRoutes(), [`GET /account/${ADDRESS}/multisig`]: both },
+    });
+    const result = await server.callTool('symbol_account_get', { account: ADDRESS });
+    expect(result.structuredContent?.summary).toMatch(
+      /; multisig 2-of-3; cosignatory of 2 multisig accounts\.$/m,
+    );
+  });
+
+  it('reads the 404 of the multisig route as no multisig entry', async () => {
+    server = await startTestServer({
+      routes: {
+        ...mainnetRoutes(),
+        [`GET /account/${ADDRESS}/multisig`]: () =>
+          new Response(
+            JSON.stringify({
+              code: 'ResourceNotFound',
+              message: `no resource exists with id '${ADDRESS}'`,
+            }),
+            { status: 404, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    });
+    const result = await server.callTool('symbol_account_get', { account: ADDRESS });
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent?.multisig).toBeNull();
+    expect(result.structuredContent?.summary).toMatch(/; not a multisig account\.$/m);
+    expect(server.requests.some((u) => u.pathname === `/account/${ADDRESS}/multisig`)).toBe(true);
   });
 
   it('truncates mosaics in concise mode and returns all in detailed mode', async () => {

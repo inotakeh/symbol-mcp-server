@@ -287,7 +287,7 @@ identifiers only, never URLs. Every `account` argument (and the `address` of
 |---|---|---|
 | `symbol_network_info` | none | Network name/identifier and generation hash seed, current and finalized height, finalization epoch, block target time, voting set grouping, epoch adjustment, XYM mosaic id/alias/divisibility, current fee multipliers. |
 | `symbol_node_status` | none | Friendly name, host, roles (Peer/API/Voting), decoded version, health of API node and database, heights, peer count, and a sync check (latest block older than 5 minutes means `synced: false`). |
-| `symbol_account_get` | `account` (address, public key or namespace name), `format` | Address in base32 and hex, public key, every mosaic balance with alias and decimals, importance, linked/VRF/node/voting keys, whether delegated harvesting is set up, multisig settings. |
+| `symbol_account_get` | `account` (address, public key or namespace name), `format` | Address in base32 and hex, public key, every mosaic balance with alias and decimals, importance, linked/VRF/node/voting keys, whether delegated harvesting is set up, multisig settings (as a multisig account or as a cosignatory). |
 | `symbol_voting_key_status` | `account` | Every voting key with status (expired/active/future), remaining epochs/blocks/days, estimated expiry date, recommended renewal window (7 to 3 days before), slot usage including expired keys, voter eligibility versus `minVoterBalance`, warnings. |
 | `symbol_transaction_get` | `transactionHash` | Looks in confirmed, unconfirmed and partial groups and reports the status; type name, signer and recipient, mosaics with aliases, decoded plain message or "encrypted" marker, fee, height and time, inner transactions of aggregates. |
 | `symbol_transaction_search` | `address`, `type`, `pageSize`, `pageNumber`, `order`, `format` | Confirmed transactions involving an account, newest first by default, optional type filter by name (`transfer`) or code (`16724`), 10 to 100 per page. |
@@ -633,6 +633,7 @@ SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
 npx @modelcontextprotocol/inspector -e SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
 SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<testnet-node>:3001 npm test   # live-node tests
 SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<node-host>:3001 SYMBOL_INTEGRATION_ACCOUNT=<address> npm test   # account tools against a specific account
+SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<node-host>:3001 SYMBOL_INTEGRATION_MULTISIG_ACCOUNT=<address> npm test   # symbol_account_get against a multisig account and its first cosignatory
 node scripts/capture-fixtures.mjs https://<node-host>:3001   # refresh test/fixtures/<network>/ from a node
 ```
 

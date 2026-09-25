@@ -135,7 +135,7 @@ export class RestClient {
     return this.request('GET', path, undefined, schema, options);
   }
 
-  /** GET that maps a 404 to null instead of throwing (e.g. `/accounts/{id}/multisig`). */
+  /** GET that maps a 404 to null instead of throwing (e.g. `/account/{address}/multisig`). */
   async getOrNull<T>(path: string, schema: z.ZodType<T>): Promise<T | null> {
     try {
       return await this.request('GET', path, undefined, schema);
