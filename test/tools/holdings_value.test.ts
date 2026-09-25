@@ -7,6 +7,7 @@ import {
   fixture,
   H,
   mainnetRoutes,
+  resourceNotFound,
   startTestServer,
   TEST_NODE_HOST,
   type TestServer,
@@ -481,7 +482,12 @@ describe('symbol_holdings_value', () => {
   });
 
   it('gives a hinted error for an unknown account and for a bad identifier', async () => {
-    server = await startTestServer();
+    server = await startTestServer({
+      routes: {
+        ...mainnetRoutes(),
+        [`GET /accounts/${UNKNOWN_ADDRESS}`]: resourceNotFound(UNKNOWN_ADDRESS),
+      },
+    });
     const unknown = await server.callTool(TOOL, {
       account: UNKNOWN_ADDRESS,
       unitPrice: '1',

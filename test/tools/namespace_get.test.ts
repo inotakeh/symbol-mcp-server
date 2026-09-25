@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { bigintToHexId, generateNamespacePath } from '../../src/domain/namespace.js';
 import {
   fixture,
   mainnetRoutes,
+  resourceNotFound,
   startTestServer,
   TEST_NODE_HOST,
   TEST_NOW,
@@ -98,7 +100,16 @@ describe('symbol_namespace_get', () => {
   });
 
   it('reports not found and invalid names with hints', async () => {
-    server = await startTestServer();
+    // The lookup reads the deepest level first; the node knows none of them.
+    const missingIds = generateNamespacePath('nonexistent.name').map(bigintToHexId);
+    server = await startTestServer({
+      routes: {
+        ...mainnetRoutes(),
+        ...Object.fromEntries(
+          missingIds.map((id) => [`GET /namespaces/${id}`, resourceNotFound(id)]),
+        ),
+      },
+    });
     const missing = await server.callTool('symbol_namespace_get', {
       namespace: 'nonexistent.name',
     });

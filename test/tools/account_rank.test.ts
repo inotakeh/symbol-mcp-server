@@ -11,6 +11,7 @@ import {
   jsonResponse,
   mainnetRoutes,
   type Routes,
+  resourceNotFound,
   SYNTHETIC_HOLDER_COUNT,
   startTestServer,
   syntheticHolders,
@@ -350,7 +351,12 @@ describe('symbol_account_rank', () => {
   });
 
   it('gives a hinted error for an unknown account and for a bad identifier', async () => {
-    server = await startTestServer();
+    server = await startTestServer({
+      routes: {
+        ...mainnetRoutes(),
+        [`GET /accounts/${UNKNOWN_ADDRESS}`]: resourceNotFound(UNKNOWN_ADDRESS),
+      },
+    });
     const unknown = await server.callTool(TOOL, { account: UNKNOWN_ADDRESS });
     expect(unknown.isError).toBe(true);
     expect(unknown.text).toMatch(/No account with address/);

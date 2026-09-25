@@ -11,8 +11,13 @@ transaction, namespace and unlocked-account files; the rest by hand):
 `chain-info.json`, `network-properties.json`, `fees.json`, `node-health.json`,
 `block-5753675.json`, `block-5763675.json`, `mosaic-xym.json`,
 `namespace-symbol.json`, `namespace-symbol-xym.json`, `namespace-names.json`,
-`transaction-transfer.json`, `transaction-aggregate.json`, `transaction-unconfirmed-404.json`,
-`not-found.json`.
+`transaction-transfer.json`, `transaction-aggregate.json`, `transaction-unconfirmed-404.json`.
+
+The fake `fetch` answers a path that no route stubs the way catapult-rest answers a path it has no
+route for: 404 `{"code":"ResourceNotFound","message":"<path> does not exist"}`, which the client
+reports as an error. A test that expects "no such resource" stubs that exact path with
+`resourceNotFound(id)` (404 `no resource exists with id '<id>'`, the shape of
+`transaction-unconfirmed-404.json`).
 
 ## Account-specific fixtures (identifiers replaced)
 

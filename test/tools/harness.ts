@@ -58,6 +58,16 @@ export function jsonResponse(body: unknown, status = 200, headers: Record<string
   });
 }
 
+/**
+ * A route's answer for a resource it does not have, as catapult-rest sends it (404 with
+ * `no resource exists with id '<id>'`). Unstubbed paths answer "<path> does not exist" instead
+ * (createFakeFetch), which the client reports as an error, so stub every expected miss with this.
+ */
+export function resourceNotFound(id: string): RouteHandler {
+  return () =>
+    jsonResponse({ code: 'ResourceNotFound', message: `no resource exists with id '${id}'` }, 404);
+}
+
 /** Synthetic value rule of test/fixtures/README.md: SHA3-256 of a label, upper-case hex. */
 export const H = (label: string) =>
   createHash('sha3-256').update(label, 'utf8').digest('hex').toUpperCase();
@@ -170,6 +180,10 @@ export function mainnetRoutes(): Routes {
     'GET /accounts/CE1992333C60AFEABDB289A14CC1A593FB797339C6D93DEEDB97052AED51845E': fixture(
       'mainnet/account-voting.json',
     ),
+    // The main account is neither a multisig account nor a cosignatory.
+    'GET /account/NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY/multisig': resourceNotFound(
+      'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY',
+    ),
     // Phase 2 fixtures (captured with scripts/capture-fixtures.mjs)
     [`GET /transactions/confirmed/${TRANSFER_HASH}`]: fixture('mainnet/transaction-transfer.json'),
     [`GET /transactions/confirmed/${AGGREGATE_HASH}`]: fixture(
@@ -196,6 +210,8 @@ export function mainnetRoutes(): Routes {
     'GET /accounts': accountSearchRoute(syntheticHolders(SYNTHETIC_HOLDER_COUNT)),
     // Synthetic finalization proof for epoch 4010 (keys derived, see test/fixtures/README.md).
     'GET /finalization/proof/epoch/4010': fixture('mainnet/finalization-proof-epoch.json'),
+    // No proof for the epoch before it: symbol_finality_participation reports it unavailable.
+    'GET /finalization/proof/epoch/4009': resourceNotFound('4009'),
     // Shape of the real epoch 4027 proof: the prevote stage split into two message groups at one
     // height (2 and 15 signatures); the fixture account's key is in the larger group only.
     'GET /finalization/proof/epoch/4027': fixture('mainnet/finalization-proof-split-prevote.json'),
@@ -227,7 +243,13 @@ export function createFakeFetch(routes: Routes): FakeFetch {
       if (wildcard !== undefined) route = routes[wildcard];
     }
     if (route === undefined) {
-      return jsonResponse(fixture('mainnet/not-found.json'), 404);
+      // What catapult-rest (restify) answers for a path no route matches. A test that expects
+      // "no such resource" must stub that exact path with resourceNotFound(), so a request to a
+      // wrong path fails the test instead of passing as "not found".
+      return jsonResponse(
+        { code: 'ResourceNotFound', message: `${url.pathname} does not exist` },
+        404,
+      );
     }
     if (typeof route === 'function') {
       return (route as RouteHandler)(request, url);

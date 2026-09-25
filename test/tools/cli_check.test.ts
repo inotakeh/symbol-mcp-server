@@ -22,6 +22,7 @@ import {
   jsonResponse,
   mainnetRoutes,
   type Routes,
+  resourceNotFound,
   TEST_NODE_HOST,
   TEST_NOW,
 } from './harness.js';
@@ -286,9 +287,11 @@ describe('runCheck against the fixture node', () => {
   });
 
   it('fails the account items for an account that does not exist (exit code 2, not 3)', async () => {
-    const { ctx } = await createTestContext({ routes: routes() });
     // A valid mainnet address (symbol-sdk test vector) that the fixture node does not know.
     const unknown = 'NATNE7Q5BITMUTRRN6IB4I7FLSDRDWZA34SQ33Y';
+    const { ctx } = await createTestContext({
+      routes: routes({ [`GET /accounts/${unknown}`]: resourceNotFound(unknown) }),
+    });
     const report = await runCheck(ctx, { account: unknown, warnDays: 14 });
 
     expect(report.exitCode).toBe(2);
@@ -301,8 +304,10 @@ describe('runCheck against the fixture node', () => {
   });
 
   it('never prints a 64-hex value that might be a private key pasted by mistake', async () => {
-    const { ctx } = await createTestContext({ routes: routes() });
     const looksLikeSecret = 'DEADBEEF'.repeat(8); // treated as a public key; unknown -> 404
+    const { ctx } = await createTestContext({
+      routes: routes({ [`GET /accounts/${looksLikeSecret}`]: resourceNotFound(looksLikeSecret) }),
+    });
     const report = await runCheck(ctx, { account: looksLikeSecret, warnDays: 14 });
 
     expect(report.exitCode).toBe(2);
@@ -363,9 +368,14 @@ describe('runCheck against the fixture node', () => {
   });
 
   it('warns (not fails) when the node has no proof for the latest epoch', async () => {
-    // Default routes: the latest finalized epoch 4004 has no proof route, so the tool throws
+    // The node has no proof for the latest finalized epoch 4004, so the tool throws
     // ProofUnavailableError instead of returning status unavailable.
-    const { ctx } = await createTestContext({ routes: mainnetRoutes() });
+    const { ctx } = await createTestContext({
+      routes: {
+        ...mainnetRoutes(),
+        [`GET /finalization/proof/epoch/${LATEST_EPOCH}`]: resourceNotFound(String(LATEST_EPOCH)),
+      },
+    });
     const report = await runCheck(ctx, { account: ADDRESS, warnDays: 14 });
     const finality = item(report, 'finality_participation');
     expect(finality.status).toBe('warn');

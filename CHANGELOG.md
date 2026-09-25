@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- A 404 that means the node has no such route (catapult-rest's `"<path> does not exist"`) is now
+  an error in every tool, not "not found". Tools that read a 404 as an answer (no multisig entry,
+  no such transaction, no proof for an epoch, an unknown namespace or mosaic) still do so when the
+  node says the resource does not exist, but a request to an endpoint the node does not serve can
+  no longer pass as a normal answer. That is how the `symbol_account_get` multisig bug below went
+  unnoticed. The error says the node does not provide the endpoint, and that this is a bug in
+  symbol-mcp-server or a catapult-rest version without it. The node's response text is not
+  quoted.
+
 ### Fixed
 
 - `symbol_account_get` never reported multisig settings. It asked the node for
