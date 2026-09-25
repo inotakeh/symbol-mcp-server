@@ -276,7 +276,7 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 |---|---|---|
 | `symbol_network_info` | なし | ネットワーク名・identifier・generationHashSeed、現在高さと確定高さ、確定エポック、ブロック生成目標時間、votingSetGrouping、epochAdjustment、XYM の mosaicId / エイリアス / divisibility、現在の手数料乗数。 |
 | `symbol_node_status` | なし | friendlyName、host、ロール（Peer / API / Voting）、復号したバージョン、API ノードと DB の health、高さ、ピア数、同期判定（最新ブロックが 5 分より古ければ `synced: false`）。 |
-| `symbol_account_get` | `account`（アドレス、公開鍵、またはネームスペース名）, `format` | base32 / hex アドレス、公開鍵、全モザイク残高（エイリアスと桁反映）、importance、linked / VRF / node / voting キー、委任ハーベスティング設定の有無、マルチシグ設定。 |
+| `symbol_account_get` | `account`（アドレス、公開鍵、またはネームスペース名）, `format` | base32 / hex アドレス、公開鍵、全モザイク残高（エイリアスと桁反映）、importance、linked / VRF / node / voting キー、委任ハーベスティング設定の有無、マルチシグ設定（マルチシグ本体か連署者か）。 |
 | `symbol_voting_key_status` | `account` | 全 Voting キーと状態（expired / active / future）、残りエポック・ブロック・日数、失効予定日時、推奨更新ウィンドウ（失効 7 日前〜3 日前）、失効済みキーを含む枠の使用状況、`minVoterBalance` に対する資格、警告。 |
 | `symbol_transaction_get` | `transactionHash` | confirmed / unconfirmed / partial を順に探して状態を返す。種別名、署名者と宛先、エイリアス付きモザイク、平文メッセージの復号（暗号化なら明記）、手数料、高さと日時、アグリゲートの内包トランザクション。 |
 | `symbol_transaction_search` | `address`, `type`, `pageSize`, `pageNumber`, `order`, `format` | アカウントが関わる確定トランザクション。既定は新しい順、種別は名前（`transfer`）またはコード（`16724`）で絞り込み、1 ページ 10〜100 件。 |
@@ -593,6 +593,7 @@ SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
 npx @modelcontextprotocol/inspector -e SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
 SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<testnet-node>:3001 npm test   # 実ノードでの統合テスト
 SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<node-host>:3001 SYMBOL_INTEGRATION_ACCOUNT=<address> npm test   # 指定アカウントでアカウント系ツールを検証
+SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<node-host>:3001 SYMBOL_INTEGRATION_MULTISIG_ACCOUNT=<address> npm test   # マルチシグ本体とその 1 人目の連署者で symbol_account_get を検証
 node scripts/capture-fixtures.mjs https://<node-host>:3001   # test/fixtures/<network>/ をノードから更新
 ```
 

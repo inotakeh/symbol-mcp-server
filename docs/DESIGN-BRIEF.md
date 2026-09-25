@@ -118,7 +118,7 @@
 ネットワーク名・identifier・generationHashSeed、現在高さ、ファイナライズ高さ/エポック、`blockGenerationTargetTime`、XYM の mosaicId と divisibility、`epochAdjustment`、現在の手数料乗数（`/network/fees/transaction` の min/average/median/highest）。
 
 **`symbol_account_get`** — `account`（base32アドレス または 64桁hex公開鍵）、`format`。
-アドレス（base32とhex）、公開鍵、全モザイク残高（id・エイリアス名・divisibility 適用後の量・生の整数）、importance と importanceHeight、`supplementalPublicKeys`（linked / vrf / node / voting[]。votingは start/endEpoch 付き）、委任ハーベスティング設定の有無（linked と vrf が両方あれば「設定済み」）、マルチシグ情報（`/account/{id}/multisig` が 404 でなければ）。
+アドレス（base32とhex）、公開鍵、全モザイク残高（id・エイリアス名・divisibility 適用後の量・生の整数）、importance と importanceHeight、`supplementalPublicKeys`（linked / vrf / node / voting[]。votingは start/endEpoch 付き）、委任ハーベスティング設定の有無（linked と vrf が両方あれば「設定済み」）、マルチシグ情報（`/account/{id}/multisig` が 404 でなければ）。catapult はマルチシグ本体と連署者の両方にエントリを持つので、`cosignatoryAddresses` が 1 件以上なら本体（summary は `multisig M-of-N`）、`multisigAddresses` が 1 件以上なら連署者（`cosignatory of N multisig accounts`。連署者の minApproval・minRemoval は 0）として区別する（多段のマルチシグでは両方）。
 参照: `GET /accounts/{accountId}`（address と publicKey の両方を受け付ける）。
 
 **`symbol_transaction_get`** — `transactionHash`。
@@ -364,6 +364,7 @@ mainnet の実データ2点で検証済み: ファイナライズ高さ 5,755,50
 - testnet ノードに対して全ツールがエラーなく応答する
 - `/chain/info` の `latestFinalizedBlock.height` から式で計算したエポックが `finalizationEpoch` と一致する
 - `SYMBOL_INTEGRATION_ACCOUNT` で指定した Voting アカウントに対し、`symbol_voting_key_status` が Voting キーを1本以上返す（内容は時間で変わるので件数と形だけ検証。未設定ならこのテストは skip）
+- `SYMBOL_INTEGRATION_MULTISIG_ACCOUNT` で指定したマルチシグ本体に対し、`symbol_account_get` が本体として報告し（minApproval と連署者数が 1 以上）、その 1 人目の連署者を連署者として報告する（`multisigAddresses` に本体を含む。未設定なら skip）
 - 同アカウントに対し、`symbol_finality_participation` が最新確定エポックで `participated` か `missed` のいずれかを返す（`unavailable` でない。未設定なら skip）
 
 **手動確認**: `npx @modelcontextprotocol/inspector -e SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js` で全ツールを一度は叩く（Inspector はシェルの環境変数をサーバーに渡さない。渡るのは MCP SDK の既定の数個と `-e` や画面で指定したものだけ）。

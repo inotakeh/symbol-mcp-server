@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `symbol_account_get` never reported multisig settings. It asked the node for
+  `/accounts/{address}/multisig`, a route catapult-rest does not serve, and read the node's 404 as
+  "not a multisig account", for every account. It now asks `/account/{address}/multisig` (the
+  documented route) and tells the two sides of a multisig apart: a multisig account shows
+  `multisig M-of-N` in the summary, and an account that cosigns for others shows `cosignatory of N
+  multisig accounts` instead of being reported as a 0-of-0 multisig. The `multisig` output field
+  keeps its shape. Affected every release up to and including 0.9.0.
+
 ## [0.9.0] - 2026-09-25
 
 > **After upgrading, restart your MCP host (Claude Desktop, Claude Code and others).** This release adds

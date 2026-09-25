@@ -1,0 +1,10 @@
+{
+  "multisig": {
+    "version": 1,
+    "accountAddress": "68C400B66416E93BF3BD0255E78621F11D4FC3CA6A14434D",
+    "minApproval": 0,
+    "minRemoval": 0,
+    "cosignatoryAddresses": [],
+    "multisigAddresses": ["68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53"]
+  }
+}
