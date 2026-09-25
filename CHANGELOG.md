@@ -16,6 +16,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `multisig M-of-N` in the summary, and an account that cosigns for others shows `cosignatory of N
   multisig accounts` instead of being reported as a 0-of-0 multisig. The `multisig` output field
   keeps its shape. Affected every release up to and including 0.9.0.
+- `symbol_delegation_diagnose`: the `recent_harvest` check counted the harvest fee receipts it
+  could not classify as if the account had harvested them. For a block whose fee split did not
+  match the network's shares, an operator that is its own node's beneficiary was counted twice,
+  and a block that only paid the account the beneficiary share (a delegator's block) was counted
+  as harvested. The check now counts the harvester-share receipts only, one per block the
+  account harvested, through the same aggregation as `symbol_harvesting_income`. Blocks whose split
+  is not recognised are named in the check's detail and not counted. When they are the only
+  blocks found, the check is unknown (the verdict becomes cannot_verify if nothing fails), not ok.
+  The note shown when the 20-page limit is reached now says what it read: the newest 2,000
+  statements (blocks in which the account received a fee as harvester or as beneficiary), so the
+  count is a lower bound. `recentHarvest.receipts` keeps its name and shape; its description
+  says what it counts.
 
 ## [0.9.0] - 2026-09-25
 

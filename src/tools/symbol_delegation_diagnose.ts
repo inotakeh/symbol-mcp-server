@@ -6,6 +6,7 @@ import {
   MosaicInfoSchema,
   NodeInfoSchema,
   TransactionPageSchema,
+  type TransactionStatementInfo,
   TransactionStatementPageSchema,
   UnlockedAccountSchema,
 } from '../client/schemas.js';
@@ -23,7 +24,7 @@ import {
   sameKey,
 } from '../domain/delegation.js';
 import { parseHeight } from '../domain/epoch.js';
-import { classifyHarvestReceipts } from '../domain/harvesting.js';
+import { aggregateHarvestIncome, type HarvestShares } from '../domain/harvesting.js';
 import { isPersistentDelegationMessage } from '../domain/message.js';
 import { receiptTypeCode } from '../domain/receipttype.js';
 import type { CleanedText } from '../domain/sanitize.js';
@@ -105,11 +106,15 @@ const outputSchema = z.object({
   recentHarvest: nullable(
     z.object({
       days: z.number(),
-      receipts: z.number(),
+      receipts: z
+        .number()
+        .describe(
+          'Harvest fee receipts the account received as harvester: one per block it harvested. Beneficiary-only receipts and blocks whose fee split was not recognised are not counted.',
+        ),
       lastHeight: nullable(z.number(), 'Height of the newest harvested block; null when none.'),
       lastTime: nullable(InstantSchema, 'Time of the newest harvested block; null when none.'),
     }),
-    'Harvested blocks in the recent window; null when the account does not exist.',
+    'Blocks the account harvested in the recent window (counted by its harvester receipts); null when the account does not exist.',
   ),
   notes: z.array(z.string()),
 });
@@ -182,16 +187,21 @@ async function fetchUnlockedKeys(ctx: AppContext): Promise<string[] | null> {
 }
 
 interface RecentHarvest {
+  /** Harvester-share receipts addressed to the account: one per block it harvested. */
   readonly receipts: number;
+  /** Blocks in which the account got harvest fees whose share split was not recognised. */
+  readonly unrecognisedBlocks: number;
   readonly lastHeight: number | null;
-  readonly lastTimestamp: number | null;
+  readonly lastTime: Date | null;
   readonly truncated: boolean;
 }
 
 /**
- * Counts HarvestFee receipts of the network currency addressed to the account whose share
- * pattern marks them as the harvester's (or could not be classified). Beneficiary receipts are
- * left out: they prove that someone else harvested with this account as beneficiary.
+ * Counts the blocks the account harvested in the window: the HarvestFee receipts of the network
+ * currency addressed to it that the share pattern marks as the harvester's, one per block
+ * (classified and counted by aggregateHarvestIncome, as symbol_harvesting_income does).
+ * Beneficiary receipts are left out: they prove that someone else harvested with this account as
+ * beneficiary. Blocks whose split was not recognised are counted apart, never as harvested.
  */
 async function countRecentHarvests(
   ctx: AppContext,
@@ -199,13 +209,14 @@ async function countRecentHarvests(
   addressHex: string,
   fromHeight: number,
   toHeight: number,
-  currencyMosaicId: string,
-  shares: { beneficiaryPercentage: number; networkPercentage: number },
+  options: {
+    currencyMosaicId: string;
+    shares: HarvestShares;
+    epochAdjustmentSeconds: number;
+  },
 ): Promise<RecentHarvest> {
   const harvestFeeType = receiptTypeCode('HarvestFee');
-  let receipts = 0;
-  let lastHeight: number | null = null;
-  let lastTimestamp: number | null = null;
+  const statements: TransactionStatementInfo[] = [];
   let truncated = true;
   for (let pageNumber = 1; pageNumber <= MAX_RECENT_HARVEST_PAGES; pageNumber++) {
     const params = new URLSearchParams({
@@ -221,28 +232,28 @@ async function countRecentHarvests(
       `/statements/transaction?${params.toString()}`,
       TransactionStatementPageSchema,
     );
-    for (const row of page.data) {
-      const harvestReceipts = row.statement.receipts.filter(
-        (r) => r.type === harvestFeeType && (r.mosaicId?.toUpperCase() ?? '') === currencyMosaicId,
-      );
-      const mine = classifyHarvestReceipts(harvestReceipts, shares).filter(
-        (r) =>
-          (r.receipt.targetAddress?.toUpperCase() ?? '') === addressHex && r.kind !== 'beneficiary',
-      );
-      if (mine.length === 0) continue;
-      receipts += mine.length;
-      const height = parseHeight(row.statement.height);
-      if (lastHeight === null || height > lastHeight) {
-        lastHeight = height;
-        lastTimestamp = Number(row.meta.timestamp);
-      }
-    }
+    statements.push(...page.data);
     if (page.data.length < STATEMENT_PAGE_SIZE) {
       truncated = false;
       break;
     }
   }
-  return { receipts, lastHeight, lastTimestamp, truncated };
+  const { rows, totals } = aggregateHarvestIncome(statements, {
+    targetAddressHex: addressHex,
+    currencyMosaicId: options.currencyMosaicId,
+    harvestFeeType,
+    shares: options.shares,
+    epochAdjustmentSeconds: options.epochAdjustmentSeconds,
+  });
+  // rows are sorted by height, so the last harvester row is the newest harvested block.
+  const newest = rows.filter((row) => row.kind === 'harvester').at(-1);
+  return {
+    receipts: totals.harvester.receipts,
+    unrecognisedBlocks: totals.blocksUnrecognised,
+    lastHeight: newest?.height ?? null,
+    lastTime: newest?.time ?? null,
+    truncated,
+  };
 }
 
 interface DelegationRequest {
@@ -596,24 +607,15 @@ export const delegationDiagnoseTool = defineTool({
     const blockTime = await ctx.getAverageBlockTime(currentHeight);
     const windowBlocks = Math.ceil((recentDays * MS_PER_DAY) / blockTime.averageBlockTimeMs);
     const fromHeight = Math.max(1, currentHeight - windowBlocks);
-    const recent = await countRecentHarvests(
-      ctx,
-      address,
-      addressHex,
-      fromHeight,
-      currentHeight,
-      currency.mosaicId,
-      {
+    const recent = await countRecentHarvests(ctx, address, addressHex, fromHeight, currentHeight, {
+      currencyMosaicId: currency.mosaicId,
+      shares: {
         beneficiaryPercentage: properties.harvestBeneficiaryPercentage,
         networkPercentage: properties.harvestNetworkPercentage,
       },
-    );
-    const lastTime =
-      recent.lastTimestamp === null
-        ? null
-        : ctx.instant(
-            networkTimestampToDate(recent.lastTimestamp, properties.epochAdjustmentSeconds),
-          );
+      epochAdjustmentSeconds: properties.epochAdjustmentSeconds,
+    });
+    const lastTime = recent.lastTime === null ? null : ctx.instant(recent.lastTime);
     const recentHarvest = {
       days: recentDays,
       receipts: recent.receipts,
@@ -622,18 +624,29 @@ export const delegationDiagnoseTool = defineTool({
     };
     if (recent.truncated) {
       notes.push(
-        `recentHarvest counts only the newest ${formatInteger(MAX_RECENT_HARVEST_PAGES * STATEMENT_PAGE_SIZE)} receipt rows of the window; the account harvested at least that many blocks.`,
+        `recentHarvest reads only the newest ${formatInteger(MAX_RECENT_HARVEST_PAGES * STATEMENT_PAGE_SIZE)} statements of the window (blocks in which the account received a harvest fee, as harvester or as beneficiary), so its count is a lower bound.`,
       );
     }
     const failedSoFar = checks.some((c) => c.status === 'fail');
     const daysText = `${recentDays} day${recentDays === 1 ? '' : 's'}`;
+    const unrecognised = recent.unrecognisedBlocks;
+    const unrecognisedText = `${formatInteger(unrecognised)} block${unrecognised === 1 ? '' : 's'} in which the account received harvest fees with a share split that was not recognised`;
     if (recent.receipts > 0 && recent.lastHeight !== null && lastTime !== null) {
       checks.push(
         check({
           id: 'recent_harvest',
           status: 'ok',
-          detail: `Harvested ${formatInteger(recent.receipts)} block${recent.receipts === 1 ? '' : 's'} in the last ${daysText}; newest at height ${formatInteger(recent.lastHeight)} (${formatInstantText(lastTime)}).`,
-          hint: 'Harvest fee receipts addressed to this account as harvester (beneficiary receipts are not counted).',
+          detail: `Harvested ${formatInteger(recent.receipts)} block${recent.receipts === 1 ? '' : 's'} in the last ${daysText}; newest at height ${formatInteger(recent.lastHeight)} (${formatInstantText(lastTime)}).${unrecognised > 0 ? ` Not counted: ${unrecognisedText}.` : ''}`,
+          hint: 'Counts the harvest fee receipts addressed to this account as harvester: one per block it harvested. Receipts it got only as beneficiary, and blocks whose fee split was not recognised, are not counted.',
+        }),
+      );
+    } else if (unrecognised > 0) {
+      checks.push(
+        check({
+          id: 'recent_harvest',
+          status: 'unknown',
+          detail: `No block recognised as harvested by the account in the last ${daysText} (heights ${formatInteger(fromHeight)} to ${formatInteger(currentHeight)}), but there ${unrecognised === 1 ? 'is' : 'are'} ${unrecognisedText}.`,
+          hint: `The fee split of those blocks did not match harvestBeneficiaryPercentage (${properties.harvestBeneficiaryPercentage}%) and harvestNetworkPercentage (${properties.harvestNetworkPercentage}%), so it cannot be told whether the account harvested them or was only their beneficiary. symbol_harvesting_income lists these receipts as unknown.`,
         }),
       );
     } else if (failedSoFar) {
