@@ -37,7 +37,7 @@ import {
   formatInstantText,
   networkTimestampToDate,
 } from '../domain/time.js';
-import { AccountResolutionSchema, withResolutionPrefix } from './_accounts.js';
+import { ACCOUNT_ARG_FORMS, AccountResolutionSchema, withResolutionPrefix } from './_accounts.js';
 import { defineTool, formatInteger, nullable, ToolInputError } from './_shared.js';
 import { InstantSchema } from './_transactions.js';
 import { fetchAccount } from './symbol_account_get.js';
@@ -57,9 +57,7 @@ const inputSchema = z.object({
   account: z
     .string()
     .min(1)
-    .describe(
-      'Account whose harvest income to total: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Hex addresses (48 chars) are also accepted.',
-    ),
+    .describe(`Account whose harvest income to total: ${ACCOUNT_ARG_FORMS}`),
   fromDate: z
     .string()
     .optional()

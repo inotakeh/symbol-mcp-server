@@ -2,7 +2,8 @@
  * Keeps the user-facing documents in step with the code: every registered tool and every
  * environment variable is documented in both READMEs, server.json (the MCP Registry entry)
  * declares exactly the variables the server reads, its versions and those of package-lock.json
- * follow package.json, and the two READMEs keep the same section structure.
+ * follow package.json, the two READMEs have the same number of `## ` sections, and both have a
+ * heading on the Claude Desktop bundle (.mcpb).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

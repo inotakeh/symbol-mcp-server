@@ -274,7 +274,10 @@ export interface TestServerOptions {
 
 /**
  * One representative call per registered tool, in registration order, answered by the default
- * mainnet routes. server.test.ts (2025 era) and era_2026.test.ts (2026-07-28 era) both run it.
+ * mainnet routes. server.test.ts (2025 era) and era_2026.test.ts (2026-07-28 era) run it as a smoke
+ * test, and the cross-tool checks reuse it (untrusted_output.test.ts every call,
+ * invisible_characters.test.ts those of the tools that show untrusted text), so a new tool is
+ * covered as soon as it is added here.
  */
 export const SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
   ['symbol_network_info', {}],

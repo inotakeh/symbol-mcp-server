@@ -12,6 +12,7 @@ import { hexAddressToBase32 } from '../domain/address.js';
 import { formatAmount } from '../domain/amount.js';
 import { parseHeight } from '../domain/epoch.js';
 import {
+  ACCOUNT_ARG_FORMS,
   type AccountResolution,
   AccountResolutionSchema,
   resolveAccountInput,
@@ -36,12 +37,7 @@ export const ACCOUNT_TYPES: Record<number, string> = {
 };
 
 const inputSchema = z.object({
-  account: z
-    .string()
-    .min(1)
-    .describe(
-      'Account to look up: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Hex addresses (48 chars) are also accepted.',
-    ),
+  account: z.string().min(1).describe(`Account to look up: ${ACCOUNT_ARG_FORMS}`),
   format: z
     .enum(['concise', 'detailed'])
     .default('concise')

@@ -3,10 +3,11 @@
  * unit price the caller supplies.
  *
  * The server has no price source and never contacts one (DESIGN-BRIEF §2-7: traffic goes to
- * SYMBOL_NODE_URL only). The caller obtains the price elsewhere (a web search, another MCP server,
- * the user) and passes it in as a decimal string; this tool reads the balance from the node,
- * multiplies in BigInt (domain/price.ts) and echoes the price and its stated provenance so the
- * answer says where the number came from. Nothing here is an appraisal: no fees, spreads or tax.
+ * SYMBOL_NODE_URL and SYMBOL_REFERENCE_NODES only). The caller obtains the price elsewhere (a web
+ * search, another MCP server, the user) and passes it in as a decimal string; this tool reads the
+ * balance from the node, multiplies in BigInt (domain/price.ts) and echoes the price and its stated
+ * provenance so the answer says where the number came from. Nothing here is an appraisal: no fees,
+ * spreads or tax.
  */
 import * as z from 'zod/v4';
 import { hexAddressToBase32 } from '../domain/address.js';

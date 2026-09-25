@@ -10,8 +10,9 @@
  * No ISO 4217 table is kept here. A non-zero product that would round to 0 is not rounded either
  * (multiplyAndRound), so a small holding never shows as 0.
  *
- * The server never fetches or validates a price (DESIGN-BRIEF §2-7: no traffic beyond the node);
- * everything here is arithmetic on values the caller passed in.
+ * The server never fetches or validates a price (DESIGN-BRIEF §2-7: no traffic beyond
+ * SYMBOL_NODE_URL and SYMBOL_REFERENCE_NODES); everything here is arithmetic on values the caller
+ * passed in.
  */
 
 /** Longest fractional part accepted for a unit price (policy constant). */
