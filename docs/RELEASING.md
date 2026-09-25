@@ -21,7 +21,7 @@ agents never create tags, approve deployments or publish.
 | 1 | Release PR: `CHANGELOG.md` and `package.json` | agent or maintainer |
 | 2 | Same PR: `server.json` and `package-lock.json` | maintainer |
 | 3 | Merge when CI is green | maintainer |
-| 4 | Tag `vX.Y.Z` and push the tag | maintainer |
+| 4 | Run the live tests, then tag `vX.Y.Z` and push the tag | maintainer |
 | 5 | Approve the `npm-publish` environment | maintainer |
 | 6 | `publish` job: checks, then npm with provenance | release workflow |
 | 7 | `github-release` job: notes and assets (after 6, alongside 8) | release workflow |
@@ -68,10 +68,28 @@ dependency review, protected files, CodeQL).
 
 ### 4. Tag
 
+On the `main` you are about to tag, run the live integration tests against a real node first. They
+never run in CI, so nothing else notices when one breaks: one was broken in 0.9.0 and was found
+only afterwards (#61).
+
 ```sh
 git switch main
 git pull --ff-only
 git log -1 --format=%s     # chore: release X.Y.Z (#NN)
+npm ci --ignore-scripts
+SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<node-host>:3001 \
+  SYMBOL_INTEGRATION_ACCOUNT=<address of a voting account that harvests> \
+  SYMBOL_INTEGRATION_MULTISIG_ACCOUNT=<address of a multisig account> npm test
+```
+
+Use your own node, or one from https://nodewatch.symbol.tools/ (README, "Choosing a node");
+`SYMBOL_REFERENCE_NODES` may be added. Without the two account variables the tests that need them
+are skipped, so set them for a release; the voting account must have harvested in the last three
+days (the harvesting income test expects receipts). `SYMBOL_INTEGRATION=1` runs the unit and
+tool-layer tests as well, and all of them must pass. When one fails, fix it on `main` through a PR and start this step
+again. Then tag:
+
+```sh
 git tag -l vX.Y.Z          # must print nothing
 git tag vX.Y.Z
 git push origin vX.Y.Z
@@ -111,11 +129,12 @@ provenance attestation links the version to this commit and run.
 Runs once `publish` has succeeded, alongside `registry`:
 
 1. `node scripts/release-notes.mjs X.Y.Z > notes.md`: the changelog section as release notes.
-2. `bash scripts/release-assets.sh X.Y.Z assets`: waits until the registry shows the new version's
-   attestations (`scripts/wait-for-npm.sh`, up to `RELEASE_ASSETS_WAIT` seconds, default 300), then
-   saves the tarball exactly as npm serves it (`symbol-mcp-server-X.Y.Z.tgz`, checked against the
-   registry's `dist.integrity`) and npm's SLSA provenance bundle for it
-   (`symbol-mcp-server-X.Y.Z.tgz.sigstore.json`, whose subject is checked).
+2. `bash scripts/release-assets.sh X.Y.Z assets`, in two waits: it waits until the registry shows
+   the new version's attestations URL (`scripts/wait-for-npm.sh`) and saves the tarball exactly as
+   npm serves it (`symbol-mcp-server-X.Y.Z.tgz`, checked against the registry's `dist.integrity`),
+   then waits until npm serves the attestations themselves (`scripts/wait-for-attestations.sh`) and
+   saves npm's SLSA provenance bundle for the tarball (`symbol-mcp-server-X.Y.Z.tgz.sigstore.json`,
+   whose subject is checked). Each wait lasts up to `RELEASE_ASSETS_WAIT` seconds (default 300).
 3. `bash scripts/build-mcpb.sh X.Y.Z assets/symbol-mcp-server-X.Y.Z.tgz assets`: the Claude Desktop
    bundle, from that tarball and the production dependencies of this commit's lockfile.
 4. `actions/attest`: a GitHub build provenance attestation for the `.mcpb`.

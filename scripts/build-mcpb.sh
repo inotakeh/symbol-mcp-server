@@ -2,7 +2,9 @@
 # Builds the Claude Desktop bundle <outdir>/symbol-mcp-server-<version>.mcpb from the npm tarball
 # that release-assets.sh downloaded and checked:
 #
-#   scripts/build-mcpb.sh 0.7.1 assets/symbol-mcp-server-0.7.1.tgz assets
+#   scripts/build-mcpb.sh 0.9.1 assets/symbol-mcp-server-0.9.1.tgz assets
+#
+# Only releases from 0.8.0 on can be built: earlier release commits have no mcpb/ template.
 #
 # A .mcpb is a plain zip with manifest.json at its root (the optional signature block of
 # `mcpb sign` is not used). Layout:
@@ -17,7 +19,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: scripts/build-mcpb.sh <version> <tarball> <outdir>   (e.g. 0.7.1 assets/symbol-mcp-server-0.7.1.tgz assets)" >&2
+  echo "usage: scripts/build-mcpb.sh <version> <tarball> <outdir>   (e.g. 0.9.1 assets/symbol-mcp-server-0.9.1.tgz assets)" >&2
   exit 2
 }
 fail() {
