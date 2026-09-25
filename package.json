@@ -1,6 +1,6 @@
 {
   "name": "symbol-mcp-server",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Read-only MCP server exposing the Symbol blockchain REST API as task-level tools",
   "type": "module",
   "license": "MIT",

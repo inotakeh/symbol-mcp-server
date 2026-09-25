@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-25
+
 ### Changed
 
 - A 404 that means the node has no such route (catapult-rest's `"<path> does not exist"`) is now
@@ -531,7 +533,8 @@ Initial release candidate (0.1.0).
 - Every request has a timeout, a `User-Agent`, a 5 MB response cap and a concurrency limit of 4,
   and every response is schema-validated before use.
 
-[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.7.0...v0.7.1
