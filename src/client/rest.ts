@@ -6,7 +6,8 @@
  * the body is counted while it streams in), a concurrency cap, and schema validation of every
  * response body. The client only ever talks to the base URL it was constructed with: redirects are
  * never followed (a 3xx answer is an error), request paths are plain characters only, and a body
- * that is not read is discarded rather than left open.
+ * that is not read is discarded rather than left open. A 404 body is read (under the cap) only to
+ * tell a route the node does not serve (an error) from a resource it does not have (not_found).
  */
 import type * as z from 'zod/v4';
 
@@ -14,6 +15,7 @@ export type RestErrorKind =
   | 'timeout'
   | 'unreachable'
   | 'not_found'
+  | 'route_not_found'
   | 'http'
   | 'redirect'
   | 'invalid_response'
@@ -40,6 +42,29 @@ const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]
  */
 function isRedirect(response: Response): boolean {
   return REDIRECT_STATUSES.has(response.status) || response.type === 'opaqueredirect';
+}
+
+/**
+ * Whether a 404 body is restify's answer for a path no route matches, as catapult-rest sends it:
+ * `{"code":"ResourceNotFound","message":"/accounts/…/multisig does not exist"}`. A route that
+ * exists answers a missing resource with `no resource exists with id '…'` (or an empty body), which
+ * stays not_found. Only this exact shape counts, so an unknown body never turns into an error.
+ */
+export function isMissingRouteBody(text: string): boolean {
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (typeof json !== 'object' || json === null) return false;
+  const { code, message } = json as { code?: unknown; message?: unknown };
+  return (
+    code === 'ResourceNotFound' &&
+    typeof message === 'string' &&
+    message.startsWith('/') &&
+    message.endsWith(' does not exist')
+  );
 }
 
 /** Releases a body that will not be read, so the connection is not held until garbage collection. */
@@ -201,7 +226,17 @@ export class RestClient {
       }
       const accepted = options?.acceptStatuses?.includes(response.status) === true;
       if (response.status === 404 && !accepted) {
-        await discardBody(response);
+        // The body is read only to tell a missing route from a missing resource; it is never
+        // quoted. A route this client asks for that the node does not serve is a mistake here
+        // (or an incompatible node), not "no such resource", so it must not read as null.
+        if (await this.isMissingRoute(response, path)) {
+          throw new RestError(
+            'route_not_found',
+            `${this.host} does not serve ${path} (no such route)`,
+            path,
+            404,
+          );
+        }
         throw new RestError('not_found', `${path} was not found on ${this.host}`, path, 404);
       }
       if (!response.ok && !accepted) {
@@ -238,6 +273,25 @@ export class RestClient {
       return parsed.data;
     } finally {
       release();
+    }
+  }
+
+  /**
+   * Reads a 404 body (under the same size cap) and checks it for the missing-route shape. A body
+   * over the cap or declared over it is discarded and counts as an ordinary not_found, as before;
+   * a timeout or connection failure while reading is reported as such.
+   */
+  private async isMissingRoute(response: Response, path: string): Promise<boolean> {
+    const declared = Number(response.headers.get('content-length') ?? '0');
+    if (declared > this.maxBodyBytes) {
+      await discardBody(response);
+      return false;
+    }
+    try {
+      return isMissingRouteBody(await this.readBodyLimited(response, path));
+    } catch (err) {
+      if (err instanceof RestError && err.kind === 'too_large') return false;
+      throw err;
     }
   }
 

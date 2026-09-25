@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import * as z from 'zod/v4';
-import { RestClient, RestError } from '../../src/client/rest.js';
+import { isMissingRouteBody, RestClient, RestError } from '../../src/client/rest.js';
 import { jsonResponse } from '../tools/harness.js';
 
 const Schema = z.object({ ok: z.boolean() });
@@ -248,6 +248,75 @@ describe('RestClient', () => {
     ).toBe('not_found');
   });
 
+  describe('a 404 for a route the node does not serve', () => {
+    // The two 404 bodies catapult-rest sends (observed on mainnet; the address is synthetic).
+    const ADDRESS = 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY';
+    const routeMissing = {
+      code: 'ResourceNotFound',
+      message: `/accounts/${ADDRESS}/multisig does not exist`,
+    };
+    const resourceMissing = {
+      code: 'ResourceNotFound',
+      message: `no resource exists with id '${ADDRESS}'`,
+    };
+    const answering = (body: unknown) =>
+      client((async () => jsonResponse(body, 404)) as typeof fetch);
+
+    it('is a route_not_found error, also for getOrNull', async () => {
+      const err = await answering(routeMissing)
+        .get(`/accounts/${ADDRESS}/multisig`, Schema)
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(RestError);
+      expect((err as RestError).kind).toBe('route_not_found');
+      expect((err as RestError).status).toBe(404);
+      // The node's text is not quoted.
+      expect((err as RestError).message).not.toContain('does not exist');
+      await expect(
+        answering(routeMissing).getOrNull(`/accounts/${ADDRESS}/multisig`, Schema),
+      ).rejects.toMatchObject({ kind: 'route_not_found' });
+      expect(
+        await kindOf(answering(routeMissing).post('/transactionStatus', { hashes: [] }, Schema)),
+      ).toBe('route_not_found');
+    });
+
+    it('stays not_found (null for getOrNull) when the route exists but the resource does not', async () => {
+      expect(
+        await kindOf(answering(resourceMissing).get(`/account/${ADDRESS}/multisig`, Schema)),
+      ).toBe('not_found');
+      await expect(
+        answering(resourceMissing).getOrNull(`/account/${ADDRESS}/multisig`, Schema),
+      ).resolves.toBeNull();
+    });
+
+    it('counts only the exact restify shape as a missing route', async () => {
+      expect(isMissingRouteBody(JSON.stringify(routeMissing))).toBe(true);
+      for (const body of [
+        '',
+        'not json',
+        'null',
+        '"/x does not exist"',
+        JSON.stringify(resourceMissing),
+        JSON.stringify({ code: 'ResourceNotFound' }),
+        JSON.stringify({ code: 'NotFound', message: '/x does not exist' }),
+        JSON.stringify({ code: 'ResourceNotFound', message: 'x does not exist' }),
+        JSON.stringify({ code: 'ResourceNotFound', message: '/x does not exist.' }),
+        JSON.stringify({ code: 'ResourceNotFound', message: 42 }),
+      ]) {
+        expect(isMissingRouteBody(body), body).toBe(false);
+      }
+    });
+
+    it('reads a streaming 404 body only up to the size cap, then treats it as not_found', async () => {
+      const { stream, state } = trackedBody(1024, true);
+      const c = client((async () => new Response(stream, { status: 404 })) as typeof fetch, {
+        maxBodyBytes: 4096,
+      });
+      expect(await kindOf(c.get('/x', Schema))).toBe('not_found');
+      expect(state.cancelled).toBe(true);
+      expect(state.pulledBytes).toBeLessThanOrEqual(4096 + 1024);
+    });
+  });
+
   it('getOrNull maps 404 to null but rethrows other errors', async () => {
     await expect(
       client((async () => jsonResponse({}, 404)) as typeof fetch).getOrNull('/x', Schema),
@@ -303,8 +372,10 @@ describe('RestClient', () => {
   });
 
   it('discards the body of an answer it does not read, without reading any of it', async () => {
+    // A 404 body is read to tell a missing route from a missing resource, but not when its
+    // declared length is over the cap (see the next test for one that streams past it).
     const answers: ReadonlyArray<readonly [number, Record<string, string>]> = [
-      [404, {}],
+      [404, { 'content-length': '999999999' }],
       [500, {}],
       [200, { 'content-length': '999999999' }],
     ];

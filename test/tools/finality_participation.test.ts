@@ -16,6 +16,7 @@ import {
   jsonResponse,
   mainnetRoutes,
   type Routes,
+  resourceNotFound,
   startTestServer,
   TEST_NODE_HOST,
   type TestServer,
@@ -39,6 +40,13 @@ const PROOF_HEIGHT = 5_772_912;
 const PREVOTE_HEIGHT = 5_772_892;
 const SIGNATURES = 17;
 const PROOF_PATH = `/finalization/proof/epoch/${PROOF_EPOCH}`;
+
+/** Routes for epochs the node has no proof for (404 "no resource exists with id"). */
+function noProof(...epochs: number[]): Routes {
+  return Object.fromEntries(
+    epochs.map((e) => [`GET /finalization/proof/epoch/${e}`, resourceNotFound(String(e))]),
+  );
+}
 const SPLIT_EPOCH = 4027;
 const SPLIT_PREVOTE_HEIGHT = 5_796_428;
 const SPLIT_PROOF_HEIGHT = 5_796_448;
@@ -499,7 +507,8 @@ describe('symbol_finality_participation', () => {
   });
 
   it('marks epochs whose proof the node lacks as unavailable without failing', async () => {
-    server = await startTestServer();
+    // 4009 has no proof in the default routes either.
+    server = await startTestServer({ routes: { ...mainnetRoutes(), ...noProof(4009, 4008) } });
     const result = await server.callTool('symbol_finality_participation', {
       account: ADDRESS,
       epoch: PROOF_EPOCH,
@@ -534,7 +543,9 @@ describe('symbol_finality_participation', () => {
   });
 
   it('is an error with a hint when no requested epoch has a proof', async () => {
-    server = await startTestServer();
+    server = await startTestServer({
+      routes: { ...mainnetRoutes(), ...noProof(4000, 3999, 4020) },
+    });
     const old = await server.callTool('symbol_finality_participation', {
       account: ADDRESS,
       epoch: 4000,

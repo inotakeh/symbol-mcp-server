@@ -3,6 +3,7 @@ import {
   fixture,
   jsonResponse,
   mainnetRoutes,
+  resourceNotFound,
   startTestServer,
   TEST_NODE_HOST,
   TEST_NOW,
@@ -119,6 +120,9 @@ describe('symbol_mosaic_get', () => {
       routes: {
         ...mainnetRoutes(),
         'GET /namespaces/A95F1F8A96159516': fixture('mainnet/namespace-symbol.json'),
+        // An unknown hex id is looked up as a mosaic, then as a namespace id.
+        'GET /mosaics/0123456789ABCDEF': resourceNotFound('0123456789ABCDEF'),
+        'GET /namespaces/0123456789ABCDEF': resourceNotFound('0123456789ABCDEF'),
       },
     });
     const unknown = await server.callTool('symbol_mosaic_get', { mosaic: '0123456789ABCDEF' });

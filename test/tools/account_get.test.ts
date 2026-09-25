@@ -3,7 +3,9 @@ import { base32AddressToHex, publicKeyToAddress } from '../../src/domain/address
 import {
   fixture,
   H,
+  jsonResponse,
   mainnetRoutes,
+  resourceNotFound,
   startTestServer,
   TEST_NODE_HOST,
   type TestServer,
@@ -137,8 +139,13 @@ describe('symbol_account_get', () => {
 
   it('treats a 64-hex value as a public key only: no logging, no third-party requests, masked in errors', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    server = await startTestServer();
     const looksLikeSecret = 'DEADBEEF'.repeat(8); // 64 hex, unknown on the fake node -> 404
+    server = await startTestServer({
+      routes: {
+        ...mainnetRoutes(),
+        [`GET /accounts/${looksLikeSecret}`]: resourceNotFound(looksLikeSecret),
+      },
+    });
     const result = await server.callTool('symbol_account_get', { account: looksLikeSecret });
     expect(result.isError).toBe(true);
     expect(result.text).toMatch(/No account with public key DEADBEEF… exists on mainnet/);
@@ -214,14 +221,7 @@ describe('symbol_account_get', () => {
     server = await startTestServer({
       routes: {
         ...mainnetRoutes(),
-        [`GET /account/${ADDRESS}/multisig`]: () =>
-          new Response(
-            JSON.stringify({
-              code: 'ResourceNotFound',
-              message: `no resource exists with id '${ADDRESS}'`,
-            }),
-            { status: 404, headers: { 'content-type': 'application/json' } },
-          ),
+        [`GET /account/${ADDRESS}/multisig`]: resourceNotFound(ADDRESS),
       },
     });
     const result = await server.callTool('symbol_account_get', { account: ADDRESS });
@@ -229,6 +229,27 @@ describe('symbol_account_get', () => {
     expect(result.structuredContent?.multisig).toBeNull();
     expect(result.structuredContent?.summary).toMatch(/; not a multisig account\.$/m);
     expect(server.requests.some((u) => u.pathname === `/account/${ADDRESS}/multisig`)).toBe(true);
+  });
+
+  // The 0.9.0 bug: a node without the route answered 404 and the tool said "not a multisig
+  // account". A missing route is now an error the caller sees.
+  it('is an error, not "not a multisig account", when the node has no multisig route', async () => {
+    server = await startTestServer({
+      routes: {
+        ...mainnetRoutes(),
+        [`GET /account/${ADDRESS}/multisig`]: () =>
+          jsonResponse(
+            { code: 'ResourceNotFound', message: `/account/${ADDRESS}/multisig does not exist` },
+            404,
+          ),
+      },
+    });
+    const result = await server.callTool('symbol_account_get', { account: ADDRESS });
+    expect(result.isError).toBe(true);
+    expect(result.text).toBe(
+      `Node ${TEST_NODE_HOST} does not provide the endpoint /account/${ADDRESS}/multisig (no such route), so this answer could not be completed. This is likely a bug in symbol-mcp-server, or the node runs a catapult-rest version without this endpoint; try another node, and report it with the tool name if it persists.`,
+    );
+    expect(result.text).not.toMatch(/not a multisig account|does not exist/);
   });
 
   it('truncates mosaics in concise mode and returns all in detailed mode', async () => {
@@ -239,8 +260,12 @@ describe('symbol_account_get', () => {
       id: `${i.toString(16).padStart(2, '0').toUpperCase()}ED913FA20223F8`.slice(-16),
       amount: String(1000 + i),
     }));
+    // The node knows none of these mosaics (their divisibility stays null).
+    const unknownMosaics = Object.fromEntries(
+      account.account.mosaics.map((m) => [`GET /mosaics/${m.id}`, resourceNotFound(m.id)]),
+    );
     server = await startTestServer({
-      routes: { ...mainnetRoutes(), [`GET /accounts/${ADDRESS}`]: account },
+      routes: { ...mainnetRoutes(), ...unknownMosaics, [`GET /accounts/${ADDRESS}`]: account },
     });
     const concise = await server.callTool('symbol_account_get', { account: ADDRESS });
     expect(concise.structuredContent?.truncated).toBe(true);

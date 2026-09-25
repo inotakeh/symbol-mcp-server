@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { fixture, mainnetRoutes, startTestServer, TEST_NOW, type TestServer } from './harness.js';
+import {
+  fixture,
+  mainnetRoutes,
+  resourceNotFound,
+  startTestServer,
+  TEST_NOW,
+  type TestServer,
+} from './harness.js';
 
 let server: TestServer | undefined;
 afterEach(async () => {
@@ -119,10 +126,11 @@ describe('symbol_voting_key_status', () => {
   });
 
   it('returns a hinted error for unknown accounts', async () => {
-    server = await startTestServer();
-    const result = await server.callTool('symbol_voting_key_status', {
-      account: 'TATNE7Q5BITMUTRRN6IB4I7FLSDRDWZA37JGO5Q',
+    const unknown = 'TATNE7Q5BITMUTRRN6IB4I7FLSDRDWZA37JGO5Q';
+    server = await startTestServer({
+      routes: { ...mainnetRoutes(), [`GET /accounts/${unknown}`]: resourceNotFound(unknown) },
     });
+    const result = await server.callTool('symbol_voting_key_status', { account: unknown });
     expect(result.isError).toBe(true);
     expect(result.text).toMatch(
       /No account with address TATNE7Q5BITMUTRRN6IB4I7FLSDRDWZA37JGO5Q exists on mainnet/,

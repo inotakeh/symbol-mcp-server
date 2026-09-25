@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { hexAddressToBase32 } from '../../src/domain/address.js';
+import { namespaceNameToHexId } from '../../src/domain/namespace.js';
 import {
   ALIAS_NAMESPACE_ID,
   ALIAS_NAMESPACE_NAME,
   fixture,
   mainnetRoutes,
   type Routes,
+  resourceNotFound,
   startTestServer,
   TEST_NODE_HOST,
   type TestServer,
@@ -150,7 +153,10 @@ describe('account arguments given as a namespace name', () => {
   });
 
   it('explains a namespace that does not exist', async () => {
-    server = await startTestServer();
+    const id = namespaceNameToHexId('no-such-namespace');
+    server = await startTestServer({
+      routes: { ...mainnetRoutes(), [`GET /namespaces/${id}`]: resourceNotFound(id) },
+    });
     const result = await server.callTool('symbol_account_get', { account: 'no-such-namespace' });
     expect(result.isError).toBe(true);
     expect(result.text).toMatch(/Namespace "no-such-namespace" \([0-9A-F]{16}\) does not exist/);
@@ -171,14 +177,16 @@ describe('account arguments given as a namespace name', () => {
   });
 
   it('explains an alias that points at an address without an account', async () => {
+    // Alias to a different address that has no account: the account lookup answers 404.
+    const aliased = '68258605CB5ABC592FE691190202CDFD6DDEE659A6BB30B8';
+    const aliasedBase32 = hexAddressToBase32(aliased);
     server = await startTestServer({
-      routes: namespaceVariant((ns) => {
-        // Alias to a different (unrouted) address: the account lookup answers 404.
-        ns.namespace.alias = {
-          type: 2,
-          address: '68258605CB5ABC592FE691190202CDFD6DDEE659A6BB30B8',
-        };
-      }),
+      routes: {
+        ...namespaceVariant((ns) => {
+          ns.namespace.alias = { type: 2, address: aliased };
+        }),
+        [`GET /accounts/${aliasedBase32}`]: resourceNotFound(aliasedBase32),
+      },
     });
     const result = await server.callTool('symbol_account_get', { account: ALIAS_NAMESPACE_NAME });
     expect(result.isError).toBe(true);

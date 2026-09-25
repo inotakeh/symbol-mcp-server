@@ -4,6 +4,7 @@ import {
   fixture,
   jsonResponse,
   mainnetRoutes,
+  resourceNotFound,
   startTestServer,
   TEST_NODE_HOST,
   type TestServer,
@@ -74,6 +75,8 @@ describe('symbol_transaction_get', () => {
     server = await startTestServer({
       routes: {
         ...mainnetRoutes(),
+        [`GET /transactions/confirmed/${missing}`]: resourceNotFound(missing),
+        [`GET /transactions/unconfirmed/${missing}`]: resourceNotFound(missing),
         [`GET /transactions/partial/${missing}`]: () =>
           jsonResponse(notFound.body, notFound.status),
       },
