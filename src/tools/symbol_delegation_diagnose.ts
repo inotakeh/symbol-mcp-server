@@ -205,8 +205,10 @@ interface RecentHarvest {
  * Counts the blocks the account harvested in the window: the HarvestFee receipts of the network
  * currency addressed to it that the share pattern marks as the harvester's, one per block
  * (classified and counted by aggregateHarvestIncome, as symbol_harvesting_income does).
- * Beneficiary receipts are left out: they prove that someone else harvested with this account as
- * beneficiary. Blocks whose split was not recognised are counted apart, never as harvested.
+ * Beneficiary receipts are left out: they do not show that the account harvested (they come from
+ * blocks others harvested or, when the account is its own node's beneficiary, repeat a block its
+ * harvester receipt already counts). Blocks whose split was not recognised are counted apart,
+ * never as harvested.
  */
 async function countRecentHarvests(
   ctx: AppContext,
