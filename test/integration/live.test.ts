@@ -166,7 +166,14 @@ describe.skipIf(!enabled)('live node', () => {
   });
 
   it('symbol_namespace_get and symbol_mosaic_get resolve the currency alias', async () => {
-    const { currency } = await ctx.getNetworkData();
+    // Take the alias from a tool's output, as a client would. The value in ctx.getNetworkData()
+    // is the internal cleaned-text object ({ text, removed, key }), not a string.
+    const info = await call('symbol_network_info');
+    const currency = info.currency as {
+      mosaicId: string;
+      alias: string | null;
+      divisibility: number;
+    };
     if (!currency.alias) return; // network without a currency alias: nothing to resolve
     const ns = await call('symbol_namespace_get', { namespace: currency.alias });
     expect((ns.alias as { type: string; mosaicId: string }).mosaicId).toBe(currency.mosaicId);
