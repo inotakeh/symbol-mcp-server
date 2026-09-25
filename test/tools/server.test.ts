@@ -4,6 +4,8 @@ import { TOOLS } from '../../src/server.js';
 import { TOOL_ANNOTATIONS } from '../../src/tools/_shared.js';
 import {
   EXTRA_SMOKE_CALLS,
+  fixture,
+  mainnetRoutes,
   SMOKE_CALLS,
   startTestServer,
   TEST_NODE_HOST,
@@ -138,7 +140,15 @@ describe('outbound requests', () => {
   });
 
   it('only ever hit the SYMBOL_NODE_URL host, even with reference nodes configured', async () => {
+    // symbol_time_convert {epoch: 4004} reads the epoch's first block; serve it (block fixture
+    // shape, as in time_convert.test.ts) so the call runs to the end instead of stopping there.
+    const epochStartBlock = fixture<{ block: Record<string, unknown> }>(
+      'mainnet/block-5763675.json',
+    );
+    epochStartBlock.block.height = '5762881';
+    epochStartBlock.block.timestamp = '173132000000';
     server = await startTestServer({
+      routes: { ...mainnetRoutes(), 'GET /blocks/5762881': epochStartBlock },
       env: {
         SYMBOL_REFERENCE_NODES: 'https://reference-a.test:3001,https://reference-b.test:3001',
       },
@@ -153,7 +163,7 @@ describe('outbound requests', () => {
     await server.callTool('symbol_namespace_get', { namespace: 'symbol' });
     await server.callTool('symbol_fee_estimate', { transactionSizeBytes: 176 });
     await server.callTool('symbol_address_parse', { value: ACCOUNT });
-    await server.callTool('symbol_time_convert', { epoch: 4004 });
+    expect((await server.callTool('symbol_time_convert', { epoch: 4004 })).isError).toBe(false);
     await server.callTool('symbol_harvesting_status', { account: ACCOUNT });
     await server.callTool('symbol_harvesting_income', {
       account: ACCOUNT,
