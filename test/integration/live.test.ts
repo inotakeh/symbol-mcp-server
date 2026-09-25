@@ -28,6 +28,17 @@ const INTEGRATION_ACCOUNT = process.env.SYMBOL_INTEGRATION_ACCOUNT?.trim() || un
 const MULTISIG_ACCOUNT = process.env.SYMBOL_INTEGRATION_MULTISIG_ACCOUNT?.trim() || undefined;
 
 type Structured = Record<string, unknown>;
+/**
+ * What a tool argument can be. Narrower than unknown on purpose: an internal value (such as the
+ * cleaned-text object of ctx.getNetworkData(), passed by mistake before #61) fails typecheck.
+ */
+type ToolArgument = string | number | boolean | readonly string[];
+
+/** An optional environment value inside a test that is skipped unless it is set. */
+function required(value: string | undefined): string {
+  if (value === undefined) throw new Error('test ran without the environment value it needs');
+  return value;
+}
 interface MultisigOutput {
   minApproval: number;
   cosignatoryAddresses: string[];
@@ -39,7 +50,7 @@ describe.skipIf(!enabled)('live node', () => {
   let client: Client;
   let handler: ReturnType<typeof createMcpHandler>;
 
-  const call = async (name: string, args: Record<string, unknown> = {}) => {
+  const call = async (name: string, args: Record<string, ToolArgument> = {}) => {
     const result = await client.callTool({ name, arguments: args });
     expect(
       result.isError,
@@ -107,7 +118,9 @@ describe.skipIf(!enabled)('live node', () => {
   it.skipIf(!INTEGRATION_ACCOUNT)(
     'symbol_voting_key_status lists the voting keys of SYMBOL_INTEGRATION_ACCOUNT',
     async () => {
-      const voting = await call('symbol_voting_key_status', { account: INTEGRATION_ACCOUNT });
+      const voting = await call('symbol_voting_key_status', {
+        account: required(INTEGRATION_ACCOUNT),
+      });
       expect((voting.votingKeys as unknown[]).length).toBeGreaterThanOrEqual(1);
     },
   );
@@ -115,7 +128,7 @@ describe.skipIf(!enabled)('live node', () => {
   it.skipIf(!MULTISIG_ACCOUNT)(
     'symbol_account_get reports SYMBOL_INTEGRATION_MULTISIG_ACCOUNT as a multisig account and its first cosignatory as a cosignatory',
     async () => {
-      const result = await call('symbol_account_get', { account: MULTISIG_ACCOUNT });
+      const result = await call('symbol_account_get', { account: required(MULTISIG_ACCOUNT) });
       const multisig = result.multisig as MultisigOutput | null;
       expect(multisig, 'multisig entry of SYMBOL_INTEGRATION_MULTISIG_ACCOUNT').not.toBeNull();
       expect(multisig?.minApproval).toBeGreaterThanOrEqual(1);
@@ -133,7 +146,9 @@ describe.skipIf(!enabled)('live node', () => {
   it.skipIf(!INTEGRATION_ACCOUNT)(
     'symbol_finality_participation judges the latest finalized epoch for SYMBOL_INTEGRATION_ACCOUNT',
     async () => {
-      const result = await call('symbol_finality_participation', { account: INTEGRATION_ACCOUNT });
+      const result = await call('symbol_finality_participation', {
+        account: required(INTEGRATION_ACCOUNT),
+      });
       const epochs = result.epochs as Array<{ epoch: number; status: string }>;
       expect(epochs).toHaveLength(1);
       expect(epochs[0]?.epoch).toBe(
@@ -224,7 +239,7 @@ describe.skipIf(!enabled)('live node', () => {
       const today = new Date();
       const isoDay = (d: Date) => d.toISOString().slice(0, 10);
       const income = await call('symbol_harvesting_income', {
-        account: INTEGRATION_ACCOUNT,
+        account: required(INTEGRATION_ACCOUNT),
         fromDate: isoDay(new Date(today.getTime() - 2 * 86_400_000)),
         toDate: isoDay(today),
       });
