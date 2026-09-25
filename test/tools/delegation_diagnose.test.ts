@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
+import { base32AddressToHex, publicKeyToAddress } from '../../src/domain/address.js';
 import { PERSISTENT_DELEGATION_MARKER } from '../../src/domain/message.js';
 import { delegationDiagnoseTool } from '../../src/tools/symbol_delegation_diagnose.js';
 import {
@@ -23,6 +24,7 @@ const PUBLIC_KEY = 'CE1992333C60AFEABDB289A14CC1A593FB797339C6D93DEEDB97052AED51
 const LINKED = '54E48E0C3625F1AC6DE5A8B2CD495D1DA3140745FD28145C9BCDE4FDA16F992B';
 const NODE_KEY = 'CEF91B106670BC3FDD3614D8B9E816DAA3286817F79A99F902BDC9CD73EF3568';
 const XYM = '6BED913FA20223F8';
+const MAIN_HEX = '68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53';
 
 type Check = { id: string; status: string; detail: string; hint: string | null };
 type Output = {
@@ -314,6 +316,137 @@ describe('symbol_delegation_diagnose', () => {
     const statements = server.requests.find((u) => u.pathname === '/statements/transaction');
     expect(statements?.searchParams.get('order')).toBe('desc');
     expect(statements?.searchParams.get('toHeight')).toBe('5763675');
+  });
+
+  describe('recent_harvest counts the blocks the account harvested', () => {
+    // Shares on mainnet: harvester 70 %, beneficiary 25 %, network 5 % of 73,210,170 (the fee of
+    // statement-harvest-one-block.json, where the main account is both harvester and beneficiary).
+    const HARVESTER = '51247120';
+    const BENEFICIARY = '18302542';
+    const NETWORK = '3660508';
+    const other = base32AddressToHex(publicKeyToAddress(H('fixture:harvest-peer-1'), 104));
+    const sink = base32AddressToHex(publicKeyToAddress(H('fixture:harvest-peer-2'), 104));
+
+    function statement(height: number, receipts: Array<[string, string]>) {
+      return {
+        statement: {
+          height: String(height),
+          source: { primaryId: 0, secondaryId: 0 },
+          receipts: receipts.map(([targetAddress, amount]) => ({
+            version: 1,
+            type: 8515,
+            targetAddress,
+            mosaicId: XYM,
+            amount,
+          })),
+        },
+        id: H(`fixture:doc-id-diagnose-statement-${height}`).slice(0, 24),
+        meta: { timestamp: String(173_192_454_149 + (height - 5_764_879) * 30_000) },
+      };
+    }
+    /** A block the account harvested while also being its node's beneficiary: 2 receipts. */
+    const ownBlock = (height: number) =>
+      statement(height, [
+        [MAIN_HEX, HARVESTER],
+        [sink, NETWORK],
+        [MAIN_HEX, BENEFICIARY],
+      ]);
+    /** A delegator's block that paid the account only the beneficiary share. */
+    const beneficiaryOnlyBlock = (height: number) =>
+      statement(height, [
+        [other, HARVESTER],
+        [MAIN_HEX, BENEFICIARY],
+        [sink, NETWORK],
+      ]);
+    /** Both shares to the account, but split 60 / 35 / 5: matches no share pattern. */
+    const unrecognisedBlock = (height: number) =>
+      statement(height, [
+        [MAIN_HEX, '43926102'],
+        [MAIN_HEX, '25623560'],
+        [sink, NETWORK],
+      ]);
+    const page = (...data: unknown[]) => ({ data, pagination: { pageNumber: 1, pageSize: 100 } });
+
+    async function diagnose(data: unknown[]): Promise<Output> {
+      server = await startTestServer({
+        routes: routes({ 'GET /statements/transaction': page(...data) }),
+      });
+      const result = await server.callTool('symbol_delegation_diagnose', {
+        account: ADDRESS,
+        format: 'detailed',
+      });
+      expect(result.isError).toBe(false);
+      const out = result.structuredContent as unknown as Output;
+      expect(delegationDiagnoseTool.outputSchema.safeParse(out).success).toBe(true);
+      return out;
+    }
+    const recentCheck = (out: Output) => out.checks.find((c) => c.id === 'recent_harvest');
+
+    it('counts a block the account harvested as its own beneficiary once', async () => {
+      const out = await diagnose([ownBlock(5_763_600), ownBlock(5_763_500)]);
+      expect(out.recentHarvest).toMatchObject({ receipts: 2, lastHeight: 5_763_600 });
+      expect(recentCheck(out)).toMatchObject({
+        status: 'ok',
+        detail: expect.stringMatching(
+          /^Harvested 2 blocks in the last 7 days; newest at height 5,763,600 \(.*\)\.$/,
+        ),
+        hint: expect.stringMatching(/one per block it harvested/),
+      });
+      expect(out.summary).toMatch(/^- harvested 2 blocks in the last 7 days;/m);
+    });
+
+    it('does not count a block that paid the account only the beneficiary share', async () => {
+      const out = await diagnose([beneficiaryOnlyBlock(5_763_600)]);
+      expect(out.recentHarvest).toMatchObject({ receipts: 0, lastHeight: null, lastTime: null });
+      expect(recentCheck(out)?.status).toBe('warn');
+      expect(out.verdict).toBe('active');
+    });
+
+    it('leaves unrecognised blocks out of the count and names them in the detail', async () => {
+      // The unrecognised block is the newest; lastHeight stays at the harvested one.
+      const out = await diagnose([
+        unrecognisedBlock(5_763_650),
+        beneficiaryOnlyBlock(5_763_620),
+        ownBlock(5_763_600),
+      ]);
+      expect(out.recentHarvest).toMatchObject({ receipts: 1, lastHeight: 5_763_600 });
+      expect(recentCheck(out)).toMatchObject({
+        status: 'ok',
+        detail: expect.stringMatching(
+          /^Harvested 1 block in the last 7 days; newest at height 5,763,600 \(.*\)\. Not counted: 1 block in which the account received harvest fees with a share split that was not recognised\.$/,
+        ),
+      });
+      expect(out.verdict).toBe('active');
+    });
+
+    it('answers unknown, not ok, when the only blocks were not recognised', async () => {
+      const out = await diagnose([unrecognisedBlock(5_763_650), unrecognisedBlock(5_763_640)]);
+      expect(out.recentHarvest).toMatchObject({ receipts: 0, lastHeight: null, lastTime: null });
+      expect(recentCheck(out)).toMatchObject({
+        status: 'unknown',
+        detail: expect.stringMatching(
+          /^No block recognised as harvested by the account in the last 7 days \(heights .* to 5,763,675\), but there are 2 blocks in which the account received harvest fees with a share split that was not recognised\.$/,
+        ),
+        hint: expect.stringMatching(
+          /harvestBeneficiaryPercentage \(25%\) and harvestNetworkPercentage \(5%\).*symbol_harvesting_income lists these receipts as unknown/,
+        ),
+      });
+      // Nothing else fails, so the unknown check makes the verdict cannot_verify.
+      expect(out.checks.filter((c) => c.status === 'fail')).toEqual([]);
+      expect(out.verdict).toBe('cannot_verify');
+      expect(out.summary.split('\n')[0]).toBe(`delegated harvesting: cannot verify (${ADDRESS}).`);
+      expect(out.summary).toMatch(/^- could not verify: recent_harvest\.$/m);
+      expect(out.summary).not.toMatch(/- harvested/);
+    });
+
+    it('describes a truncated window as a lower bound over statements', async () => {
+      const full = Array.from({ length: 100 }, (_, i) => ownBlock(5_763_600 - i));
+      const out = await diagnose(full);
+      // The fake node answers every page with the same 100 rows, so the 20-page limit is reached.
+      expect(out.notes).toContain(
+        'recentHarvest reads only the newest 2,000 statements of the window (blocks in which the account received a harvest fee, as harvester or as beneficiary), so its count is a lower bound.',
+      );
+    });
   });
 
   it('treats the unknown node key case as unknown when /node/info has no nodePublicKey', async () => {
