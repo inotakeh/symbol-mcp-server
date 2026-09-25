@@ -1,7 +1,7 @@
 /**
  * Minimal fetch wrapper for catapult-rest.
  *
- * Hygiene (DESIGN-BRIEF §6 "HTTP衛生"): per-request timeout via AbortSignal.timeout, a
+ * Hygiene (DESIGN-BRIEF §6 "HTTP hygiene"): per-request timeout via AbortSignal.timeout, a
  * User-Agent header, a response size cap (a declared Content-Length over it is refused unread, and
  * the body is counted while it streams in), a concurrency cap, and schema validation of every
  * response body. The client only ever talks to the base URL it was constructed with: redirects are

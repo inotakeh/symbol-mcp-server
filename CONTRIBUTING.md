@@ -76,14 +76,14 @@ Tools answer a question a person asks; they do not mirror one REST endpoint each
    - `README.md` **and** `README.ja.md`: the tool table and an example question;
    - `evals/cases.json`: at least one case (the evals test fails if a registered tool has none);
    - `docs/DESIGN-BRIEF.md` §5: the specification (§5.1 for tools for account holders, §5.2 for
-     tools for node operators), the lists in §5 "共通規約" that name every tool (the tools that
-     show untrusted text, the tools that take an account, the pairs that are easy to confuse), and
-     the tool count in §2-2;
+     tools for node operators), the lists in §5 "Common conventions" that name every tool (the
+     tools that show untrusted text, the tools that take an account, the pairs that are easy to
+     confuse), and the tool count in §2-2;
    - `CHANGELOG.md` under `[Unreleased]`.
 
 ## Design rules
 
-The full design is in [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md) (Japanese). In short:
+The full design is in [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md). In short:
 
 - **Read-only.** No argument accepts a private key, mnemonic or token; nothing is signed or
   announced. The only disk write is `symbol_harvester_watch`'s snapshot under `SYMBOL_STATE_DIR`.
