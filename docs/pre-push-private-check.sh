@@ -12,7 +12,12 @@ list="$(git rev-parse --show-toplevel)/.claude/private-identifiers.txt"
 patterns=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$list" |
   awk 'length($0) >= 6 && substr($0, 1, 1) != "#"')
 [[ -n "$patterns" ]] || exit 0
-pfile=$(mktemp); printf '%s\n' "$patterns" > "$pfile"
+# Without the pattern file every grep below fails and the push would pass unchecked: refuse instead.
+if ! pfile=$(mktemp) || ! printf '%s\n' "$patterns" > "$pfile"; then
+  [[ -n "${pfile:-}" ]] && rm -f "$pfile"
+  echo "pre-push: could not write the identifiers to a temporary file; refusing to push."
+  exit 1
+fi
 status=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   [[ "$local_sha" =~ ^0+$ ]] && continue
