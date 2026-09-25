@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- README (English and Japanese) corrected to match the server: the `summary` answers in its first
+  line and may add detail lines, and `symbol_harvesting_income` with `output: "csv"` puts CSV in the
+  text; account arguments also take a 48-character hex address; `http://` is accepted for `[::1]`
+  as well; the binary has the `check` subcommand besides `--help` and `--version`; the
+  `symbol_harvesting_income` row lists `output`; the `monthly_health_check` row follows the prompt;
+  the limit of 4 concurrent requests is per node; from 0.8.0 on a GitHub Release carries three
+  files, the `.mcpb` included; and a release waits for the maintainer's approval before its checks
+  and tests run.
+
 ## [0.9.1] - 2026-09-25
 
 ### Changed
