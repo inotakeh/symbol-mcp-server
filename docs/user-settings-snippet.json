@@ -1,5 +1,5 @@
 {
-  "$comment": "Merge into ~/.claude/settings.json (your user settings). Some keys are honored only at user/managed level, not in the repo's .claude/settings.json. The watch-hooks entries run a copy of .claude/hooks/watch-hooks.py installed outside the repository (GUARDRAILS.md, 'The watcher hook'); replace /Users/YOUR_NAME with your home directory (write the absolute path, not ~).",
+  "$comment": "Merge into ~/.claude/settings.json (your user settings). Some keys are honored only at user/managed level, not in the repo's .claude/settings.json. The watch-hooks entries run a copy of .claude/hooks/watch-hooks.py installed outside the repository (GUARDRAILS.md, section 2.4 '見張りのフック（watch-hooks）'); replace /Users/YOUR_NAME with your home directory (write the absolute path, not ~).",
 
   "permissions": {
     "disableBypassPermissionsMode": "disable"
