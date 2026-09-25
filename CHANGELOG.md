@@ -17,6 +17,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the limit of 4 concurrent requests is per node; from 0.8.0 on a GitHub Release carries three
   files, the `.mcpb` included; and a release waits for the maintainer's approval before its checks
   and tests run.
+- README (Japanese) corrected to match the server: the `symbol_holdings_value` row said that
+  `priceSource` and `priceAsOf` are echoed as given; they are cleaned like chain strings before
+  they are echoed, and `priceAsOf` is only checked to be a date.
 
 ## [0.9.1] - 2026-09-25
 
