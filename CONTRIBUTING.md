@@ -75,7 +75,10 @@ Tools answer a question a person asks; they do not mirror one REST endpoint each
 4. Update the documentation:
    - `README.md` **and** `README.ja.md`: the tool table and an example question;
    - `evals/cases.json`: at least one case (the evals test fails if a registered tool has none);
-   - `docs/DESIGN-BRIEF.md` §5.2: the specification;
+   - `docs/DESIGN-BRIEF.md` §5: the specification (§5.1 for tools for account holders, §5.2 for
+     tools for node operators), the lists in §5 "共通規約" that name every tool (the tools that
+     show untrusted text, the tools that take an account, the pairs that are easy to confuse), and
+     the tool count in §2-2;
    - `CHANGELOG.md` under `[Unreleased]`.
 
 ## Design rules
@@ -110,12 +113,13 @@ The full design is in [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md) (Japanese).
 ## Building the Claude Desktop bundle (.mcpb)
 
 The release workflow builds `symbol-mcp-server-<version>.mcpb` from the published npm tarball; you
-normally do not need to. To build one locally, check out the commit of that release (the lockfile
-must match the version) and run:
+normally do not need to. To build one locally for a release of 0.8.0 or later (earlier releases
+have no bundle), check out the commit of that release (the lockfile must match the version) and
+run, for example for 0.9.1:
 
 ```sh
-bash scripts/release-assets.sh 0.7.1 /tmp/a          # tarball as npm serves it, checked
-bash scripts/build-mcpb.sh 0.7.1 /tmp/a/symbol-mcp-server-0.7.1.tgz /tmp/a
+bash scripts/release-assets.sh 0.9.1 /tmp/a          # tarball as npm serves it, checked
+bash scripts/build-mcpb.sh 0.9.1 /tmp/a/symbol-mcp-server-0.9.1.tgz /tmp/a
 ```
 
 The bundle is a plain zip (`manifest.json`, `icon.png`, `server/` with `dist` and the production
@@ -136,5 +140,9 @@ This repository is also developed with AI coding agents. Human contributors can 
   [`GUARDRAILS.md`](GUARDRAILS.md) (Japanese) describes the model in detail. The hooks are
   Python 3 scripts, so running Claude Code in this repository needs `python3` on `PATH`. Building,
   testing and sending a pull request by hand need none of these files.
-- These files, `.github/workflows/`, `SECURITY.md`, `server.json`, `LICENSE` and the lockfile are
-  edited by maintainers only.
+- These files, everything under `.github/` (the workflows, `CODEOWNERS`, `dependabot.yml`, the
+  issue forms and the pull request template), `SECURITY.md`, `LICENSE`, `server.json`,
+  `mcpb/manifest.json`, `.npmrc` and the lockfile are edited by maintainers only. CI's
+  `protected-files` check fails a pull request that changes one of them unless the maintainer (or
+  Dependabot) opened it; the lockfile is not on its list, and it changes only through
+  `npm install` / `npm ci`.
