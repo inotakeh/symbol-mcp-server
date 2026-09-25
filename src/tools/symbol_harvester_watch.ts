@@ -160,7 +160,6 @@ export const harvesterWatchTool = defineTool({
       baselineReason = `Could not read ${target.file} (${read.reason}); treating this call as the baseline.`;
     } else if (state && state.nodePublicKey !== nodePublicKey) {
       baselineReason = `${target.file} belongs to another node key; treating this call as the baseline.`;
-      state = null;
     }
     if (baselineReason) {
       state = null;

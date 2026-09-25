@@ -1,6 +1,7 @@
 /**
  * Per-process application context shared by all tools: configuration, the REST client, the
- * verified network, and the one thing we cache (network properties + currency metadata).
+ * verified network, and what we cache: network properties + currency metadata (once per
+ * process) and namespace lookups for account arguments (one block time; see getNamespaceInfo).
  */
 import { RestClient } from './client/rest.js';
 import {

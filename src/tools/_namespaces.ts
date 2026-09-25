@@ -1,5 +1,6 @@
 /**
- * Shared namespace/mosaic lookup helpers for symbol_mosaic_get and symbol_namespace_get.
+ * Namespace lookup helpers shared by symbol_namespace_get and the mosaic argument resolution in
+ * _mosaics.ts (symbol_mosaic_get, symbol_account_rank, symbol_holdings_value).
  */
 import { type NamespaceInfo, NamespaceInfoSchema } from '../client/schemas.js';
 import type { AppContext } from '../context.js';

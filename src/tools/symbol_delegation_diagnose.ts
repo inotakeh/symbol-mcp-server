@@ -30,7 +30,12 @@ import { receiptTypeCode } from '../domain/receipttype.js';
 import type { CleanedText } from '../domain/sanitize.js';
 import { formatInstantText, type Instant, networkTimestampToDate } from '../domain/time.js';
 import { parseTransactionType } from '../domain/txtype.js';
-import { AccountResolutionSchema, resolveAccountInput, withResolutionPrefix } from './_accounts.js';
+import {
+  ACCOUNT_ARG_FORMS,
+  AccountResolutionSchema,
+  resolveAccountInput,
+  withResolutionPrefix,
+} from './_accounts.js';
 import { CheckSchema, check, stripOkHints, unknownChecks } from './_checks.js';
 import { defineTool, formatInteger, maskIdentifier, nullable } from './_shared.js';
 import { InstantSchema } from './_transactions.js';
@@ -55,7 +60,7 @@ const inputSchema = z.object({
     .string()
     .min(1)
     .describe(
-      'Account whose delegated harvesting to diagnose: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Hex addresses (48 chars) are also accepted. Pass the main (balance-holding) account, not the remote key.',
+      `Account whose delegated harvesting to diagnose: ${ACCOUNT_ARG_FORMS} Pass the main (balance-holding) account, not the remote key.`,
     ),
   recentDays: z
     .number()

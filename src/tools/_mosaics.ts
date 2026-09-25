@@ -1,6 +1,7 @@
 /**
- * Mosaic argument resolution shared by symbol_mosaic_get and symbol_account_rank: a 16-hex mosaic
- * id, a 16-hex namespace id that aliases a mosaic, or an alias name such as symbol.xym.
+ * Mosaic argument resolution shared by symbol_mosaic_get, symbol_account_rank and
+ * symbol_holdings_value: a 16-hex mosaic id, a 16-hex namespace id that aliases a mosaic, or an
+ * alias name such as symbol.xym.
  */
 import { type MosaicInfo, MosaicInfoSchema, NamespaceInfoSchema } from '../client/schemas.js';
 import type { AppContext } from '../context.js';

@@ -11,8 +11,9 @@
 # Checks, in order: the tarball's sha512 equals the registry's dist.integrity, and the bundle's
 # provenance subject is this package version with the tarball's sha512. Any mismatch aborts.
 #
-# Needs bash, node (>= 22, for fetch) and npm; no jq, curl or GNU coreutils, so it also runs on
-# macOS. Reads only public registry data; no token is used. Exit: 0 done, 1 failed, 2 usage.
+# Needs bash, node (>= 22; scripts/wait-for-attestations.sh uses its fetch) and npm; no jq, curl
+# or GNU coreutils, so it also runs on macOS. Reads only public registry data; no token is used.
+# Exit: 0 done, 1 failed, 2 usage.
 # RELEASE_ASSETS_WAIT (seconds, default 300) bounds each wait for a version that was just published:
 # for its attestations URL (scripts/wait-for-npm.sh, which the release workflow's registry job also
 # uses), then for the attestations themselves (scripts/wait-for-attestations.sh).

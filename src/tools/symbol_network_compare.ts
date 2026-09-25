@@ -5,7 +5,10 @@ import { parseHeight } from '../domain/epoch.js';
 import { findNetworkBySeed } from '../domain/network.js';
 import { defineTool, formatInteger, logUnexpectedError, nullable } from './_shared.js';
 
-/** A node this many blocks (or more) behind the best reference is reported as lagging. */
+/**
+ * A node more than this many blocks behind the best reachable same-network node (the own node
+ * included) is reported as lagging.
+ */
 export const LAG_THRESHOLD_BLOCKS = 10;
 export const NODEWATCH_URL = 'https://nodewatch.symbol.tools/';
 
