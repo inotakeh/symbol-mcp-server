@@ -19,9 +19,11 @@
 - **ノード運用者:** ノードの状態と同期判定、委任ハーベスティングの状況、参照ノードとの比較、そして
   **Voting キーの失効管理**: 残りエポック数・ブロック数・日数、失効予定日時、推奨更新ウィンドウ。
 
-全ツールが `structuredContent`（公開された `outputSchema` で検証済み）と同じ JSON の text ブロックを返し、
-先頭に 1〜3 行の `summary` が付きます。金額は divisibility 適用後の値と生の整数の両方、日時は ISO 8601（UTC）で、
-`SYMBOL_TIMEZONE` を設定するとローカル時刻も併記されます。
+全ツールが `structuredContent`（公開された `outputSchema` で検証済み）と同じ JSON の text ブロックを返し
+（`symbol_harvesting_income` を `output: "csv"` で呼んだときだけ、text は CSV になります）、先頭に短い
+`summary` が付きます（1 行目が答えで、月ごとの行や ok でないチェックなどの詳細が続きます）。金額は
+divisibility 適用後の値と生の整数の両方、日時は ISO 8601（UTC）で、`SYMBOL_TIMEZONE` を設定するとローカル時刻も
+併記されます。
 
 ## 出力の例
 
@@ -121,7 +123,8 @@ SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
 ```
 
 `node dist/index.js --help` は環境変数の説明を stderr に出して終了し、`--version` はバージョンを表示します。
-これ以外のフラグはありません。設定はすべて環境変数で行うため、モデルがサーバーを別ホストに向けることはできません。
+この 2 つとサブコマンド `check`（下の「CLI: cron からの監視」）のほかに引数はありません。設定はすべて環境変数で行うため、
+モデルがサーバーを別ホストに向けることはできません。
 
 ## MCP ホストの設定
 
@@ -247,7 +250,7 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 
 | 変数 | 必須 | 内容 |
 |---|---|---|
-| `SYMBOL_NODE_URL` | 必須 | 照会先ノードの REST URL。例 `https://<node-host>:3001`。`https://` 必須（`http://` は `localhost` / `127.0.0.1` のみ）。ポートは指定どおりに使います。 |
+| `SYMBOL_NODE_URL` | 必須 | 照会先ノードの REST URL。例 `https://<node-host>:3001`。`https://` 必須（`http://` は `localhost` / `127.0.0.1` / `[::1]` のみ）。ポートは指定どおりに使います。 |
 | `SYMBOL_NETWORK` | 任意 | `mainnet` または `testnet`。指定時、ノードが別ネットワークなら起動に失敗します。 |
 | `SYMBOL_TIMEZONE` | 任意 | `Asia/Tokyo` などの IANA 名。UTC の日時の隣にローカル時刻を併記します。 |
 | `SYMBOL_REFERENCE_NODES` | 任意 | `symbol_network_compare` と `symbol_version_drift` の比較対象となる `https://` ノード URL のカンマ区切り。ここに無いホストへは一切通信しません。 |
@@ -269,8 +272,8 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 ## ツール
 
 22 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
-`account` 引数（と `symbol_transaction_search` の `address`）は、base32 アドレス・hex 公開鍵のほかに、アドレスエイリアスを持つ
-ネームスペース名（`alice`、`alice.pay`）も受け付けます。解決結果は `accountResolution` と summary の先頭に出ます。
+`account` 引数（と `symbol_transaction_search` の `address`）は、base32 アドレス・48 桁の hex アドレス・hex 公開鍵のほかに、
+アドレスエイリアスを持つネームスペース名（`alice`、`alice.pay`）も受け付けます。名前の解決結果は `accountResolution` と summary の先頭に出ます。
 
 | ツール | 引数 | 答えること |
 |---|---|---|
@@ -287,7 +290,7 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 | `symbol_time_convert` | `height` / `epoch` / `timestamp` のいずれか 1 つ | 高さ、確定エポック、ネットワークタイムスタンプ、実時刻の相互変換。過去は実測、将来は推定（その旨を明記）。 |
 | `symbol_harvesting_status` | `account`（任意） | ノードで解錠中の委任ハーベスター、ハーベスティングの残高制限と受益者割合。アカウントを指定すると、その linked キーがこのノードで解錠されているかと、残高が制限の範囲内か（`minHarvesterBalance` 以上 `maxHarvesterBalance` 以下。上限を超えるとハーベストできない）。 |
 | `symbol_network_compare` | なし | 自ノードと `SYMBOL_REFERENCE_NODES` の高さ・確定高さ、最良ノードとの差、`lagging` フラグ。参照ノード未設定時はその旨と対処を案内。 |
-| `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、ブロックの数（`blocksHarvested`: 自分でハーベストしたブロック、`blocksBeneficiaryOnly`: 他のアカウントがハーベストし beneficiary の取り分だけを受け取ったブロック）、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。`granularity: monthly` で暦月ごと（年次の質問向け）、`output: csv` で表計算向けの CSV テキスト（JSON も併せて返す）。1 年以上を 1 回で指定してよい（約 90 日分ずつに分割して取得。`fetch` にチャンク数・再試行数・ページ数）。 |
+| `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format`, `output` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、ブロックの数（`blocksHarvested`: 自分でハーベストしたブロック、`blocksBeneficiaryOnly`: 他のアカウントがハーベストし beneficiary の取り分だけを受け取ったブロック）、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。`granularity: monthly` で暦月ごと（年次の質問向け）、`output: csv` で表計算向けの CSV テキスト（JSON も併せて返す）。1 年以上を 1 回で指定してよい（約 90 日分ずつに分割して取得。`fetch` にチャンク数・再試行数・ページ数）。 |
 | `symbol_transaction_status` | `transactionHashes`（配列、1〜20 件） | 各トランザクションの現在の状態: confirmed（高さ付き）/ unconfirmed / partial（署名待ち）/ failed（ノードのコードとその意味付き）/ not_found。バッチ全体を 1 リクエストで照会。 |
 | `symbol_finality_participation` | `account`, `epoch`（任意、既定は最新の確定エポック）, `epochs`（1〜20、既定 1）, `format` | アカウントの Voting キーが各エポックのファイナリティ proof に実際に署名したか: participated（prevote と precommit の両方）/ missed（署名しなかったステージ付き）/ no_active_key / unavailable。ステージごとの署名数（proof が 1 つのステージを複数のメッセージグループに分けていても 1 ステージとして扱い、どのグループの署名でも署名済みと数える）と、現在のエポックをカバーする鍵が無い／現在のエポックが missed のときの警告（過去のエポックでは警告しない）。 |
 | `symbol_delegation_diagnose` | `account`, `recentDays`（1〜30、既定 7）, `format` | 委任ハーベストが有効か、無効ならどこで止まっているか: アカウントの存在、ハーベスト残高制限、importance（0 なら次の再計算までのブロック数）、linked / VRF / node の各鍵、node 鍵と設定ノードの `nodePublicKey` の一致、そのノードでの解錠、accountType、直近 N 日のハーベスト実績、ノード宛の委任要求トランザクション。判定は `active` / `not_active` / `cannot_verify`（別ノードへの委任はここからは確認できない）。 |
@@ -382,7 +385,7 @@ Claude Desktop で「今いくら？」と聞いたときの流れは、まず�
 | Prompt | 手順 |
 |---|---|
 | `voting_key_renewal_checklist` | `symbol_voting_key_status`（失効予定・推奨ウィンドウ・空き枠）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare` → 運用者がこのサーバーの外で VotingKeyLink を送信 → そのハッシュを `symbol_transaction_status` で確認 → `symbol_voting_key_status` を再度呼んで新キーを確認 → 新キーの startEpoch が確定した後に `symbol_finality_participation` で参加を確認 → 4 行で要約。 |
-| `monthly_health_check` | `symbol_node_status` → `symbol_node_health`（unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare` → `symbol_harvester_watch`（前回スナップショットとの差分。`symbol_harvesting_status` は求められたときだけ） → `symbol_voting_key_status`（30 日以内に失効するなら警告を先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income`（収益と、自分でハーベストしたブロック・委任者などのブロックを分けて）→ 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
+| `monthly_health_check` | `symbol_node_status` → `symbol_node_health`（unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare` → `symbol_harvester_watch`（前回スナップショットとの差分。`symbol_harvesting_status` は求められたときだけ） → `symbol_voting_key_status`（残り日数・失効予定・警告。30 日以内に失効するキーがあるか、アクティブなキーが無ければ先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income`（収益と、自分でハーベストしたブロック・委任者などのブロックを分けて）→ 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
 
 サーバーは initialize 時に短い `instructions`（読み取り専用であること、アカウントの指定形式、取り違えやすい質問（ハーベスト報酬、Voting キー、
 ノードの同期・健全性・バージョン、トランザクションが通ったか）に使うツール、返された数値をそのまま使うこと）も送ります。
@@ -469,7 +472,7 @@ MAILTO=you@example.com
   エラーになります。別ネットワークへ黙って切り替えることはありません。スタックトレースや HTTP 生レスポンスは
   モデルに返しません。
 - **リクエスト衛生。** リクエストごとのタイムアウト、`User-Agent`、5 MB の応答サイズ上限（本文を受信しながら数え、
-  宣言された `Content-Length` が上限を超えていれば本文を読まずに拒否）、同時 4 リクエストまで、全応答のスキーマ検証。
+  宣言された `Content-Length` が上限を超えていれば本文を読まずに拒否）、ノードごとに同時 4 リクエストまで、全応答のスキーマ検証。
   リダイレクトは追いません。HTTP 3xx を返したノードはエラーになり、転送先には接続しません。リクエストのパスには
   単純な識別子だけを入れます。
 - **リポジトリの設定。** CodeQL のコードスキャン、Secret scanning と push protection、Dependabot（セキュリティ更新と、
@@ -490,11 +493,12 @@ MAILTO=you@example.com
   - `npm view symbol-mcp-server dist.attestations` で、最新版の attestation の URL と provenance の predicate type が表示されます。
   - インストールしたプロジェクトで `npm audit signatures` を実行すると、インストール済みパッケージのレジストリ署名と
     provenance を検証できます。
-- **GitHub Release にも同じパッケージ。** 各 GitHub Release には 2 つのファイルを添付しています。
-  `symbol-mcp-server-<version>.tgz` は npm が配布している tarball とバイト単位で同一のもの（SHA-512 をレジストリの
-  `dist.integrity` と照合済み）、`symbol-mcp-server-<version>.tgz.sigstore.json` はその tarball に対する npm の
-  SLSA provenance を Sigstore バンドルにしたもの（subject がその tarball の SHA-512 であることを照合済み）です。
-  どちらも [`scripts/release-assets.sh`](scripts/release-assets.sh) が集めます。ダウンロードした 2 つのファイルは
+- **GitHub Release にも同じパッケージ。** 0.8.0 以降の各 GitHub Release には 3 つのファイルを添付しています
+  （それより前のリリースには最初の 2 つ）。`symbol-mcp-server-<version>.tgz` は npm が配布している tarball とバイト単位で
+  同一のもの（SHA-512 をレジストリの `dist.integrity` と照合済み）、`symbol-mcp-server-<version>.tgz.sigstore.json` は
+  その tarball に対する npm の SLSA provenance を Sigstore バンドルにしたもの（subject がその tarball の SHA-512 であることを
+  照合済み）、3 つ目は Claude Desktop 用のバンドル `symbol-mcp-server-<version>.mcpb`（次の項目）です。最初の 2 つは
+  [`scripts/release-assets.sh`](scripts/release-assets.sh) が集めます。ダウンロードした tarball と provenance の 2 つのファイルは
   [GitHub CLI](https://cli.github.com/manual/gh_attestation_verify) で検証できます:
 
   ```sh
@@ -509,9 +513,9 @@ MAILTO=you@example.com
   `npm ci --omit=dev` で入れた本番用の依存だけで作ります。それ以外にコンパイルやダウンロードはしません。リリースの
   ワークフローが GitHub の build provenance を付けます（`gh attestation verify … --repo inotakeh/symbol-mcp-server`。
   [インストール](#インストール)を参照）。
-- **リリースできる人。** リリース用タグ（`v1.2.3`）を作れるのは保守者だけです。ワークフローはタグと `package.json` の
-  バージョンの一致を確認し、lint・typecheck・テストを実行したうえで、GitHub Environment `npm-publish` で保守者が
-  承認するまで待機します。手順全体は [`docs/RELEASING.md`](docs/RELEASING.md)（英語）にあります。
+- **リリースできる人。** リリース用タグ（`v1.2.3`）を作れるのは保守者だけです。ワークフローはまず GitHub Environment
+  `npm-publish` で保守者が承認するまで待機し、承認されてから、タグと `package.json` などのリリース用ファイルのバージョンの
+  一致を確認し、lint・typecheck・テストを実行して公開します。手順全体は [`docs/RELEASING.md`](docs/RELEASING.md)（英語）にあります。
 
 ## 対応ネットワーク
 
@@ -573,7 +577,7 @@ MAILTO=you@example.com
 | 表示 | 原因と対処 |
 |---|---|
 | `SYMBOL_NODE_URL is required` | 変数がサーバーのプロセスに届いていません。ホスト設定の `env` に書いてください。シェルの `export` は、デスクトップアプリが起動するサーバーには届きません。 |
-| `SYMBOL_NODE_URL must use https://` または `SYMBOL_NODE_URL must start with https://` | ノードの `https://` の URL（通常 3001 番ポート）を指定してください。`http://` は `localhost` / `127.0.0.1` のみ使えます。 |
+| `SYMBOL_NODE_URL must use https://` または `SYMBOL_NODE_URL must start with https://` | ノードの `https://` の URL（通常 3001 番ポート）を指定してください。`http://` は `localhost` / `127.0.0.1` / `[::1]` のみ使えます。 |
 | `SYMBOL_NETWORK=mainnet but node <host> is on testnet` | ノードが別のネットワークです。`SYMBOL_NODE_URL` を目的のネットワークのノードに変えるか、`SYMBOL_NETWORK` を直してください。 |
 | `Node <host> reports an unknown network` | ノードの generationHashSeed が Symbol の mainnet でも testnet でもありません（プライベートネットワークや NEM NIS1 のノード）。Symbol の mainnet / testnet のノードを使ってください。 |
 | 起動時の `<host> did not answer /node/info within 10000 ms` / `could not reach <host> for /node/info`、ツールの `Node <host> did not answer … within … ms` / `Could not connect to node <host>` | ノードが停止・過負荷か、ポートが違います（https は 3001）。nodewatch で別のノードを選ぶか、遅いノードなら `SYMBOL_REQUEST_TIMEOUT_MS`（最大 600000）で待ち時間を延ばしてください。 |

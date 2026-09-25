@@ -22,7 +22,9 @@ person actually asks:
   estimated expiry date and a recommended renewal window.
 
 Every tool returns `structuredContent` (validated against a published `outputSchema`) plus the same
-JSON as text, with a one-to-three-line `summary` first. Amounts are returned both with divisibility
+JSON as text (only `symbol_harvesting_income` with `output: "csv"` puts CSV in the text instead),
+with a short `summary` first: its first line answers the question, and further lines add details
+such as each month or each check that is not ok. Amounts are returned both with divisibility
 applied and as the raw integer; timestamps are ISO 8601 UTC, with a local time added when
 `SYMBOL_TIMEZONE` is set.
 
@@ -127,8 +129,9 @@ SYMBOL_NODE_URL=https://<node-host>:3001 node dist/index.js
 ```
 
 `node dist/index.js --help` prints the environment variables to stderr and exits;
-`--version` prints the version. The binary takes no other flags: everything is configured through
-the environment, so a model can never point it at another host.
+`--version` prints the version. Apart from those two and the `check` subcommand (see
+[CLI: monitoring from cron](#cli-monitoring-from-cron)), the binary takes no arguments: everything is
+configured through the environment, so a model can never point it at another host.
 
 ## Configure your MCP host
 
@@ -254,7 +257,7 @@ On Windows, a client that cannot start `npx` may need `"command": "npx.cmd"`.
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `SYMBOL_NODE_URL` | yes | REST URL of the node to query, e.g. `https://<node-host>:3001`. `https://` is required (`http://` only for `localhost` / `127.0.0.1`). The port is used exactly as given. |
+| `SYMBOL_NODE_URL` | yes | REST URL of the node to query, e.g. `https://<node-host>:3001`. `https://` is required (`http://` only for `localhost` / `127.0.0.1` / `[::1]`). The port is used exactly as given. |
 | `SYMBOL_NETWORK` | no | `mainnet` or `testnet`. When set, start-up fails if the node reports a different network. |
 | `SYMBOL_TIMEZONE` | no | IANA zone such as `Asia/Tokyo`. Adds a local time next to every UTC timestamp. |
 | `SYMBOL_REFERENCE_NODES` | no | Comma-separated `https://` node URLs that `symbol_network_compare` and `symbol_version_drift` check against. No other host is ever contacted. |
@@ -279,9 +282,9 @@ On Windows, a client that cannot start `npx` may need `"command": "npx.cmd"`.
 
 All 22 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
 identifiers only, never URLs. Every `account` argument (and the `address` of
-`symbol_transaction_search`) takes a base32 address, a hex public key, or a namespace name such as
-`alice` or `alice.pay` that carries an address alias; the resolution is reported in
-`accountResolution` and at the start of the summary.
+`symbol_transaction_search`) takes a base32 address, a 48-character hex address, a hex public key,
+or a namespace name such as `alice` or `alice.pay` that carries an address alias; the resolution of
+a name is reported in `accountResolution` and at the start of the summary.
 
 | Tool | Arguments | Answers |
 |---|---|---|
@@ -298,7 +301,7 @@ identifiers only, never URLs. Every `account` argument (and the `address` of
 | `symbol_time_convert` | one of `height`, `epoch`, `timestamp` | Height, finalization epoch, network timestamp and wall-clock time. Exact for the past, estimated (and flagged) for the future. |
 | `symbol_harvesting_status` | `account` (optional) | Unlocked delegated harvesters on the node, harvesting limits and beneficiary percentage, and for the given account whether its linked key is unlocked here and its balance is within the limits (`minHarvesterBalance` to `maxHarvesterBalance`, both inclusive; above the maximum an account cannot harvest). |
 | `symbol_network_compare` | none | Height and finalization of the node versus `SYMBOL_REFERENCE_NODES`, blocks behind the best, `lagging` flags. Explains what to do when no reference nodes are configured. |
-| `symbol_harvesting_income` | `account`, `fromDate` + `toDate` or `fromHeight` + `toHeight`, `granularity`, `format` | Harvest rewards received in the period: receipt count and exact XYM total (summed on the server as integers), harvester / beneficiary / unknown split, block counts (`blocksHarvested`: blocks the account harvested; `blocksBeneficiaryOnly`: blocks others harvested that paid it only the beneficiary share), per-day buckets in `SYMBOL_TIMEZONE` or UTC, or a list of receipts. Dates are resolved to heights from block timestamps. `granularity: monthly` gives one row per calendar month (yearly questions); `output: csv` returns the rows as CSV text for a spreadsheet while the JSON stays available. A year or more in one call is fine: the range is read in chunks of about 90 days (`fetch` reports chunks, retries and pages). |
+| `symbol_harvesting_income` | `account`, `fromDate` + `toDate` or `fromHeight` + `toHeight`, `granularity`, `format`, `output` | Harvest rewards received in the period: receipt count and exact XYM total (summed on the server as integers), harvester / beneficiary / unknown split, block counts (`blocksHarvested`: blocks the account harvested; `blocksBeneficiaryOnly`: blocks others harvested that paid it only the beneficiary share), per-day buckets in `SYMBOL_TIMEZONE` or UTC, or a list of receipts. Dates are resolved to heights from block timestamps. `granularity: monthly` gives one row per calendar month (yearly questions); `output: csv` returns the rows as CSV text for a spreadsheet while the JSON stays available. A year or more in one call is fine: the range is read in chunks of about 90 days (`fetch` reports chunks, retries and pages). |
 | `symbol_transaction_status` | `transactionHashes` (array, 1 to 20) | Where each transaction stands right now: confirmed (with height), unconfirmed, partial (waiting for cosignatures), failed (with the node's code and its meaning) or not_found. One request for the whole batch. |
 | `symbol_finality_participation` | `account`, `epoch` (optional, default latest finalized), `epochs` (1 to 20, default 1), `format` | Whether the account's voting key actually signed the finalization proof of each epoch: participated (both prevote and precommit), missed (which stage was not signed), no_active_key or unavailable, with the signature count per stage (a stage that the proof splits into several message groups counts as one stage; a signature in any of its groups counts) and a warning when no key covers the current epoch or the current epoch was missed (historical epochs never warn). |
 | `symbol_delegation_diagnose` | `account`, `recentDays` (1 to 30, default 7), `format` | Is delegated harvesting active, and if not, where does it stop: account exists, balance within the harvesting limits, importance above zero (or blocks until the next recalculation), linked/VRF/node keys, node key equal to the configured node's `nodePublicKey`, remote key unlocked on that node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Verdict `active`, `not_active` or `cannot_verify` (delegation to another node cannot be checked from here). |
@@ -404,7 +407,7 @@ prompt text contains no addresses, hosts, keys or dates of its own.
 | Prompt | What it walks through |
 |---|---|
 | `voting_key_renewal_checklist` | `symbol_voting_key_status` (expiry, renewal window, free slots), `symbol_node_status` (stop if not synced), `symbol_network_compare`, then, after the operator has announced the VotingKeyLink outside this server, `symbol_transaction_status` on the hash, a second `symbol_voting_key_status` to confirm the new key, and `symbol_finality_participation` once the new key's start epoch is finalized. Ends with a four-line summary. |
-| `monthly_health_check` | `symbol_node_status`, `symbol_node_health` (unhealthy goes first), `symbol_version_drift` (behind or far_behind goes first), `symbol_network_compare`, `symbol_harvester_watch` (delta against the previous snapshot; `symbol_harvesting_status` only on request), `symbol_voting_key_status` (warning first if a key expires within 30 days), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month (the income, then the blocks the account harvested itself and the blocks of delegators or others as separate items). Reports on one screen as Action required / Attention / Normal. |
+| `monthly_health_check` | `symbol_node_status`, `symbol_node_health` (unhealthy goes first), `symbol_version_drift` (behind or far_behind goes first), `symbol_network_compare`, `symbol_harvester_watch` (delta against the previous snapshot; `symbol_harvesting_status` only on request), `symbol_voting_key_status` (remaining days, expiry and warnings; a key expiring within 30 days, or no active key, goes first), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month (the income, then the blocks the account harvested itself and the blocks of delegators or others as separate items). Reports on one screen as Action required / Attention / Normal. |
 
 The server also sends short `instructions` at initialize time (read-only, account formats, which
 tool answers the questions that are easy to mix up: harvest income, voting keys, node sync versus
@@ -498,10 +501,10 @@ MAILTO=you@example.com
   unexpected response shape is an error with a recovery hint, never a silent fallback to another
   network. Stack traces and raw HTTP bodies are never returned to the model.
 - **Request hygiene.** Per-request timeout, `User-Agent`, a 5 MB response cap applied while the body
-  streams in (a larger declared `Content-Length` is refused unread), at most 4 concurrent requests,
-  and schema validation of every response. Redirects are never followed: a node that answers with
-  HTTP 3xx gets an error, and the address it points to is not contacted. Request paths carry plain
-  identifiers only.
+  streams in (a larger declared `Content-Length` is refused unread), at most 4 concurrent requests
+  per node, and schema validation of every response. Redirects are never followed: a node that
+  answers with HTTP 3xx gets an error, and the address it points to is not contacted. Request paths
+  carry plain identifiers only.
 - **Repository settings.** CodeQL code scanning, secret scanning with push protection, Dependabot
   (security updates and grouped monthly version updates), branch protection on `main` (every change
   lands through a pull request, with linear history) and private vulnerability reporting are enabled.
@@ -522,12 +525,14 @@ Vulnerability reports: see [`SECURITY.md`](SECURITY.md).
     predicate type of the latest version.
   - In a project that installs it, `npm audit signatures` verifies the registry signatures and
     provenance attestations of the installed packages.
-- **GitHub Releases carry the same package.** Each GitHub Release has two files attached:
-  `symbol-mcp-server-<version>.tgz`, byte for byte the tarball npm serves (its SHA-512 is checked
-  against the registry's `dist.integrity`), and `symbol-mcp-server-<version>.tgz.sigstore.json`,
-  npm's SLSA provenance for that tarball as a Sigstore bundle (its subject is checked to be the
-  tarball's SHA-512). Both are collected by [`scripts/release-assets.sh`](scripts/release-assets.sh).
-  To verify a downloaded pair with the [GitHub CLI](https://cli.github.com/manual/gh_attestation_verify):
+- **GitHub Releases carry the same package.** From 0.8.0 on, each GitHub Release has three files
+  attached (earlier releases have the first two): `symbol-mcp-server-<version>.tgz`, byte for byte
+  the tarball npm serves (its SHA-512 is checked against the registry's `dist.integrity`),
+  `symbol-mcp-server-<version>.tgz.sigstore.json`, npm's SLSA provenance for that tarball as a
+  Sigstore bundle (its subject is checked to be the tarball's SHA-512), and the Claude Desktop
+  bundle `symbol-mcp-server-<version>.mcpb` (next point). The first two are collected by
+  [`scripts/release-assets.sh`](scripts/release-assets.sh). To verify a downloaded pair with the
+  [GitHub CLI](https://cli.github.com/manual/gh_attestation_verify):
 
   ```sh
   gh attestation verify symbol-mcp-server-<version>.tgz \
@@ -542,10 +547,10 @@ Vulnerability reports: see [`SECURITY.md`](SECURITY.md).
   nothing else is compiled or downloaded. The release workflow attaches a GitHub build provenance
   attestation to it (`gh attestation verify … --repo inotakeh/symbol-mcp-server`, see
   [Install](#install)).
-- **Who can release.** Only maintainers create release tags (`v1.2.3`). The workflow checks that
-  the tag matches `package.json`, runs lint, typecheck and tests, and then waits in the
-  `npm-publish` GitHub Environment until a maintainer approves the run. The whole procedure is in
-  [`docs/RELEASING.md`](docs/RELEASING.md).
+- **Who can release.** Only maintainers create release tags (`v1.2.3`). The workflow first waits
+  in the `npm-publish` GitHub Environment until a maintainer approves the run; only then does it
+  check that the tag matches `package.json` and the other release files, run lint, typecheck and
+  tests, and publish. The whole procedure is in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Supported networks
 
@@ -613,7 +618,7 @@ hosts keep stderr in their logs (Claude Desktop: `~/Library/Logs/Claude/mcp*.log
 | You see | Cause and fix |
 |---|---|
 | `SYMBOL_NODE_URL is required` | The variable does not reach the server process. Put it in the `env` block of the host configuration; an `export` in your shell does not reach a server that a desktop app starts. |
-| `SYMBOL_NODE_URL must use https://` or `SYMBOL_NODE_URL must start with https://` | Use the node's `https://` URL (usually port 3001). `http://` is accepted only for `localhost` / `127.0.0.1`. |
+| `SYMBOL_NODE_URL must use https://` or `SYMBOL_NODE_URL must start with https://` | Use the node's `https://` URL (usually port 3001). `http://` is accepted only for `localhost` / `127.0.0.1` / `[::1]`. |
 | `SYMBOL_NETWORK=mainnet but node <host> is on testnet` | The node is on the other network. Point `SYMBOL_NODE_URL` at a node of the network you want, or correct `SYMBOL_NETWORK`. |
 | `Node <host> reports an unknown network` | The node's generation hash seed is neither Symbol mainnet nor testnet (a private network, or a NEM NIS1 node). Use a Symbol mainnet or testnet node. |
 | `<host> did not answer /node/info within 10000 ms` or `could not reach <host> for /node/info` at start-up; `Node <host> did not answer … within … ms` or `Could not connect to node <host>` from a tool | The node is down, overloaded, or the port is wrong (3001 for https). Try another node from nodewatch, or give a slow node more time with `SYMBOL_REQUEST_TIMEOUT_MS` (up to 600000). |
