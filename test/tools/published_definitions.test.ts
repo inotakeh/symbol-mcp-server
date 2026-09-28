@@ -15,9 +15,11 @@ const MISMATCH_MESSAGE = [
   `The published tool or prompt definitions or the server instructions no longer match ${SNAPSHOT_FILE}.`,
   'If the change is intended, update the file with',
   '`npm test -- test/tools/published_definitions.test.ts --update` and commit it with the change.',
-  "A change to a tool's inputSchema or outputSchema needs a minor version bump and a release note",
-  'telling users to restart their MCP host: clients check results against the tools/list they',
-  'cached, and the published schemas allow no extra fields (DESIGN-BRIEF §5)',
+  'A change to the shape of a definition (a tool, prompt, argument or output field added or',
+  'removed; a type, what is required, an enum or the annotations changed) needs a minor version',
+  'bump and a release note telling users to restart their MCP host, because clients check results',
+  'against the tools/list they cached. A change to descriptive text only (description, title, the',
+  'instructions) can ship in a patch, with no restart note (DESIGN-BRIEF §5)',
 ].join(' ');
 
 type Loose = Record<string, unknown>;

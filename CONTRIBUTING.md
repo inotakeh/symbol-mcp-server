@@ -35,9 +35,14 @@ Node 22 and 24.
 definitions: the `tools/list` and `prompts/list` results and the server instructions. When you
 change a title, a description, a schema, an annotation, a prompt's arguments or the instructions,
 update it with `npm test -- test/tools/published_definitions.test.ts --update` and commit it with
-the change, so the review shows what clients will see. A change to a tool's `inputSchema` or
-`outputSchema` needs a minor version and a release note telling users to restart their MCP host
-(clients check results against the tool list they cached).
+the change, so the review shows what clients will see. The version depends on what changed:
+
+- **The shape of a definition** (a tool, a prompt, an argument or an output field added or
+  removed; a type, what is required, an enum or the annotations changed): a minor version, and a
+  release note telling users to restart their MCP host after updating. Clients check results
+  against the tool list they cached, and an older list rejects a field it does not know.
+- **Descriptive text only** (`description`, `title`, the server instructions): a patch is enough,
+  with no restart note.
 
 Manual checks against a real node:
 
