@@ -31,6 +31,14 @@ npm run build       # tsc -> dist/
 Run `npm run lint && npm run typecheck && npm test` before every commit; CI runs the same on
 Node 22 and 24.
 
+`test/tools/__snapshots__/published-definitions.json` holds what every client receives as
+definitions: the `tools/list` and `prompts/list` results and the server instructions. When you
+change a title, a description, a schema, an annotation, a prompt's arguments or the instructions,
+update it with `npm test -- test/tools/published_definitions.test.ts --update` and commit it with
+the change, so the review shows what clients will see. A change to a tool's `inputSchema` or
+`outputSchema` needs a minor version and a release note telling users to restart their MCP host
+(clients check results against the tool list they cached).
+
 Manual checks against a real node:
 
 ```sh
@@ -71,7 +79,8 @@ Tools answer a question a person asks; they do not mirror one REST endpoint each
    stay deterministic.
 3. Add tests: unit tests for the domain logic, and tool-layer tests in `test/tools/` (output schema,
    error results with a hint, no request to any host other than `SYMBOL_NODE_URL`). Add the tool to
-   the smoke calls in `test/tools/harness.ts`.
+   the smoke calls in `test/tools/harness.ts`, and update the snapshot of the published
+   definitions (see "Build and test").
 4. Update the documentation:
    - `README.md` **and** `README.ja.md`: the tool table and an example question;
    - `evals/cases.json`: at least one case (the evals test fails if a registered tool has none);

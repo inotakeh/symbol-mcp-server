@@ -4,6 +4,7 @@
     "includes": [
       "src/**",
       "test/**",
+      "!test/tools/__snapshots__",
       "evals/**",
       "scripts/**",
       "package.json",
