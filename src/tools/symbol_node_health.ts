@@ -1,6 +1,7 @@
 import * as z from 'zod/v4';
 import { RestError } from '../client/rest.js';
 import {
+  BlockInfoSchema,
   ChainInfoSchema,
   NodeHealthSchema,
   NodeInfoSchema,
@@ -11,9 +12,15 @@ import type { AppContext } from '../context.js';
 import type { DiagnoseCheck } from '../domain/delegation.js';
 import { parseHeight } from '../domain/epoch.js';
 import {
+  assessChainTipAge,
   assessClockSkew,
   assessFinalizationLag,
   assessStorage,
+  CHAIN_TIP_FAIL_BLOCK_TIMES,
+  CHAIN_TIP_WARN_BLOCK_TIMES,
+  type ChainTipAge,
+  type ChainTipThresholds,
+  chainTipThresholds,
   computeClockSkewMs,
   deriveHealthVerdict,
   type HealthVerdict,
@@ -23,7 +30,7 @@ import {
   skewThresholds,
 } from '../domain/nodehealth.js';
 import { decodeRoles } from '../domain/roles.js';
-import { networkTimestampToDate } from '../domain/time.js';
+import { networkTimestampToDate, roundTo } from '../domain/time.js';
 import { decodeVersion } from '../domain/version.js';
 import { CheckSchema, check, stripOkHints } from './_checks.js';
 import { defineTool, formatInteger, nullable } from './_shared.js';
@@ -81,9 +88,9 @@ const VERDICT_TEXT: Record<HealthVerdict, string> = {
 };
 
 const NOTES = [
-  'clock_skew compares the node clock with the clock of the machine running this server (including request latency); the local clock may be the one that is off.',
+  'clock_skew compares the node clock, and chain_tip_age the time of the latest block, with the clock of the machine running this server (clock_skew including request latency); the local clock may be the one that is off.',
   'storage counts come from the node database as reported by the node and are not backed by chain data.',
-  'Thresholds are derived from the network: one minute of blocks for storage, half and one block time for clock skew, half and one epoch (votingSetGrouping blocks) for finalization lag.',
+  `Thresholds are derived from the network: one minute of blocks for storage, half and one block time for clock skew, half and one epoch (votingSetGrouping blocks) for finalization lag, ${CHAIN_TIP_WARN_BLOCK_TIMES} and ${CHAIN_TIP_FAIL_BLOCK_TIMES} block times for the age of the latest block.`,
 ];
 
 type Settled<T> =
@@ -97,6 +104,46 @@ async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
   } catch (err) {
     if (err instanceof RestError) return { ok: false, error: err };
     throw err;
+  }
+}
+
+/** Thousands separators and at most `fractionDigits` decimals (none when the value is whole). */
+function decimal(value: number, fractionDigits: number): string {
+  return value.toLocaleString('en-US', { maximumFractionDigits: fractionDigits });
+}
+
+/** Seconds of a threshold; a fraction only when the block time has one. */
+function seconds(value: number): string {
+  return decimal(value, 3);
+}
+
+/**
+ * `about 3.4 min` / `about 2.5 h` / `about 3.1 days` for an age of two minutes or more. The unit is
+ * chosen after rounding, so 119.95 minutes reads as 2 h rather than 120 min.
+ */
+function approximately(ageSeconds: number): string | null {
+  if (ageSeconds < 120) return null;
+  const minutes = roundTo(ageSeconds / 60, 1);
+  if (minutes < 120) return `about ${decimal(minutes, 1)} min`;
+  const hours = roundTo(ageSeconds / 3_600, 1);
+  if (hours < 48) return `about ${decimal(hours, 1)} h`;
+  return `about ${decimal(roundTo(ageSeconds / 86_400, 1), 1)} days`;
+}
+
+/**
+ * The age of the node's latest block, or null when its timestamp gives no valid time (the node may
+ * send any uint64); chain_tip_age is then unknown instead of the whole tool failing.
+ */
+function chainTipOf(
+  timestamp: string,
+  epochAdjustmentSeconds: number,
+  now: Date,
+  thresholds: ChainTipThresholds,
+): ChainTipAge | null {
+  try {
+    return assessChainTipAge(timestamp, epochAdjustmentSeconds, now, thresholds);
+  } catch {
+    return null;
   }
 }
 
@@ -127,13 +174,18 @@ export const nodeHealthTool = defineTool({
   name: 'symbol_node_health',
   title: 'Symbol node health',
   description:
-    'Check whether the services of the configured Symbol node (SYMBOL_NODE_URL) are running healthily right now: API node, database, storage, clock and finalization lag, as one verdict. For whether the node is in sync, its version and its peer count, use symbol_node_status; for whether its version is behind the network, symbol_version_drift; for how many blocks it trails other nodes, symbol_network_compare. Six checks in a fixed order, each ok/warn/fail/unknown with a hint: API node and database status from /node/health (a 503 answer is read, not treated as a failure), node database block count versus chain height, node clock versus the local clock, finalization lag in blocks and minutes, and the node roles (is it a voting node). The verdict is healthy, degraded (a warning, or a check that could not be made) or unhealthy. Thresholds come from the network properties.',
+    'Check whether the services of the configured Symbol node (SYMBOL_NODE_URL) are running healthily right now: API node, database, storage, clock and finalization lag, as one verdict. For whether the node is in sync, its version and its peer count, use symbol_node_status; for whether its version is behind the network, symbol_version_drift; for how many blocks it trails other nodes, symbol_network_compare. Seven checks in a fixed order, each ok/warn/fail/unknown with a hint: API node and database status from /node/health (a 503 answer is read, not treated as a failure), node database block count versus chain height, node clock versus the local clock, finalization lag in blocks and minutes, the node roles (is it a voting node), and the age of the latest block against the local clock, which catches a node that has stopped following the chain (warn beyond 10 target block times, fail beyond 30). The verdict is healthy, degraded (a warning, or a check that could not be made) or unhealthy. Thresholds come from the network properties.',
   inputSchema,
   outputSchema,
   untrustedText: true,
   run: async (ctx: AppContext, { format }, text) => {
     const host = ctx.rest.host;
-    const [{ properties }, health, storage, time, chain, info] = await Promise.all([
+    const chainRequest = settle(ctx.rest.get('/chain/info', ChainInfoSchema));
+    // The latest block can only be asked for once the chain height is known: one more round trip.
+    const latestRequest = chainRequest.then((c) =>
+      c.ok ? settle(ctx.rest.get(`/blocks/${parseHeight(c.value.height)}`, BlockInfoSchema)) : null,
+    );
+    const [{ properties }, health, storage, time, chain, info, latest] = await Promise.all([
       ctx.getNetworkData(),
       settle(
         ctx.rest.get('/node/health', NodeHealthSchema, {
@@ -142,8 +194,9 @@ export const nodeHealthTool = defineTool({
       ),
       settle(ctx.rest.get('/node/storage', NodeStorageSchema)),
       settle(ctx.rest.get('/node/time', NodeTimeSchema)),
-      settle(ctx.rest.get('/chain/info', ChainInfoSchema)),
+      chainRequest,
       settle(ctx.rest.get('/node/info', NodeInfoSchema)),
+      latestRequest,
     ]);
     const now = ctx.now();
     const blockTimeMs = properties.blockGenerationTargetTimeMs;
@@ -307,6 +360,43 @@ export const nodeHealthTool = defineTool({
           id: 'roles',
           status: 'unknown',
           detail: failureText(host, '/node/info', info.error),
+          hint: 'Retry later; the other checks do not depend on it.',
+        }),
+      );
+    }
+
+    // 7. chain_tip_age
+    const thresholds = chainTipThresholds(blockTimeMs);
+    const tip = latest?.ok
+      ? chainTipOf(latest.value.block.timestamp, properties.epochAdjustmentSeconds, now, thresholds)
+      : null;
+    if (tip !== null && height !== null) {
+      const limits = `warn above ${seconds(thresholds.warnSeconds)} s, fail above ${seconds(thresholds.failSeconds)} s`;
+      const about = approximately(tip.ageSeconds);
+      checks.push(
+        check({
+          id: 'chain_tip_age',
+          status: tip.status,
+          detail:
+            tip.ageSeconds < 0
+              ? `Latest block (height ${formatInteger(height)}) is timestamped ${formatInteger(-tip.ageSeconds)} s ahead of this machine's clock, so it is not old (${limits}).`
+              : `Latest block (height ${formatInteger(height)}) is ${formatInteger(tip.ageSeconds)} s old (${about === null ? '' : `${about}; `}${limits}).`,
+          hint:
+            tip.status === 'ok'
+              ? `Thresholds are ${CHAIN_TIP_WARN_BLOCK_TIMES} and ${CHAIN_TIP_FAIL_BLOCK_TIMES} times the ${seconds(blockTimeMs / 1000)}-second target block time; a node that follows the chain has a block at most a few block times old.`
+              : 'The node is not adding blocks: it has stalled or fallen behind (its server, broker or database process may have stopped, or it lost its peers). Check the node services, their logs and the peer connections, and compare its height with other nodes; if they stopped at the same height, the network itself is stalled.',
+        }),
+      );
+    } else {
+      checks.push(
+        check({
+          id: 'chain_tip_age',
+          status: 'unknown',
+          detail: latest?.ok
+            ? `${host} answered /blocks/${height} with a block timestamp that is not a valid time.`
+            : latest?.ok === false
+              ? failureText(host, `/blocks/${height}`, latest.error)
+              : failureText(host, '/chain/info', (chain as { error: RestError }).error),
           hint: 'Retry later; the other checks do not depend on it.',
         }),
       );

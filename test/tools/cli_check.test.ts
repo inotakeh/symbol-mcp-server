@@ -19,6 +19,7 @@ import {
   ALIAS_NAMESPACE_NAME,
   createFakeFetch,
   createTestContext,
+  FIXTURE_BLOCK_TIME,
   fixture,
   jsonResponse,
   mainnetRoutes,
@@ -168,6 +169,41 @@ describe('runCheck against the fixture node', () => {
     expect(formatCheckText(report).split('\n')[0]).toMatch(/^symbol check: FAIL /);
   });
 
+  it('is WARN (exit 1) and then FAIL (exit 2) as the latest block of a stalled node ages', async () => {
+    // The chain tip stops moving while the node clock and every service keep answering, so only
+    // the chain_tip_age check of symbol_node_health can tell (10 and 30 block times: 300 / 900 s).
+    const block = fixture<{ block: { timestamp: string } }>('mainnet/block-5763675.json');
+    const aged = (ageMs: number) => ({
+      ...block,
+      block: {
+        ...block.block,
+        timestamp: String(
+          Number(block.block.timestamp) + TEST_NOW.getTime() - ageMs - FIXTURE_BLOCK_TIME.getTime(),
+        ),
+      },
+    });
+    for (const [ageMs, status, exitCode] of [
+      [10 * 60_000, 'warn', 1],
+      [20 * 60_000, 'fail', 2],
+    ] as const) {
+      const { ctx } = await createTestContext({
+        routes: routes({ 'GET /blocks/5763675': aged(ageMs) }),
+      });
+      const report = await runCheck(ctx, { account: null, warnDays: 14 });
+      expect(report.exitCode).toBe(exitCode);
+      const health = item(report, 'node_health');
+      expect(health.status).toBe(status);
+      expect(health.detail).toMatch(
+        new RegExp(
+          `^(degraded|unhealthy) \\(chain_tip_age ${status}\\)\\. Latest block \\(height 5,763,675\\) is ${(ageMs / 1000).toLocaleString('en-US')} s old`,
+        ),
+      );
+      expect(health.hint).toMatch(/^The node is not adding blocks/);
+      expect(item(report, 'version_drift').status).toBe('ok');
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('fails one item on a RestError and still runs the others', async () => {
     const { ctx } = await createTestContext({ routes: routes(), env: { SYMBOL_STATE_DIR: dir } });
     // /node/info answers at start-up (createTestContext) and breaks afterwards.
@@ -227,8 +263,8 @@ describe('runCheck against the fixture node', () => {
       env,
       now: new Date(TEST_NOW.getTime() + 86_400_000),
     });
-    // node-time is pinned to TEST_NOW, so a day later node_health reports the clock skew; only
-    // the harvester item matters here.
+    // node-time and the latest block are pinned near TEST_NOW, so a day later node_health reports
+    // the clock skew and the chain tip age; only the harvester item matters here.
     const dropped = await runCheck(second.ctx, { account: null, warnDays: 14 });
     const watch = item(dropped, 'harvester_watch');
     expect(watch.status).toBe('warn');

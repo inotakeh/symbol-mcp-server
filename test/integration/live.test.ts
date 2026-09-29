@@ -284,7 +284,7 @@ describe.skipIf(!enabled)('live node', () => {
     expect(statuses[1]?.group).toBe('not_found');
   });
 
-  it('symbol_node_health gives a verdict from its six checks, on the version node_status reports', async () => {
+  it('symbol_node_health gives a verdict from its seven checks, on the version node_status reports', async () => {
     const health = await call('symbol_node_health');
     expect(['healthy', 'degraded', 'unhealthy']).toContain(health.verdict);
     expect((health.checks as Array<{ id: string }>).map((c) => c.id)).toEqual([
@@ -294,6 +294,7 @@ describe.skipIf(!enabled)('live node', () => {
       'clock_skew',
       'finalization_lag',
       'roles',
+      'chain_tip_age',
     ]);
     const status = await call('symbol_node_status');
     const node = health.node as { version: string } | null;
