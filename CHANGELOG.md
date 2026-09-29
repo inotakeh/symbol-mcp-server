@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-09-29
+
+> No MCP host restart is needed after upgrading: the tool and prompt definitions differ from 0.9.2
+> only in descriptive text (11 descriptions of 8 tools), and no argument or output field is added
+> or removed. `check` can now exit 1 or 2 where it exited 0: for a node whose chain has stopped, and
+> with `--account`, for an account whose balance is below `minVoterBalance`.
+
 ### Fixed
 
 - `symbol_node_health` called a stalled node healthy. A node that stops following the chain (a
@@ -664,7 +671,8 @@ Initial release candidate (0.1.0).
 - Every request has a timeout, a `User-Agent`, a 5 MB response cap and a concurrency limit of 4,
   and every response is schema-validated before use.
 
-[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.8.0...v0.9.0
