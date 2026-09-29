@@ -19,7 +19,7 @@
       "question_ja": "私のノードは今、同期していますか。",
       "expectedTool": "symbol_node_status",
       "expectedArguments": {},
-      "notes": "\"My node\" is the node fixed by SYMBOL_NODE_URL; no argument is needed. \"In sync\" is the synced flag (false when the latest block is older than 5 minutes) with the current and finalized heights, which symbol_node_status reports. Whether the node is healthy (database, clock, storage, finalization lag, with a verdict) is symbol_node_health (node-health-now); how many blocks it trails other nodes is symbol_network_compare (node-lagging-reference)."
+      "notes": "\"My node\" is the node fixed by SYMBOL_NODE_URL; no argument is needed. \"In sync\" is the synced flag (false when the latest block is older than 10 target block times, 5 minutes on mainnet) with the current and finalized heights, which symbol_node_status reports. Whether the node is healthy (database, clock, storage, finalization lag, with a verdict) is symbol_node_health (node-health-now); how many blocks it trails other nodes is symbol_network_compare (node-lagging-reference)."
     },
     {
       "id": "delegated-harvesting-unlocked",
@@ -221,7 +221,7 @@
       "question_ja": "ノードは健全？",
       "expectedTool": "symbol_node_health",
       "expectedArguments": {},
-      "notes": "\"Healthy\" / \"is everything running\" / \"is the database up\" / \"is the clock right\" is symbol_node_health: six checks (API node, database, storage versus chain height, clock skew, finalization lag, roles) with one verdict. symbol_node_status answers whether the node is synced and how many peers it has; symbol_network_compare answers whether it lags the reference nodes. No argument is needed: the node is fixed by SYMBOL_NODE_URL."
+      "notes": "\"Healthy\" / \"is everything running\" / \"is the database up\" / \"is the clock right\" is symbol_node_health: seven checks (API node, database, storage versus chain height, clock skew, finalization lag, roles, age of the latest block) with one verdict. symbol_node_status answers whether the node is synced and how many peers it has; symbol_network_compare answers whether it lags the reference nodes. No argument is needed: the node is fixed by SYMBOL_NODE_URL."
     },
     {
       "id": "node-version-outdated",
@@ -283,7 +283,7 @@
       "question_ja": "ノードの調子はどう？",
       "expectedTool": "symbol_node_health",
       "expectedArguments": {},
-      "notes": "A vague \"how is it doing\" asks for the node's condition, which symbol_node_health answers in one call: six checks (API node, database, storage versus chain height, clock skew, finalization lag, roles) and one verdict. symbol_node_status answers \"is it in sync\" and \"which version, how many peers\" (node-in-sync, node-own-version); call it, or symbol_version_drift for an outdated version, when the user asks about those."
+      "notes": "A vague \"how is it doing\" asks for the node's condition, which symbol_node_health answers in one call: seven checks (API node, database, storage versus chain height, clock skew, finalization lag, roles, age of the latest block) and one verdict. symbol_node_status answers \"is it in sync\" and \"which version, how many peers\" (node-in-sync, node-own-version); call it, or symbol_version_drift for an outdated version, when the user asks about those."
     },
     {
       "id": "node-own-version",

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assessChainTipAge,
   assessClockSkew,
   assessFinalizationLag,
   assessStorage,
+  chainTipThresholds,
   computeClockSkewMs,
   deriveHealthVerdict,
   pickNodeTimestamp,
@@ -95,6 +97,64 @@ describe('assessFinalizationLag', () => {
       status: 'ok',
     });
     expect(() => assessFinalizationLag(1, 1, 0, BLOCK_TIME_MS)).toThrow();
+  });
+});
+
+describe('chain tip age', () => {
+  /** Network timestamp of the fixture block 5763675: 2026-09-10T03:01:38.808Z. */
+  const BLOCK_TS = '173156113808';
+  const BLOCK_DATE = new Date('2026-09-10T03:01:38.808Z');
+  /** The fixture block judged `ms` after it was made, at a block time of `blockTimeMs`. */
+  const tipAt = (ms: number, blockTimeMs = BLOCK_TIME_MS) =>
+    assessChainTipAge(
+      BLOCK_TS,
+      EPOCH_ADJUSTMENT,
+      new Date(BLOCK_DATE.getTime() + ms),
+      chainTipThresholds(blockTimeMs),
+    );
+
+  it('derives 10 and 30 block times from the block time', () => {
+    expect(chainTipThresholds(BLOCK_TIME_MS)).toEqual({ warnSeconds: 300, failSeconds: 900 });
+    expect(chainTipThresholds(15_000)).toEqual({ warnSeconds: 150, failSeconds: 450 });
+    expect(chainTipThresholds(500)).toEqual({ warnSeconds: 5, failSeconds: 15 });
+    expect(() => chainTipThresholds(0)).toThrow();
+    expect(() => chainTipThresholds(Number.NaN)).toThrow();
+  });
+
+  it('measures the age of the fixture block at the test clock', () => {
+    expect(tipAt(201_192)).toEqual({ latestBlockDate: BLOCK_DATE, ageSeconds: 201, status: 'ok' });
+  });
+
+  it('is ok up to the warn threshold, warns up to the fail threshold and fails beyond', () => {
+    expect(tipAt(300_000)).toMatchObject({ ageSeconds: 300, status: 'ok' });
+    expect(tipAt(301_000)).toMatchObject({ ageSeconds: 301, status: 'warn' });
+    expect(tipAt(900_000)).toMatchObject({ ageSeconds: 900, status: 'warn' });
+    expect(tipAt(901_000)).toMatchObject({ ageSeconds: 901, status: 'fail' });
+    expect(tipAt(86_400_000)).toMatchObject({ ageSeconds: 86_400, status: 'fail' });
+  });
+
+  it('judges the age in whole seconds, as symbol_node_status reports it', () => {
+    expect(tipAt(300_499)).toMatchObject({ ageSeconds: 300, status: 'ok' });
+    expect(tipAt(300_500)).toMatchObject({ ageSeconds: 301, status: 'warn' });
+  });
+
+  it('treats a block ahead of the local clock as not old', () => {
+    expect(tipAt(-5_000)).toMatchObject({ ageSeconds: -5, status: 'ok' });
+    // Less than half a second ahead rounds to 0, not -0.
+    expect(Object.is(tipAt(-400).ageSeconds, 0)).toBe(true);
+  });
+
+  it('refuses a timestamp that gives no valid time instead of judging NaN seconds', () => {
+    const judge = (timestamp: string) => () =>
+      assessChainTipAge(timestamp, EPOCH_ADJUSTMENT, BLOCK_DATE, chainTipThresholds(BLOCK_TIME_MS));
+    // Beyond the last date JavaScript knows, and too long to be a finite number.
+    expect(judge('9000000000000000')).toThrow(/is not a valid time/);
+    expect(judge('9'.repeat(400))).toThrow(/invalid network timestamp/);
+  });
+
+  it('follows the thresholds it is given', () => {
+    expect(tipAt(160_000, 15_000).status).toBe('warn');
+    expect(tipAt(460_000, 15_000).status).toBe('fail');
   });
 });
 

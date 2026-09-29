@@ -8,10 +8,14 @@ import {
 } from '../client/schemas.js';
 import { parseHeight } from '../domain/epoch.js';
 import { findNetworkBySeed } from '../domain/network.js';
-import { serviceStatus, serviceStatusText } from '../domain/nodehealth.js';
+import {
+  assessChainTipAge,
+  chainTipThresholds,
+  serviceStatus,
+  serviceStatusText,
+} from '../domain/nodehealth.js';
 import { labelledQuote } from '../domain/quote.js';
 import { decodeRoles } from '../domain/roles.js';
-import { networkTimestampToDate } from '../domain/time.js';
 import { decodeVersion } from '../domain/version.js';
 import { defineTool, formatInteger, nullable } from './_shared.js';
 
@@ -53,13 +57,11 @@ const outputSchema = z.object({
   warnings: z.array(z.string()),
 });
 
-export const SYNC_THRESHOLD_SECONDS = 300;
-
 export const nodeStatusTool = defineTool({
   name: 'symbol_node_status',
   title: 'Symbol node status',
   description:
-    'Report whether the configured Symbol node (SYMBOL_NODE_URL) is in sync, and what it is: friendly name, host, roles (Peer/API/Voting), software version, network, current and finalized height, finalization epoch and peer count. For whether its services are healthy (database, storage, clock, finalization lag, as one verdict), use symbol_node_health; for whether its version is behind the network, symbol_version_drift; for how many blocks it trails other nodes, symbol_network_compare. The node counts as not synced when its latest block is older than 5 minutes. Also shows the API node and database status from /node/health. Takes no arguments.',
+    'Report whether the configured Symbol node (SYMBOL_NODE_URL) is in sync, and what it is: friendly name, host, roles (Peer/API/Voting), software version, network, current and finalized height, finalization epoch and peer count. For whether its services are healthy (database, storage, clock, finalization lag, as one verdict), use symbol_node_health; for whether its version is behind the network, symbol_version_drift; for how many blocks it trails other nodes, symbol_network_compare. The node counts as not synced when its latest block is older than 10 target block times (the threshold comes from the network properties; 5 minutes on mainnet). Also shows the API node and database status from /node/health. Takes no arguments.',
   inputSchema: undefined,
   outputSchema,
   untrustedText: true,
@@ -76,12 +78,17 @@ export const nodeStatusTool = defineTool({
     const latest = await ctx.rest.get(`/blocks/${height}`, BlockInfoSchema);
 
     const now = ctx.now();
-    const latestBlockDate = networkTimestampToDate(
+    // The same judgment as the chain_tip_age check of symbol_node_health: not synced past its
+    // warn threshold (10 target block times).
+    const thresholds = chainTipThresholds(properties.blockGenerationTargetTimeMs);
+    const { latestBlockDate, ageSeconds, status } = assessChainTipAge(
       latest.block.timestamp,
       properties.epochAdjustmentSeconds,
+      now,
+      thresholds,
     );
-    const ageSeconds = Math.round((now.getTime() - latestBlockDate.getTime()) / 1000);
-    const synced = ageSeconds <= SYNC_THRESHOLD_SECONDS;
+    const synced = status === 'ok';
+    const thresholdSeconds = thresholds.warnSeconds;
     const apiNode = serviceStatus(health.status.apiNode, text);
     const db = serviceStatus(health.status.db, text);
     const healthy = apiNode === 'up' && db === 'up';
@@ -97,7 +104,7 @@ export const nodeStatusTool = defineTool({
     const warnings: string[] = [];
     if (!synced) {
       warnings.push(
-        `Latest block is ${ageSeconds} seconds old (threshold ${SYNC_THRESHOLD_SECONDS}s); the node appears to be behind or stalled.`,
+        `Latest block is ${ageSeconds} seconds old (threshold ${thresholdSeconds}s); the node appears to be behind or stalled.`,
       );
     }
     if (!healthy) {
@@ -118,7 +125,7 @@ export const nodeStatusTool = defineTool({
       `Health apiNode=${serviceStatusText(apiNode)}, db=${serviceStatusText(db)}; height ${formatInteger(height)}, finalized ${formatInteger(parseHeight(chain.latestFinalizedBlock.height))} (epoch ${chain.latestFinalizedBlock.finalizationEpoch}); ${peers.length} peers.`,
       synced
         ? `Synced: latest block ${ageSeconds}s old.`
-        : `NOT synced: latest block ${ageSeconds}s old (threshold ${SYNC_THRESHOLD_SECONDS}s).`,
+        : `NOT synced: latest block ${ageSeconds}s old (threshold ${thresholdSeconds}s).`,
     ].join('\n');
 
     return {
@@ -152,7 +159,7 @@ export const nodeStatusTool = defineTool({
         checkedAt: ctx.instant(now),
         ageSeconds,
         synced,
-        thresholdSeconds: SYNC_THRESHOLD_SECONDS,
+        thresholdSeconds,
       },
       warnings,
     };

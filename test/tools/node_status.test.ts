@@ -51,7 +51,7 @@ describe('symbol_node_status', () => {
     expect(result.structuredContent?.summary).toMatch(/1\.0\.3\.9/);
   });
 
-  it('flags a stalled node when the latest block is older than 5 minutes', async () => {
+  it('flags a stalled node when the latest block is older than 10 block times (5 minutes on mainnet)', async () => {
     server = await startTestServer({ now: new Date(FIXTURE_BLOCK_TIME.getTime() + 30 * 60_000) });
     const result = await server.callTool('symbol_node_status');
     expect(result.isError).toBe(false);
@@ -60,6 +60,57 @@ describe('symbol_node_status', () => {
     expect(sync.ageSeconds).toBeGreaterThan(300);
     expect(result.structuredContent?.warnings).toHaveLength(1);
     expect(result.structuredContent?.summary).toMatch(/NOT synced/);
+  });
+
+  it('keeps the mainnet boundary at 300 s: synced at 300, not synced at 301', async () => {
+    for (const [ageSeconds, synced] of [
+      [300, true],
+      [301, false],
+    ] as const) {
+      server = await startTestServer({
+        now: new Date(FIXTURE_BLOCK_TIME.getTime() + ageSeconds * 1000),
+      });
+      const result = await server.callTool('symbol_node_status');
+      expect(result.structuredContent?.sync).toMatchObject({
+        ageSeconds,
+        synced,
+        thresholdSeconds: 300,
+      });
+      expect(result.structuredContent?.summary).toContain(
+        synced
+          ? `Synced: latest block ${ageSeconds}s old.`
+          : `NOT synced: latest block ${ageSeconds}s old (threshold 300s).`,
+      );
+      await server.close();
+      server = undefined;
+    }
+  });
+
+  it('derives the sync threshold from the block time of the network', async () => {
+    const properties = fixture<{ chain: Record<string, unknown> }>(
+      'mainnet/network-properties.json',
+    );
+    // 200 s: synced at a 30 s block time (300 s), not at 15 s (150 s).
+    server = await startTestServer({
+      now: new Date(FIXTURE_BLOCK_TIME.getTime() + 200_000),
+      routes: {
+        ...mainnetRoutes(),
+        'GET /network/properties': {
+          ...properties,
+          chain: { ...properties.chain, blockGenerationTargetTime: '15s' },
+        },
+      },
+    });
+    const result = await server.callTool('symbol_node_status');
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent?.sync).toMatchObject({
+      ageSeconds: 200,
+      synced: false,
+      thresholdSeconds: 150,
+    });
+    expect(result.structuredContent?.warnings).toEqual([
+      'Latest block is 200 seconds old (threshold 150s); the node appears to be behind or stalled.',
+    ]);
   });
 
   it('reports unhealthy api/db and sanitizes the friendly name', async () => {

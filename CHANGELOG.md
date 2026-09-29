@@ -7,6 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `symbol_node_health` called a stalled node healthy. A node that stops following the chain (a
+  stopped server, broker or database process, or lost peers) keeps answering `/node/health` with
+  up/up, its database block count and finalized height stop together with its height, and its
+  clock keeps running, so all six checks stayed ok. A seventh check, `chain_tip_age`, compares the
+  time of the latest block with this machine's clock (one more request, for that block): warn
+  beyond 10 target block times (5 minutes on mainnet), fail beyond 30 (15 minutes), and unknown,
+  so `degraded`, when the chain height or that block cannot be read. `check` maps this tool's
+  verdict, so for such a node its `node_health` item is now warn or fail where it was ok, and the
+  command exits 1 or 2 where it could exit 0. The tool description now names the seventh check.
+- `symbol_node_status` counts a node as not synced when its latest block is older than 10 target
+  block times, read from the network properties, instead of a fixed 5 minutes, using the same
+  function as `chain_tip_age`. On mainnet that is still 300 seconds, so the answer is the same
+  there; the tool description says so. These two descriptions are the only definition text that
+  changes; no argument or output field is added or removed.
+
 ## [0.9.2] - 2026-09-29
 
 > No MCP host restart is needed after upgrading: the tool and prompt definitions differ from 0.9.1

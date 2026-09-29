@@ -1,7 +1,8 @@
 /**
- * Node health thresholds: the pure rules behind symbol_node_health. Every threshold is derived
- * from values read from /network/properties (blockGenerationTargetTime, votingSetGrouping,
- * epochAdjustment); nothing network-specific is hard-coded here.
+ * Node health thresholds: the pure rules behind symbol_node_health (and the sync judgment of
+ * symbol_node_status). Every threshold is derived from values read from /network/properties
+ * (blockGenerationTargetTime, votingSetGrouping, epochAdjustment); nothing network-specific is
+ * hard-coded here.
  */
 import type { CheckStatus } from './delegation.js';
 import { quoteUntrusted } from './quote.js';
@@ -155,6 +156,64 @@ export function assessFinalizationLag(
     failBlocks,
     status,
   };
+}
+
+/**
+ * How many target block times old the latest block may be. Beyond WARN the node is not synced
+ * (symbol_node_status) and chain_tip_age warns (symbol_node_health); beyond FAIL that check fails.
+ * Policy multiples of blockGenerationTargetTime, not network constants (mainnet 30 s: 300 s, 900 s).
+ */
+export const CHAIN_TIP_WARN_BLOCK_TIMES = 10;
+export const CHAIN_TIP_FAIL_BLOCK_TIMES = 30;
+
+export interface ChainTipThresholds {
+  readonly warnSeconds: number;
+  readonly failSeconds: number;
+}
+
+export function chainTipThresholds(blockGenerationTargetTimeMs: number): ChainTipThresholds {
+  assertBlockTime(blockGenerationTargetTimeMs);
+  return {
+    warnSeconds: (CHAIN_TIP_WARN_BLOCK_TIMES * blockGenerationTargetTimeMs) / 1000,
+    failSeconds: (CHAIN_TIP_FAIL_BLOCK_TIMES * blockGenerationTargetTimeMs) / 1000,
+  };
+}
+
+export interface ChainTipAge {
+  /** Wall-clock time of the latest block. */
+  readonly latestBlockDate: Date;
+  /** now minus the latest block time in whole seconds; negative when the block is ahead of now. */
+  readonly ageSeconds: number;
+  readonly status: 'ok' | 'warn' | 'fail';
+}
+
+/**
+ * Age of the latest block (the chain tip) against the local clock `now`: up to `warnSeconds` is
+ * ok, beyond it warn (the node is behind or stalled), beyond `failSeconds` fail. The age is
+ * rounded to whole seconds before it is judged, as symbol_node_status has always reported it.
+ * Throws for a timestamp that gives no valid time (the node may send any uint64: one too long for
+ * a number fails in networkTimestampToDate, one beyond the range of Date here), rather than judging
+ * NaN seconds as a failure.
+ */
+export function assessChainTipAge(
+  latestBlockTimestamp: string | number,
+  epochAdjustmentSeconds: number,
+  now: Date,
+  thresholds: ChainTipThresholds,
+): ChainTipAge {
+  const latestBlockDate = networkTimestampToDate(latestBlockTimestamp, epochAdjustmentSeconds);
+  if (Number.isNaN(latestBlockDate.getTime())) {
+    throw new Error(`block timestamp ${latestBlockTimestamp} is not a valid time`);
+  }
+  // `+ 0` turns the -0 that Math.round gives for a block a fraction of a second ahead into 0.
+  const ageSeconds = Math.round((now.getTime() - latestBlockDate.getTime()) / 1000) + 0;
+  const status =
+    ageSeconds <= thresholds.warnSeconds
+      ? 'ok'
+      : ageSeconds <= thresholds.failSeconds
+        ? 'warn'
+        : 'fail';
+  return { latestBlockDate, ageSeconds, status };
 }
 
 export type HealthVerdict = 'healthy' | 'degraded' | 'unhealthy';
