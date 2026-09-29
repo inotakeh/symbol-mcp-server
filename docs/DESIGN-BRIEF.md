@@ -1,15 +1,7 @@
-# Symbol MCP Server development brief (v2, revised after a review of current conventions)
+# Symbol MCP Server design brief
 
 Instructions for an agent with no prior knowledge. It is written so that this document alone is enough to start.
 Anything unclear must be checked in the references in §12 (the OpenAPI specification, the SDK docs, a live node), not guessed.
-
-> **Changes from v1 (applied on 2026-09-10 after checking the official documentation)**
-> - The SDK is **`@modelcontextprotocol/server` 2.0.0** (published 2026-07-27), not the old `@modelcontextprotocol/sdk` (the v1 line). The API is `registerTool` / `serveStdio`, with Zod v4.
-> - Tool names are namespaced throughout as `symbol_<resource>_<action>` (following Anthropic's guide to tool design).
-> - **Removed every argument with which the model could name an arbitrary URL** (against SSRF, following the MCP security guide). Reference nodes come only from an allowlist in an environment variable.
-> - `annotations` (readOnlyHint and the like) and `outputSchema` + `structuredContent` are now required on every tool.
-> - Tests use the SDK's official in-process approach (`createMcpHandler` + `Client`).
-> - The publishing steps now follow the MCP Registry's actual procedure (`mcpName` / `server.json` / `mcp-publisher`).
 
 ---
 
@@ -57,7 +49,7 @@ The design comes down to 3 points. Make task-level tools that answer questions i
 | License | **MIT** (included in the first commit) | Required for a public repository |
 
 **Notes on using SDK v2**
-- v2 was published only recently. If a fatal bug is hit, falling back to `@modelcontextprotocol/sdk` 1.x (the `server.tool()` API) is an option, but even then, keep the design in this document. v1→v2 can be migrated mechanically with `npx @modelcontextprotocol/codemod@latest v1-to-v2 .`.
+- Stay on v2 even when a v2 bug blocks a change: report the bug and the SDK version instead of switching to the v1 `@modelcontextprotocol/sdk` (AGENTS.md).
 - By default, `serveStdio` serves both protocol eras, "2025 (the `initialize` handshake)" and "2026-07-28", from the same factory. **Keep the default** (some hosts are still on the older era).
 - The 2026-07-28 specification deprecates the Roots / Sampling / Logging features. **Write logs to stderr, not through the MCP logging feature**. `console.log` is forbidden (stdout is the JSON-RPC channel, and 1 line breaks it).
 
@@ -405,7 +397,7 @@ Create `createMcpHandler(createServer)`, connect the `Client` of `@modelcontextp
 │   ├── state/              # snapshotfile.ts: the only use of node:fs in src (the state file of symbol_harvester_watch, §2-9)
 │   └── tools/              # 1 file for 1 tool (symbol_*.ts), each file defining its input/output zod; files starting with `_` are helpers shared by the tools (defineTool, resolving accounts and mosaics, and so on)
 ├── test/                   # unit/, tools/, evals/, integration/, fixtures/ (§7)
-├── evals/                  # examples of real questions and the tool calls expected for them (Phase 3; checked by test/evals/)
+├── evals/                  # examples of real questions and the tool calls expected for them (checked by test/evals/)
 ├── scripts/                # release (version checks, release notes, waiting for npm, fetching the distributed files) and the .mcpb build, importing fixtures, generating the icon (§7, §14)
 ├── mcpb/                   # manifest.json of the .mcpb (a protected template) and icon.png (§14)
 ├── docs/                   # this document, RELEASING.md (the steps for each release), helper files for the maintainer's environment
@@ -432,16 +424,9 @@ Create `createMcpHandler(createServer)`, connect the `Client` of `@modelcontextp
 Note: as of 2026-09, the Registry is a preview (breaking changes and data resets are possible).
 Note: these are the steps for the first publication. The actual steps for each release (release PR, tag, approval, npm, GitHub Release, Registry, and checking them) are in `docs/RELEASING.md`. For each release, the `registry` job of `release.yml` publishes to the Registry. It logs in with GitHub OIDC and uses an mcp-publisher pinned by version and SHA-256. Publish by hand only when this job fails.
 
-## 9. Implementation phases
+## 9. Adding tools and releasing
 
-**Phase 1 (the first PR; with this alone, it is usable for yourself)**
-Scaffolding, config and the network check, `symbol_network_info`, `symbol_node_status`, `symbol_account_get`, `symbol_voting_key_status`, unit tests and tool-layer tests, CI, LICENSE.
-
-**Phase 2 (more for account holders)**
-`symbol_transaction_get`, `symbol_transaction_search`, `symbol_mosaic_get`, `symbol_namespace_get`, `symbol_fee_estimate`, `symbol_address_parse`, `symbol_time_convert`, `symbol_harvesting_status`, `symbol_network_compare`. Integration tests.
-
-**Phase 3 (publication)**
-README, CHANGELOG, SECURITY.md, `evals/` (10 representative questions and the expected tool calls), npm publish, registration in the MCP Registry.
+The tool set is `TOOLS` in `src/server.ts` (§5). A new tool or prompt is appended at the end of its array (§3.1, §5 "Fix the registration order"), and every release follows `docs/RELEASING.md`, with its version chosen by the rule of §5 "The version follows the shape of the definitions" (a minor version and a restart note when the shape of a definition changes, a patch when only descriptive text changes).
 
 ## 10. What not to do
 
