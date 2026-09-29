@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-09-29
+
+> No MCP host restart is needed after upgrading: the tool and prompt definitions differ from 0.9.1
+> only in one word of the `symbol_voting_key_status` description ("within 45 days"), and no output
+> field is added or removed.
+
 ### Changed
 
 - `symbol_voting_key_status` warns about an active voting key with no successor from 45 days
@@ -609,7 +615,8 @@ Initial release candidate (0.1.0).
 - Every request has a timeout, a `User-Agent`, a 5 MB response cap and a concurrency limit of 4,
   and every response is schema-validated before use.
 
-[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.7.1...v0.8.0
