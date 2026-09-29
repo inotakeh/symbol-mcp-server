@@ -32,6 +32,13 @@ agents never create tags, approve deployments or publish.
 
 On a branch such as `chore/release-X.Y.Z`, with the title `chore: release X.Y.Z`:
 
+- First, `node scripts/release-check.mjs X.Y.Z` with the version you have in mind. Its first line
+  compares the definitions with the previous release (see [The version](#the-version) below):
+  `descriptive text only` or `no change` allows a patch; `the shape changed` needs a minor version
+  and the restart banner. Until the `CHANGELOG.md` section and `package.json` below and step 2 are
+  done, the check also lists the missing `CHANGELOG.md` section and the version fields of
+  `package.json`, `package-lock.json` and `server.json`; that is expected. Put the first line in
+  the PR body.
 - `CHANGELOG.md`: the entries under `## [Unreleased]` move to a new `## [X.Y.Z] - YYYY-MM-DD`
   section below an empty `## [Unreleased]` heading. At the bottom, `[Unreleased]` compares
   `vX.Y.Z...HEAD`, and a new `[X.Y.Z]` line compares the previous tag with `vX.Y.Z`.
@@ -39,8 +46,33 @@ On a branch such as `chore/release-X.Y.Z`, with the title `chore: release X.Y.Z`
 - `node scripts/release-notes.mjs X.Y.Z` prints the new section. The release workflow uses this
   output as the release notes and fails when the section is missing or empty.
 
+#### The version
+
 The version follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html), as the changelog
-states.
+states, and the tool and prompt definitions decide between a patch and a minor version
+(DESIGN-BRIEF §5, "The version follows the shape of the definitions"):
+
+- A change to descriptive text only may ship in a patch, with no restart note. Descriptive text is
+  a closed list: the server instructions, the `description` and `title` of tools, prompts and prompt
+  arguments, the `title` in a tool's annotations, and the JSON Schema keywords `description` and
+  `title` in the input and output schemas.
+- Any other change is a change to the shape, a `default` or a bound included, and needs a minor
+  (or major) version whose `CHANGELOG.md` section starts with this line:
+
+  ```
+  > **After upgrading, restart your MCP host (Claude Desktop, Claude Code and others).**
+  ```
+
+`node scripts/release-check.mjs X.Y.Z` applies the rule. It compares
+`test/tools/__snapshots__/published-definitions.json` with the same file at the tag of the previous
+release (`git show vP:…`, where P is the greatest version with a dated `CHANGELOG.md` section below
+X.Y.Z), so it needs the tags: `git pull` brings them. It prints one line that says what changed, and
+lists every shape change it refuses, up to 20, with the command that shows the whole diff. It
+compares the committed snapshot, not the code; the snapshot test in `npm test` proves that the two
+agree, so in the `publish` job `npm test` stays in the same job, after the release check and before
+`npm publish`. `--previous-definitions <file>` compares with a file instead of the tag, for the tests and
+for a checkout without tags. The release workflow never passes it: there the check must compare
+with the real tag. Pre-release versions (`1.0.0-rc.1`) are refused.
 
 ### 2. Same PR: registry entry and lockfile
 
@@ -49,10 +81,11 @@ states.
   `npm install --package-lock-only --ignore-scripts`. Only the root `version` and
   `packages[""].version` should change; check with `git diff package-lock.json`.
 
-Then `node scripts/release-check.mjs X.Y.Z` prints one line when the release files agree: `X.Y.Z` in
+Then `node scripts/release-check.mjs X.Y.Z` prints the definitions line
+([The version](#the-version)) and, when the release files agree, a second line: `X.Y.Z` in
 `package.json`, `package-lock.json` and `server.json`, `server.json` naming this npm package and its
-`mcpName`, and a dated `CHANGELOG.md` section with notes. Otherwise it lists every difference. The
-`publish` job runs the same check first.
+`mcpName`, and a dated `CHANGELOG.md` section with notes. Otherwise it lists every difference, the
+definitions included. The `publish` job runs the same check first.
 
 Until this commit is in, the docs-sync test fails: it checks that `server.json` and
 `package-lock.json` carry the version of `package.json` (`test/unit/docs-sync.test.ts`). The
@@ -64,7 +97,8 @@ not on its list, so review that diff yourself.
 ### 3. Merge
 
 Merge when CI is green (lint, typecheck, tests and build on Node 22 and 24, `npm audit`,
-dependency review, protected files, CodeQL).
+dependency review, protected files, CodeQL). CI does not compare the definitions with the previous
+release: its checkout has no tags. Steps 2 and 4 do, and so does the `publish` job.
 
 ### 4. Tag
 
@@ -76,6 +110,7 @@ only afterwards (#61).
 git switch main
 git pull --ff-only
 git log -1 --format=%s     # chore: release X.Y.Z (#NN)
+node scripts/release-check.mjs X.Y.Z   # on the commit you tag: another PR may have merged since step 2
 npm ci --ignore-scripts
 SYMBOL_INTEGRATION=1 SYMBOL_NODE_URL=https://<node-host>:3001 \
   SYMBOL_INTEGRATION_ACCOUNT=<address of a voting account that harvests> \
@@ -115,9 +150,11 @@ releases everything: `github-release` and `registry` have no environment and sta
 First, before anything is installed or published, `node scripts/release-check.mjs X.Y.Z` (step 2):
 the tag's version must be in `package.json`, `package-lock.json` (root and `packages[""]`) and
 `server.json` (`version` and every `packages[].version`), `server.json`'s `name` must be
-`package.json`'s `mcpName` and its npm package this one, and `CHANGELOG.md` must have the version's
-section. A version on npm cannot be changed, and the MCP Registry accepts it only when its `mcpName`
-is `server.json`'s `name`, so a difference stops the run here.
+`package.json`'s `mcpName` and its npm package this one, `CHANGELOG.md` must have the version's
+section, and the version must follow the shape of the definitions against the previous release's
+tag ([The version](#the-version)); the job's checkout fetches the whole history with its tags
+(`fetch-depth: 0`) for that. A version on npm cannot be changed, and the MCP Registry accepts it
+only when its `mcpName` is `server.json`'s `name`, so a difference stops the run here.
 
 Then, on Node 24, with a check that npm is 11.5.1 or newer (needed for trusted publishing):
 `npm ci --ignore-scripts`, lint, typecheck, tests, build, then
@@ -188,7 +225,20 @@ workflow and the commit of the tag.
 
 - **`publish` fails before `npm publish`** (the release files check, tests, a build error): nothing
   was published. Delete the tag (`git push origin :refs/tags/vX.Y.Z`, then `git tag -d vX.Y.Z`),
-  fix the problem on `main` through a PR, and tag again.
+  fix the problem on `main` through a PR, and tag again. For the definitions part of the check:
+  - `… changed shape since P, so X.Y.Z cannot be a patch`: release the minor version the message
+    names instead. On `main`, a release PR renames the section and its link references at the
+    bottom of `CHANGELOG.md` to that version, starts the section with the restart banner, and
+    changes `package.json`, `server.json` and `package-lock.json` to it; leave no dated section for
+    the abandoned patch. Then tag the minor version. (Or revert the change, if it was not meant.)
+  - `… does not start with the restart note`: put the banner first in the section on `main`, then
+    tag the same version again.
+  - `cannot read the definitions of the previous release P …`: either the `publish` job's checkout
+    lacks `fetch-depth: 0` (a re-run uses the workflow of the tag, so it cannot help: fix
+    `release.yml` on `main`, then tag again), or there is no tag `vP`. P is the greatest version
+    with a dated section in `CHANGELOG.md` below the one released, so a dated section left for a
+    version that was never released, or whose tag was deleted, sends the check to a tag that does
+    not exist: restore the tag, or remove that section on `main`, then tag again.
 - **`github-release` fails**: the version is already on npm, and the Registry entry does not depend
   on this job. If the failed run already created a release or a draft for `vX.Y.Z` (for example
   when an upload failed), delete it first with `gh release delete vX.Y.Z`, which keeps the tag;

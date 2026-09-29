@@ -15,11 +15,15 @@ const MISMATCH_MESSAGE = [
   `The published tool or prompt definitions or the server instructions no longer match ${SNAPSHOT_FILE}.`,
   'If the change is intended, update the file with',
   '`npm test -- test/tools/published_definitions.test.ts --update` and commit it with the change.',
-  'A change to the shape of a definition (a tool, prompt, argument or output field added or',
-  'removed; a type, what is required, an enum or the annotations changed) needs a minor version',
-  'bump and a release note telling users to restart their MCP host, because clients check results',
-  'against the tools/list they cached. A change to descriptive text only (description, title, the',
-  'instructions) can ship in a patch, with no restart note (DESIGN-BRIEF §5)',
+  'A change to descriptive text only (the instructions; the description and title of tools,',
+  'prompts and prompt arguments; the title in annotations; the description and title keywords of',
+  'the schemas) can ship in a patch, with no restart note. Anything else is a change to the shape',
+  '(a tool, prompt or prompt argument added, removed or reordered; an input or output field added',
+  'or removed; a type, what is required (as a set), an enum, a default, a bound, a const or the',
+  'annotations changed) and needs a minor version whose',
+  'CHANGELOG.md section starts with "> **After upgrading, restart your MCP host (Claude Desktop,',
+  'Claude Code and others).**", because clients check results against the tools/list they cached.',
+  'scripts/release-check.mjs applies this rule at release time (DESIGN-BRIEF §5)',
 ].join(' ');
 
 type Loose = Record<string, unknown>;

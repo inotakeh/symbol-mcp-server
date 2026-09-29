@@ -18,3 +18,18 @@ export interface ReleaseFiles {
 export declare function extractSection(markdown: string, version: string): string[] | null;
 
 export declare function releaseProblems(version: string, files: ReleaseFiles): string[];
+
+export declare const RESTART_BANNER: string;
+
+export declare function parseReleaseVersion(version: string): [number, number, number] | null;
+
+export declare function previousReleaseVersion(changelog: string, version: string): string | null;
+
+export declare function versionBump(
+  previous: string,
+  next: string,
+): 'major' | 'minor' | 'patch' | 'none';
+
+export declare function nextMinorVersion(version: string): string;
+
+export declare function hasRestartBanner(section: readonly string[]): boolean;

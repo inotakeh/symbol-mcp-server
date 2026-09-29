@@ -37,12 +37,20 @@ change a title, a description, a schema, an annotation, a prompt's arguments or 
 update it with `npm test -- test/tools/published_definitions.test.ts --update` and commit it with
 the change, so the review shows what clients will see. The version depends on what changed:
 
-- **The shape of a definition** (a tool, a prompt, an argument or an output field added or
-  removed; a type, what is required, an enum or the annotations changed): a minor version, and a
-  release note telling users to restart their MCP host after updating. Clients check results
-  against the tool list they cached, and an older list rejects a field it does not know.
-- **Descriptive text only** (`description`, `title`, the server instructions): a patch is enough,
-  with no restart note.
+- **Descriptive text only**: a patch is enough, with no restart note. Descriptive text is a closed
+  list: the server instructions, the `description` and `title` of tools, prompts and prompt
+  arguments, the `title` in a tool's annotations, and the JSON Schema keywords `description` and
+  `title` in the input and output schemas (a field named `description` or `title` is not text).
+- **Anything else, the shape** (a tool, a prompt or a prompt argument added, removed or reordered;
+  an input or output field added or removed; a type, what is required (as a set), an enum, a
+  `default`, a bound, a `const` or the annotations changed): a minor version whose CHANGELOG.md
+  section starts with
+  `> **After upgrading, restart your MCP host (Claude Desktop, Claude Code and others).**`. Clients
+  check results against the tool list they cached, and an older list rejects a field it does not
+  know.
+
+`node scripts/release-check.mjs X.Y.Z` applies this rule when a version is released (DESIGN-BRIEF
+§5, docs/RELEASING.md).
 
 Manual checks against a real node:
 
