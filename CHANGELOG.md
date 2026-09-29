@@ -20,6 +20,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - README (Japanese) corrected to match the server: the `symbol_holdings_value` row said that
   `priceSource` and `priceAsOf` are echoed as given; they are cleaned like chain strings before
   they are echoed, and `priceAsOf` is only checked to be a date.
+- `symbol_voting_key_status`: with every voting key slot taken and no expired key among them, the
+  warning told the operator to unlink an expired key, and it did so even when a successor key was
+  already registered without a gap, so there was nothing to do. Now full slots with an expired key
+  keep that advice; full slots with no expired key warn only when the renewal is not done (the key
+  that stays active longest has no successor without a gap, the rule `check` uses), and then say
+  that no slot is free, without advice to unlink.
+- `symbol_network_compare`: with reference nodes configured but none of them answering on the
+  configured network, the summary said "in sync (0 blocks behind the best node)", because the own
+  node was then the only node compared. It now says that it could not compare and why (how many
+  did not answer, how many are on another network), lists each reference with its failure, and
+  notes that `heightBehindBest` 0 and `lagging` false in the structured output then compare the
+  own node with itself only. When only some reference nodes answer, the first line names the
+  ones that could not be compared, and a node on another network no longer gets a behind marker
+  such as `(--4,236,319)`. This applies while the own node answers; when it does not, the first
+  line says so, as before. The output fields are unchanged.
 
 ### Security
 

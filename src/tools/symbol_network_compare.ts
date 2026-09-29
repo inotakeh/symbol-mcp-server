@@ -157,19 +157,49 @@ export const networkCompareTool = defineTool({
         `No reference nodes are configured, so there is nothing to compare against. ${own?.reachable ? `${own.host} is at height ${formatInteger(own.height ?? 0)}, finalized ${formatInteger(own.finalizedHeight ?? 0)} (epoch ${own.finalizationEpoch}).` : `${ctx.rest.host} could not be reached (${own?.error}).`} Set SYMBOL_REFERENCE_NODES to a comma-separated list of https node URLs; public nodes are listed at ${NODEWATCH_URL}.`,
       );
     } else {
-      lines.push(
-        `${ctx.rest.host} vs ${references.length} reference node${references.length === 1 ? '' : 's'} on ${expected}: ${
-          own?.reachable
-            ? lagging
-              ? `LAGGING by ${formatInteger(ownBehind ?? 0)} blocks (threshold ${LAG_THRESHOLD_BLOCKS}).`
-              : `in sync (${formatInteger(ownBehind ?? 0)} blocks behind the best node${finalizationLagging ? `, but finalization is ${formatInteger(ownFinalizedBehind ?? 0)} blocks behind` : ''}).`
-            : `own node unreachable (${own?.error}).`
-        }`,
-      );
+      // Only a reference that answered on the configured network is compared; without one, the
+      // own node is the only "best" there is, and 0 blocks behind would say nothing.
+      const referenceReports = nodes.slice(1);
+      const notCompared = referenceReports.filter((r) => !(r.reachable && r.sameNetwork === true));
+      const compared = referenceReports.length - notCompared.length;
+      const unanswered = notCompared.filter((r) => !r.reachable).length;
+      const otherNetwork = notCompared.length - unanswered;
+      const whyNot = [
+        unanswered > 0 ? `${unanswered} did not answer` : null,
+        otherNetwork > 0
+          ? `${otherNetwork} ${otherNetwork === 1 ? 'is' : 'are'} on another network`
+          : null,
+      ]
+        .filter((part) => part !== null)
+        .join(', ');
+      const head = `${ctx.rest.host} vs ${references.length} reference node${references.length === 1 ? '' : 's'} on ${expected}`;
+      if (!own?.reachable) {
+        lines.push(`${head}: own node unreachable (${own?.error}).`);
+      } else if (compared === 0) {
+        lines.push(
+          `${head}: could not compare, because no reference node could be read on ${expected} (${whyNot}; details below).`,
+          'The heightBehindBest 0 and lagging false in the structured output compare the own node with itself only; they say nothing about how far it trails the network.',
+        );
+      } else {
+        const verdict = lagging
+          ? `LAGGING by ${formatInteger(ownBehind ?? 0)} blocks (threshold ${LAG_THRESHOLD_BLOCKS})`
+          : `in sync (${formatInteger(ownBehind ?? 0)} blocks behind the best node${finalizationLagging ? `, but finalization is ${formatInteger(ownFinalizedBehind ?? 0)} blocks behind` : ''})`;
+        const partial =
+          notCompared.length > 0
+            ? `, compared with ${compared} of ${references.length} reference nodes; not compared (${whyNot}): ${notCompared.map((r) => r.host).join(', ')}`
+            : '';
+        lines.push(`${head}: ${verdict}${partial}.`);
+      }
       for (const n of nodes) {
+        // A best / behind marker only where a comparison was made: not when no reference was
+        // compared, and never for a node on another network.
+        const where =
+          compared === 0 || n.sameNetwork !== true
+            ? ''
+            : ` (${n.heightBehindBest === 0 ? 'best' : `-${formatInteger(n.heightBehindBest ?? 0)}`})`;
         lines.push(
           n.reachable
-            ? `- ${n.role === 'own' ? 'own ' : ''}${n.host}: height ${formatInteger(n.height ?? 0)} (${n.heightBehindBest === 0 ? 'best' : `-${formatInteger(n.heightBehindBest ?? 0)}`}), finalized ${formatInteger(n.finalizedHeight ?? 0)}, epoch ${n.finalizationEpoch}${n.sameNetwork ? '' : ` [WRONG NETWORK: ${n.network}]`}`
+            ? `- ${n.role === 'own' ? 'own ' : ''}${n.host}: height ${formatInteger(n.height ?? 0)}${where}, finalized ${formatInteger(n.finalizedHeight ?? 0)}, epoch ${n.finalizationEpoch}${n.sameNetwork ? '' : ` [WRONG NETWORK: ${n.network}]`}`
             : `- ${n.role === 'own' ? 'own ' : ''}${n.host}: unreachable (${n.error})`,
         );
       }

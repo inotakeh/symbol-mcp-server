@@ -18,6 +18,17 @@ afterEach(async () => {
 const REF_A = 'https://reference-a.test:3001';
 const REF_B = 'https://reference-b.test:3001';
 
+/**
+ * A summary without any reference node compared: it must not say "in sync" or "0 blocks
+ * behind", and it notes that the structured 0 and false compare the own node with itself.
+ */
+function expectNoComparisonClaim(summary: string) {
+  expect(summary).not.toMatch(/in sync/);
+  expect(summary).not.toMatch(/0 blocks behind/);
+  expect(summary).not.toMatch(/\(best\)/);
+  expect(summary).toMatch(/compare the own node with itself only/);
+}
+
 /** Routes whose /chain/info and /node/info answers depend on the host being asked. */
 function perHostRoutes(
   overrides: Record<
@@ -139,12 +150,89 @@ describe('symbol_network_compare', () => {
       error: expect.stringMatching(/http/),
     });
     expect(nodes[2]).toMatchObject({ reachable: true, network: 'testnet', sameNetwork: false });
-    // The wrong-network node does not raise the bar.
+    // The wrong-network node does not raise the bar. The fields keep their documented meaning:
+    // the own node is the only reachable node on the network, so it is the best, 0 behind itself.
     expect(sc.best).toEqual({ height: 5_763_675, finalizedHeight: 5_763_656 });
     expect(sc.own).toMatchObject({ heightBehindBest: 0, lagging: false });
-    expect(sc.summary).toMatch(/in sync/);
-    expect(sc.summary).toMatch(/reference-a\.test:3001: unreachable/);
-    expect(sc.summary).toMatch(/WRONG NETWORK: testnet/);
+    // No reference could be compared, so the summary must not read as a comparison.
+    const summary = String(sc.summary);
+    expectNoComparisonClaim(summary);
+    expect(summary.split('\n')[0]).toBe(
+      'node.test:3001 vs 2 reference nodes on mainnet: could not compare, because no reference node could be read on mainnet (1 did not answer, 1 is on another network; details below).',
+    );
+    expect(summary).toMatch(/reference-a\.test:3001: unreachable \(http: /);
+    expect(summary).toMatch(/reference-b\.test:3001: height 9,999,999, .*WRONG NETWORK: testnet/);
+  });
+
+  it('says it could not compare when no reference node answers', async () => {
+    server = await startTestServer({
+      env: { SYMBOL_REFERENCE_NODES: `${REF_A},${REF_B}` },
+      routes: perHostRoutes({
+        'reference-a.test:3001': { fail: 'all' },
+        'reference-b.test:3001': { fail: 'all' },
+      }),
+    });
+    const sc = (await server.callTool('symbol_network_compare')).structuredContent;
+    const summary = String(sc?.summary);
+    expectNoComparisonClaim(summary);
+    expect(summary).toMatch(/could not compare, .*\(2 did not answer; details below\)\./);
+    expect(summary).toMatch(/- reference-a\.test:3001: unreachable \(http: /);
+    expect(summary).toMatch(/- reference-b\.test:3001: unreachable \(http: /);
+    expect(sc?.own).toMatchObject({ heightBehindBest: 0, lagging: false });
+  });
+
+  it('names the reference nodes it could not compare when only some answer', async () => {
+    server = await startTestServer({
+      env: { SYMBOL_REFERENCE_NODES: `${REF_A},${REF_B}` },
+      routes: perHostRoutes({
+        'reference-a.test:3001': { height: '5763680' },
+        'reference-b.test:3001': { fail: 'all' },
+      }),
+    });
+    const sc = (await server.callTool('symbol_network_compare')).structuredContent;
+    const summary = String(sc?.summary);
+    expect(summary.split('\n')[0]).toBe(
+      'node.test:3001 vs 2 reference nodes on mainnet: in sync (5 blocks behind the best node), compared with 1 of 2 reference nodes; not compared (1 did not answer): reference-b.test:3001.',
+    );
+    expect(summary).toMatch(/- reference-a\.test:3001: height 5,763,680 \(best\)/);
+    expect(summary).toMatch(/- reference-b\.test:3001: unreachable \(http: /);
+    expect(sc?.own).toMatchObject({ heightBehindBest: 5, lagging: false });
+  });
+
+  it('lists a reference on another network as not compared, without a best or behind marker', async () => {
+    const testnetSeed = '49D6E1CE276A85B70EAFE52349AACCA389302E7A9754BCF1221E79494FC665A4';
+    server = await startTestServer({
+      env: { SYMBOL_REFERENCE_NODES: `${REF_A},${REF_B}` },
+      routes: perHostRoutes({
+        'reference-a.test:3001': { height: '5763680' },
+        'reference-b.test:3001': { height: '9999999', seed: testnetSeed },
+      }),
+    });
+    const summary = String(
+      (await server.callTool('symbol_network_compare')).structuredContent?.summary,
+    );
+    expect(summary.split('\n')[0]).toBe(
+      'node.test:3001 vs 2 reference nodes on mainnet: in sync (5 blocks behind the best node), compared with 1 of 2 reference nodes; not compared (1 is on another network): reference-b.test:3001.',
+    );
+    expect(summary).toMatch(
+      /- reference-b\.test:3001: height 9,999,999, finalized .*\[WRONG NETWORK: testnet\]/,
+    );
+  });
+
+  it('says so when every reference node is on another network', async () => {
+    const testnetSeed = '49D6E1CE276A85B70EAFE52349AACCA389302E7A9754BCF1221E79494FC665A4';
+    server = await startTestServer({
+      env: { SYMBOL_REFERENCE_NODES: `${REF_A},${REF_B}` },
+      routes: perHostRoutes({
+        'reference-a.test:3001': { seed: testnetSeed },
+        'reference-b.test:3001': { seed: testnetSeed },
+      }),
+    });
+    const summary = String(
+      (await server.callTool('symbol_network_compare')).structuredContent?.summary,
+    );
+    expectNoComparisonClaim(summary);
+    expect(summary).toMatch(/could not compare, .*\(2 are on another network; details below\)\./);
   });
 
   it('survives an unreachable own node', async () => {

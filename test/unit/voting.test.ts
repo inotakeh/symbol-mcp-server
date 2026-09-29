@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { mapVotingKeys } from '../../src/cli/check.js';
 import {
   buildVotingStatus,
   classifyVotingKey,
   hasSuccessorKey,
+  longestActiveKey,
   RENEWAL_WINDOW_END_DAYS,
   type VotingStatusParams,
 } from '../../src/domain/voting.js';
@@ -157,5 +159,93 @@ describe('buildVotingStatus edge cases', () => {
     expect(report.votingKeys).toEqual([]);
     expect(report.constraints.slotsFree).toBe(3);
     expect(report.warnings).toEqual(['No active voting key is registered for this account.']);
+  });
+});
+
+describe('the slot warning when every slot is used', () => {
+  const ACTIVE = { publicKey: 'B'.repeat(64), startEpoch: 3700, endEpoch: 4059 };
+  const EXPIRED = { publicKey: 'A'.repeat(64), startEpoch: 3340, endEpoch: 3699 };
+  const slotWarnings = (warnings: readonly string[]) => warnings.filter((w) => /slot/.test(w));
+
+  it('keeps the advice to unlink when an expired key holds a slot', () => {
+    const report = buildVotingStatus({
+      ...baseParams,
+      keys: [EXPIRED, ACTIVE, { publicKey: 'C'.repeat(64), startEpoch: 4060, endEpoch: 4419 }],
+    });
+    expect(slotWarnings(report.warnings)).toEqual([
+      'All 3 voting key slots are used (1 expired). Unlink an expired key before registering a new one.',
+    ]);
+  });
+
+  it('is silent when no key has expired and a successor takes over without a gap', () => {
+    const report = buildVotingStatus({
+      ...baseParams,
+      keys: [
+        ACTIVE,
+        { publicKey: 'C'.repeat(64), startEpoch: 4060, endEpoch: 4419 },
+        { publicKey: 'D'.repeat(64), startEpoch: 4420, endEpoch: 4779 },
+      ],
+    });
+    expect(report.constraints).toMatchObject({ slotsFree: 0, expiredKeysOccupyingSlots: 0 });
+    expect(report.warnings).toEqual([]);
+    expect(report.summaryWarnings).toEqual([]);
+  });
+
+  it('warns without advice to unlink when no key has expired and the successor leaves a gap', () => {
+    const report = buildVotingStatus({
+      ...baseParams,
+      keys: [
+        ACTIVE,
+        { publicKey: 'C'.repeat(64), startEpoch: 4100, endEpoch: 4459 },
+        { publicKey: 'D'.repeat(64), startEpoch: 4460, endEpoch: 4819 },
+      ],
+    });
+    expect(slotWarnings(report.warnings)).toEqual([
+      'All 3 voting key slots are taken by keys that have not expired, so there is no slot for a new key yet.',
+    ]);
+    expect(report.warnings.some((w) => /[Uu]nlink|expired key/.test(w))).toBe(false);
+  });
+
+  it('warns without advice to unlink when no key is active and none has expired', () => {
+    const report = buildVotingStatus({
+      ...baseParams,
+      keys: [
+        { publicKey: 'C'.repeat(64), startEpoch: 4100, endEpoch: 4459 },
+        { publicKey: 'D'.repeat(64), startEpoch: 4460, endEpoch: 4819 },
+        { publicKey: 'E'.repeat(64), startEpoch: 4820, endEpoch: 5179 },
+      ],
+    });
+    expect(slotWarnings(report.warnings)).toHaveLength(1);
+    expect(report.warnings.some((w) => /[Uu]nlink|expired key/.test(w))).toBe(false);
+  });
+
+  it('agrees with the CLI check on when the renewal is done', () => {
+    for (const successorStart of [4060, 4100]) {
+      const report = buildVotingStatus({
+        ...baseParams,
+        keys: [
+          ACTIVE,
+          { publicKey: 'C'.repeat(64), startEpoch: successorStart, endEpoch: successorStart + 359 },
+          { publicKey: 'D'.repeat(64), startEpoch: 4500, endEpoch: 4859 },
+        ],
+      });
+      const cli = mapVotingKeys(report, 14);
+      const renewed = cli.detail.endsWith('successor registered');
+      expect(renewed).toBe(successorStart === 4060);
+      expect(slotWarnings(report.warnings).length === 0).toBe(renewed);
+    }
+  });
+});
+
+describe('longestActiveKey', () => {
+  it('picks the active key with the most days left', () => {
+    const keys = [
+      { status: 'expired' as const, remainingDays: 90 },
+      { status: 'active' as const, remainingDays: 2 },
+      { status: 'active' as const, remainingDays: 40 },
+      { status: 'future' as const, remainingDays: 400 },
+    ];
+    expect(longestActiveKey(keys)?.remainingDays).toBe(40);
+    expect(longestActiveKey(keys.filter((k) => k.status !== 'active'))).toBeUndefined();
   });
 });
