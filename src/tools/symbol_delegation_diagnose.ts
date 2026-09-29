@@ -310,11 +310,12 @@ export const delegationDiagnoseTool = defineTool({
   outputSchema,
   untrustedText: true,
   run: async (ctx, { account, recentDays, format }, text) => {
-    const { classified, resolution } = await resolveAccountInput(ctx, account);
+    // For a public key, `requested` is the address derived from it: the key stays off the wire.
+    const { address: requested, resolution } = await resolveAccountInput(ctx, account);
 
     const [accountInfo, { properties, currency }, chain, nodeInfo, unlockedKeys] =
       await Promise.all([
-        ctx.rest.getOrNull(`/accounts/${classified.canonical}`, AccountInfoSchema),
+        ctx.rest.getOrNull(`/accounts/${requested}`, AccountInfoSchema),
         ctx.getNetworkData(),
         ctx.rest.get('/chain/info', ChainInfoSchema),
         ctx.rest.get('/node/info', NodeInfoSchema),
@@ -348,10 +349,7 @@ export const delegationDiagnoseTool = defineTool({
     }
 
     if (accountInfo === null) {
-      const address =
-        classified.kind === 'publicKey'
-          ? publicKeyToAddress(classified.canonical, ctx.network.identifier)
-          : classified.canonical;
+      const address = requested;
       const checks: DiagnoseCheck[] = [
         check({
           id: 'account_exists',

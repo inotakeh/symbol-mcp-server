@@ -114,8 +114,9 @@ describe('symbol_account_get', () => {
       publicKeyHeight: 210007,
     });
     expect(new Set(server.requests.map((u) => u.host))).toEqual(new Set([TEST_NODE_HOST]));
-    expect(server.requests.some((u) => u.pathname === `/accounts/${ADDRESS}`)).toBe(true);
-    expect(server.requests.some((u) => u.pathname === `/accounts/${PUBLIC_KEY}`)).toBe(true);
+    // The public key is asked for by the address derived from it, never by the key itself.
+    expect(server.requests.filter((u) => u.pathname === `/accounts/${ADDRESS}`)).toHaveLength(2);
+    expect(server.requests.some((u) => u.href.toUpperCase().includes(PUBLIC_KEY))).toBe(false);
   });
 
   it('rejects malformed identifiers with a hint', async () => {
@@ -139,18 +140,17 @@ describe('symbol_account_get', () => {
 
   it('treats a 64-hex value as a public key only: no logging, no third-party requests, masked in errors', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const looksLikeSecret = 'DEADBEEF'.repeat(8); // 64 hex, unknown on the fake node -> 404
+    const looksLikeSecret = 'DEADBEEF'.repeat(8); // 64 hex; its derived address is unknown -> 404
+    const derived = publicKeyToAddress(looksLikeSecret, 104);
     server = await startTestServer({
-      routes: {
-        ...mainnetRoutes(),
-        [`GET /accounts/${looksLikeSecret}`]: resourceNotFound(looksLikeSecret),
-      },
+      routes: { ...mainnetRoutes(), [`GET /accounts/${derived}`]: resourceNotFound(derived) },
     });
     const result = await server.callTool('symbol_account_get', { account: looksLikeSecret });
     expect(result.isError).toBe(true);
     expect(result.text).toMatch(/No account with public key DEADBEEF… exists on mainnet/);
     expect(result.text).not.toContain(looksLikeSecret);
     expect(new Set(server.requests.map((u) => u.host))).toEqual(new Set([TEST_NODE_HOST]));
+    expect(server.requests.some((u) => u.href.includes(looksLikeSecret))).toBe(false);
     const logged = errorSpy.mock.calls.flat().map(String).join('\n');
     expect(logged).not.toContain(looksLikeSecret);
   });

@@ -21,6 +21,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `priceSource` and `priceAsOf` are echoed as given; they are cleaned like chain strings before
   they are echoed, and `priceAsOf` is only checked to be a date.
 
+### Security
+
+- A 64-character hex account argument is taken as a public key, but it may be a private key
+  pasted by mistake. It is no longer sent to the node or quoted in error messages. Every tool that
+  takes an account, and `check --account`, now turns the public key into its address on this
+  machine and asks the node for that address. Before, the value went into the request path
+  (`/accounts/<key>`), so the node received it; and when that request timed out, could not
+  connect, got an HTTP error, a redirect, an unexpected or oversized answer, or a missing route,
+  the error message and the `check` output quoted it in full (only "not found" masked it). The
+  answers are the same as for the address. One difference: an account whose public key the chain
+  does not know yet (it has only received transfers) is now found when given by its public key.
+
 ## [0.9.1] - 2026-09-25
 
 ### Changed

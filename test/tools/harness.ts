@@ -176,10 +176,9 @@ export function mainnetRoutes(): Routes {
       return jsonResponse(ids.filter((id) => id in known).map((id) => known[id]));
     },
     'POST /namespaces/mosaic/names': fixture('mainnet/mosaic-names.json'),
+    // Served under its address only: tools ask for a public key by the address derived from it,
+    // so a request that carried the key itself would hit no route and fail.
     'GET /accounts/NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY': fixture('mainnet/account-voting.json'),
-    'GET /accounts/CE1992333C60AFEABDB289A14CC1A593FB797339C6D93DEEDB97052AED51845E': fixture(
-      'mainnet/account-voting.json',
-    ),
     // The main account is neither a multisig account nor a cosignatory.
     'GET /account/NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY/multisig': resourceNotFound(
       'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY',

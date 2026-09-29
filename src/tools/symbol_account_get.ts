@@ -100,8 +100,10 @@ export const CONCISE_MOSAIC_LIMIT = 10;
 
 /**
  * Shared by account tools: resolves the argument (address, public key or namespace name, see
- * _accounts.ts) and fetches `/accounts/{id}` with a helpful not-found message. `resolution` is
- * non-null only when a namespace name was resolved; tools put it in `accountResolution`.
+ * _accounts.ts) and fetches `/accounts/{address}` with a helpful not-found message. A public key
+ * is asked for by its address, so the key is never in the request (it may be a private key
+ * pasted by mistake). `resolution` is non-null only when a namespace name was resolved; tools
+ * put it in `accountResolution`.
  */
 export async function fetchAccount(
   ctx: AppContext,
@@ -111,9 +113,9 @@ export async function fetchAccount(
   info: AccountInfo;
   resolution: AccountResolution | null;
 }> {
-  const { classified, resolution } = await resolveAccountInput(ctx, account);
+  const { classified, address, resolution } = await resolveAccountInput(ctx, account);
   try {
-    const info = await ctx.rest.get(`/accounts/${classified.canonical}`, AccountInfoSchema);
+    const info = await ctx.rest.get(`/accounts/${address}`, AccountInfoSchema);
     return { classified, info, resolution };
   } catch (err) {
     if (err instanceof RestError && err.kind === 'not_found') {
