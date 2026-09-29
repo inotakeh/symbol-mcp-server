@@ -62,7 +62,7 @@ export interface VotingStatusParams {
   readonly minVoterBalance: bigint;
   readonly currencyDivisibility: number;
   readonly currencyAlias: string | null;
-  /** Days before expiry at which a warning is raised. */
+  /** Days before expiry at which a warning is raised; EXPIRY_WARNING_DAYS when not given. */
   readonly warnWithinDays?: number;
 }
 
@@ -99,6 +99,14 @@ export interface VotingStatusReport {
 const RENEWAL_WINDOW_START_DAYS = 7;
 /** The recommended renewal window closes this many days before expiry. */
 export const RENEWAL_WINDOW_END_DAYS = 3;
+/**
+ * An active key without a successor is warned about from this many days before expiry (a policy
+ * constant). A check run once a month is at most 31 days apart, so with 45 days every monthly run
+ * sees the warning at least once, 14 days before expiry at the latest, before the recommended
+ * renewal window opens (RENEWAL_WINDOW_START_DAYS). With 30 days, a run 30.5 days out saw nothing
+ * and the next one came after the window had closed.
+ */
+export const EXPIRY_WARNING_DAYS = 45;
 const DAY_MS = 86_400_000;
 
 /**
@@ -127,7 +135,7 @@ export function longestActiveKey<
 
 export function buildVotingStatus(p: VotingStatusParams): VotingStatusReport {
   const G = p.votingSetGrouping;
-  const warnWithinDays = p.warnWithinDays ?? 30;
+  const warnWithinDays = p.warnWithinDays ?? EXPIRY_WARNING_DAYS;
   const estimate = (height: number) =>
     estimateDateAtHeight(p.currentHeight, height, p.averageBlockTimeMs, p.now);
 

@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `symbol_voting_key_status` warns about an active voting key with no successor from 45 days
+  before its expiry, instead of 30. A check run once a month is at most 31 days apart, so every
+  monthly run now sees the warning at least once, 14 days before expiry at the latest, before the
+  recommended renewal window opens; with 30 days, a run 30.5 days out saw nothing and the next
+  one came after the window had closed. `check --account` gets the tool's warning as its hint for
+  a `--warn-days` of up to 45 (it was 30); its own judgment by `--warn-days` does not change. The
+  tool description says 45 days; only that text changes in the definitions, so there is no need
+  to restart the MCP host.
+
 ### Fixed
 
 - README (English and Japanese) corrected to match the server: the `summary` answers in its first
@@ -35,6 +46,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ones that could not be compared, and a node on another network no longer gets a behind marker
   such as `(--4,236,319)`. This applies while the own node answers; when it does not, the first
   line says so, as before. The output fields are unchanged.
+- The prompts follow the tools' own judgments instead of rules written into their text.
+  `voting_key_renewal_checklist` step 1 said that with no free slot an expired key has to be
+  unlinked, even when none had expired; it now reports the warnings of `symbol_voting_key_status`
+  as worded, step 4 asks for an unlink only when such a warning calls for it, and step 5 reports
+  the warnings still returned after the renewal instead of expecting an expired key to have been
+  unlinked. `monthly_health_check` step 6 put any key expiring within 30 days at the top, even
+  with a successor already registered without a gap; it now puts the tool's warnings at the top
+  and adds none of its own. In both prompts, when `symbol_network_compare` says it could not
+  compare, the sync against the network is reported as not confirmed, whatever the numbers say,
+  and the operator is asked to check `SYMBOL_REFERENCE_NODES` and that those nodes are
+  reachable. `monthly_health_check` no longer asks the model to work out a daily average of the
+  harvest income. Only the prompt texts change: `prompts/list` is the same.
 
 ### Security
 

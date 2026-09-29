@@ -24,6 +24,18 @@ const REAL_VALUE_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b20\d\d-\d\d(?:-\d\d)?\b/, 'calendar date'],
 ];
 
+/**
+ * symbol_network_compare can say on its first line that it could not compare: the prompt must
+ * then report the sync as not confirmed, not read the numbers, and send the operator to the
+ * reference node settings.
+ */
+function expectCouldNotCompareHandling(text: string) {
+  expect(text).toMatch(/If the first line of its summary says it could not compare/);
+  expect(text).toMatch(/not confirmed/);
+  expect(text).toMatch(/heightBehindBest/);
+  expect(text).toMatch(/SYMBOL_REFERENCE_NODES and that those nodes are reachable/);
+}
+
 function realValuesIn(text: string): string[] {
   return REAL_VALUE_PATTERNS.filter(([re]) => re.test(text)).map(([, label]) => label);
 }
@@ -75,10 +87,19 @@ describe('prompts', () => {
     expect(positions.every((p) => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
     expect(text).toMatch(/never signs or announces/);
-    expect(text).toMatch(/slotsFree is 0/);
+    // The unlink advice is the tool's (its warnings), not a rule of the prompt's own.
+    expect(text).toMatch(/every entry of warnings\. Report the warnings as the tool words them/);
+    expect(text).toMatch(/Give no advice of your own from slotsFree/);
+    expect(text).not.toMatch(/If slotsFree is 0/);
+    // After the renewal, what the tool still warns about is reported, not predicted.
+    expect(text).toMatch(
+      /report every warning the tool still returns, as worded, under Open items/,
+    );
+    expect(text).not.toMatch(/should be gone|was unlinked so its slot is free/);
     expect(text).toMatch(/not synced, stop/);
     expect(text).toMatch(/startEpoch has been finalized/);
     expect(text).toMatch(/"participated"/);
+    expectCouldNotCompareHandling(text);
   });
 
   it('renders the monthly health check with last month and the three-level report', async () => {
@@ -110,7 +131,17 @@ describe('prompts', () => {
       /totals\.blocksHarvested as the blocks the node's account harvested itself, and totals\.blocksBeneficiaryOnly as the blocks of delegators or other accounts/,
     );
     expect(text).toMatch(/totals\.receiptsBeneficiary counts receipts, not delegators' blocks/);
-    expect(text).toMatch(/within 30 days/);
+    // The voting key warnings are the tool's: no expiry rule of the prompt's own.
+    expect(text).toMatch(
+      /Put every warning the tool returns at the very top of the report, as worded/,
+    );
+    expect(text).toMatch(/Add no expiry warning of your own/);
+    expect(text).not.toMatch(/If a key expires within 30 days/);
+    // Whether a future key is a successor is the tool's call (its warnings), not the prompt's.
+    expect(text).not.toMatch(/\(the successor\)/);
+    // No arithmetic left to the model: the daily average is gone.
+    expect(text).not.toMatch(/average|divided|division/);
+    expectCouldNotCompareHandling(text);
     expect(text).toMatch(/Action required \/ Attention \/ Normal/);
   });
 
