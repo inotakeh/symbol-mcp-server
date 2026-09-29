@@ -409,7 +409,7 @@ symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <
 | 1 | `node_health` | `symbol_node_health`: healthy / degraded / unhealthy。最新ブロックが目標ブロック時間の 10 倍（mainnet では 5 分）より古いノードは degraded、30 倍より古ければ unhealthy |
 | 2 | `version_drift` | `symbol_version_drift`: ok / behind または unknown / far_behind |
 | 3 | `harvester_watch` | `symbol_harvester_watch`（比較して保存）: 解錠中のハーベスターが前回より減った、またはスナップショットを保存できなかったら warn。`SYMBOL_STATE_DIR` 未設定なら skip |
-| 4 | `voting_key_status` | `--account` 指定時: アクティブな Voting キーの失効まで `--warn-days`（既定 14、1〜120）日以内なら warn、3 日以内またはアクティブなキーが無ければ fail。後継キーが切れ目なく登録済みなら ok。`--account` 無しなら skip |
+| 4 | `voting_key_status` | `--account` 指定時: アクティブな Voting キーの失効まで `--warn-days`（既定 14、1〜120）日以内なら warn、3 日以内またはアクティブなキーが無ければ fail。後継キーが切れ目なく登録済みなら ok。残高が `minVoterBalance` 未満（投票できない）なら、後継キーの有無にかかわらず fail。キーの登録枠に空きが無いことは判定を変えませんが、warn / fail のヒントにツールの枠の警告を足します（後継キーが登録済みなら足しません）。`--account` 無しなら skip |
 | 5 | `finality_participation` | `--account` 指定時、最新の確定エポック: participated / missed またはノードに proof が無い / そのエポックをカバーする鍵が無い。`--account` 無しなら skip |
 
 判定はツールのものをそのまま使い、check はその出力を読み替えるだけです。warn / fail の行の下に出る hint もツールの文言です。

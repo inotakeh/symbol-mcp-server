@@ -110,6 +110,14 @@ export const EXPIRY_WARNING_DAYS = 45;
 const DAY_MS = 86_400_000;
 
 /**
+ * Words of the warning about a balance below minVoterBalance, and of the warnings about full
+ * voting key slots. The warnings are built with them, and the CLI check (src/cli/check.ts) finds
+ * those warnings by them for its hints.
+ */
+export const BELOW_MIN_VOTER_BALANCE = 'is below minVoterBalance';
+export const SLOTS_FULL = 'voting key slots are';
+
+/**
  * True when a registered future key takes over without a gap, i.e. it starts no later than the
  * epoch after `key` ends. An expiring key with a successor needs no warning.
  */
@@ -215,13 +223,13 @@ export function buildVotingStatus(p: VotingStatusParams): VotingStatusReport {
   }
   if (!eligible) {
     const below = (label: string) =>
-      `Balance ${formatAmount(p.balanceRaw, p.currencyDivisibility)} ${label} is below minVoterBalance ${formatAmount(p.minVoterBalance, p.currencyDivisibility)}; the account cannot vote.`;
+      `Balance ${formatAmount(p.balanceRaw, p.currencyDivisibility)} ${label} ${BELOW_MIN_VOTER_BALANCE} ${formatAmount(p.minVoterBalance, p.currencyDivisibility)}; the account cannot vote.`;
     warn(below(currency), below(summaryCurrency));
   }
   if (slotsFree === 0) {
     if (expiredCount > 0) {
       warn(
-        `All ${p.maxVotingKeysPerAccount} voting key slots are used (${expiredCount} expired). Unlink an expired key before registering a new one.`,
+        `All ${p.maxVotingKeysPerAccount} ${SLOTS_FULL} used (${expiredCount} expired). Unlink an expired key before registering a new one.`,
       );
     } else {
       // No expired key to unlink. With the renewal already done (a successor without a gap, the
@@ -229,7 +237,7 @@ export function buildVotingStatus(p: VotingStatusParams): VotingStatusReport {
       const renewal = longestActiveKey(votingKeys);
       if (!renewal || !hasSuccessorKey(renewal, future)) {
         warn(
-          `All ${p.maxVotingKeysPerAccount} voting key slots are taken by keys that have not expired, so there is no slot for a new key yet.`,
+          `All ${p.maxVotingKeysPerAccount} ${SLOTS_FULL} taken by keys that have not expired, so there is no slot for a new key yet.`,
         );
       }
     }

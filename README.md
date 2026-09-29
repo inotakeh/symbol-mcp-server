@@ -434,7 +434,7 @@ Node.js 22 or newer. Started without arguments the binary is still the MCP serve
 | 1 | `node_health` | `symbol_node_health`: healthy / degraded / unhealthy. A node whose latest block is older than 10 target block times (5 minutes on mainnet) is degraded, older than 30 unhealthy |
 | 2 | `version_drift` | `symbol_version_drift`: ok / behind or unknown / far_behind |
 | 3 | `harvester_watch` | `symbol_harvester_watch` (compare and save): warn when fewer harvesters are unlocked than at the previous run, or when the snapshot could not be saved. Skipped without `SYMBOL_STATE_DIR` |
-| 4 | `voting_key_status` | With `--account`: warn when the active voting key expires within `--warn-days` (default 14, 1 to 120), fail within 3 days or without an active key; ok when a successor key is already registered without a gap. Skipped without `--account` |
+| 4 | `voting_key_status` | With `--account`: warn when the active voting key expires within `--warn-days` (default 14, 1 to 120), fail within 3 days or without an active key; ok when a successor key is already registered without a gap. Fail also when the balance is below `minVoterBalance` (the account cannot vote), successor or not. Full key slots change no status, but the hint of a warn or fail then adds the tool's slot warning, unless a successor key is already registered. Skipped without `--account` |
 | 5 | `finality_participation` | With `--account`, latest finalized epoch: participated / missed or no proof on the node / no key covers the epoch. Skipped without `--account` |
 
 The judgments are the tools' own; the check only reads their output, and the hint printed under a
