@@ -1,11 +1,26 @@
 import * as z from 'zod/v4';
 import { TransactionFeesSchema } from '../client/schemas.js';
-import { DEFAULT_TRANSFER_SIZE_BYTES, estimateFees } from '../domain/fee.js';
+import {
+  DEFAULT_MESSAGE_BYTES,
+  DEFAULT_MESSAGE_CHARACTERS,
+  DEFAULT_TRANSFER_SIZE_BYTES,
+  estimateFees,
+  MESSAGE_TYPE_BYTES,
+  MOSAIC_ENTRY_BYTES,
+  TRANSACTION_HEADER_BYTES,
+  TRANSFER_BODY_BYTES,
+  transferSizeBytes,
+} from '../domain/fee.js';
 import { mosaicLabel } from '../domain/quote.js';
 import { defineTool } from './_shared.js';
 
 /** catapult rejects transactions above maxTransactionSize; 1 MiB is a safe upper bound. */
 const MAX_SIZE_BYTES = 1_048_576;
+
+/** A transfer without its mosaics and message: header and transfer body (160 bytes). */
+const TRANSFER_FIXED_BYTES = TRANSACTION_HEADER_BYTES + TRANSFER_BODY_BYTES;
+/** UTF-8 bytes of a 20-character Japanese message (3 per character), for the worked example. */
+const JAPANESE_EXAMPLE_BYTES = DEFAULT_MESSAGE_CHARACTERS * 3;
 
 const inputSchema = z.object({
   transactionSizeBytes: z
@@ -15,7 +30,7 @@ const inputSchema = z.object({
     .max(MAX_SIZE_BYTES)
     .optional()
     .describe(
-      `Serialized transaction size in bytes. Omit to use a representative transfer (1 mosaic, 20-character message = ${DEFAULT_TRANSFER_SIZE_BYTES} bytes). A transfer with no message is 176 bytes; add 16 per extra mosaic and 1 per message character.`,
+      `Serialized transaction size in bytes. Omit to use a representative transfer: 1 mosaic and a ${DEFAULT_MESSAGE_CHARACTERS}-character ASCII message = ${DEFAULT_TRANSFER_SIZE_BYTES} bytes. For a transfer, count ${TRANSFER_FIXED_BYTES} bytes, plus ${MOSAIC_ENTRY_BYTES} per mosaic, plus a plain message: ${MESSAGE_TYPE_BYTES} type byte and its text in UTF-8 bytes, not characters (1 per ASCII character, usually 3 per Japanese character). No message and 1 mosaic = ${transferSizeBytes(1, null)} bytes; a ${DEFAULT_MESSAGE_CHARACTERS}-character Japanese message and 1 mosaic = ${transferSizeBytes(1, JAPANESE_EXAMPLE_BYTES)} bytes. An encrypted message or a harvesting delegation request carries more than its text, so pass its serialized size. This count is not for aggregate transactions, whose size also includes their inner transactions and cosignatures.`,
     ),
 });
 
@@ -63,8 +78,8 @@ export const feeEstimateTool = defineTool({
     const sizeBytes = transactionSizeBytes ?? DEFAULT_TRANSFER_SIZE_BYTES;
     const sizeAssumption =
       transactionSizeBytes === undefined
-        ? `Representative transfer: 128-byte header + 32-byte transfer body + 1 mosaic (16 bytes) + 20-character plain message (21 bytes) = ${DEFAULT_TRANSFER_SIZE_BYTES} bytes.`
-        : `Size supplied by the caller: ${sizeBytes} bytes.`;
+        ? `Representative transfer: ${TRANSACTION_HEADER_BYTES}-byte header + ${TRANSFER_BODY_BYTES}-byte transfer body + 1 mosaic (${MOSAIC_ENTRY_BYTES} bytes) + a ${DEFAULT_MESSAGE_CHARACTERS}-character ASCII message (${MESSAGE_TYPE_BYTES} type byte + ${DEFAULT_MESSAGE_CHARACTERS} UTF-8 bytes = ${DEFAULT_MESSAGE_BYTES} bytes) = ${DEFAULT_TRANSFER_SIZE_BYTES} bytes. A plain message counts in UTF-8 bytes, not characters (usually 3 per Japanese character).`
+        : `Size supplied by the caller: ${sizeBytes} bytes, used as given.`;
     const estimate = estimateFees(sizeBytes, fees, currency.divisibility);
     const alias = text.useOrNull(currency.alias);
     const label = alias ?? currency.mosaicId;
@@ -73,8 +88,8 @@ export const feeEstimateTool = defineTool({
       `Fee estimate on ${ctx.network.name} for a ${sizeBytes}-byte transaction (multipliers from ${ctx.rest.host}):`,
       `slow ${estimate.slow.fee} ${mosaicLabel(alias, currency.mosaicId)} (x${estimate.slow.multiplier}, this node's minimum), average ${estimate.average.fee} (x${estimate.average.multiplier}), median ${estimate.median.fee} (x${estimate.median.multiplier}), fast ${estimate.fast.fee} (x${estimate.fast.multiplier}).`,
       transactionSizeBytes === undefined
-        ? `Size assumes a transfer with 1 mosaic and a 20-character message; pass transactionSizeBytes for other transactions. Nothing was sent.`
-        : 'Nothing was sent.',
+        ? `Size assumes a transfer with 1 mosaic and a ${DEFAULT_MESSAGE_CHARACTERS}-character ASCII message. A plain message counts in UTF-8 bytes plus ${MESSAGE_TYPE_BYTES} type byte (a ${DEFAULT_MESSAGE_CHARACTERS}-character Japanese message makes ${transferSizeBytes(1, JAPANESE_EXAMPLE_BYTES)} bytes), so pass transactionSizeBytes for another message or transaction. Nothing was sent.`
+        : 'Size as supplied by the caller, used as given. Nothing was sent.',
     ].join('\n');
 
     return {

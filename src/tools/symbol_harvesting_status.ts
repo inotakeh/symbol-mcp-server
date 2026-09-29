@@ -5,6 +5,7 @@ import { formatAmount } from '../domain/amount.js';
 import { classifyHarvesterBalance, type HarvesterBalance } from '../domain/delegation.js';
 import { mosaicLabel } from '../domain/quote.js';
 import {
+  ACCOUNT_ARG_FORMS,
   type AccountResolution,
   AccountResolutionSchema,
   withResolutionPrefix,
@@ -18,7 +19,7 @@ const inputSchema = z.object({
     .min(1)
     .optional()
     .describe(
-      'Optional harvester account to check: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). When given, reports whether its linked (remote) key is unlocked on this node and whether its balance is within the harvesting limits.',
+      `Optional harvester account to check: ${ACCOUNT_ARG_FORMS} When given, reports whether its linked (remote) key is unlocked on this node and whether its balance is within the harvesting limits.`,
     ),
 });
 

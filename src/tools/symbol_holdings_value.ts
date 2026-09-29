@@ -100,9 +100,12 @@ const outputSchema = z.object({
     currency: z.string(),
     source: nullable(
       z.string(),
-      'The priceSource argument as given (untrusted, sanitized); null when omitted.',
+      'The priceSource argument, untrusted, with invisible and control characters removed and made one line; null when omitted or when nothing is left.',
     ),
-    asOf: nullable(z.string(), 'The priceAsOf argument as given (sanitized); null when omitted.'),
+    asOf: nullable(
+      z.string(),
+      'The priceAsOf argument with invisible and control characters removed and made one line, not otherwise reformatted (it must parse as a date); null when omitted or when nothing is left.',
+    ),
   }),
   value: z.object({
     amount: z

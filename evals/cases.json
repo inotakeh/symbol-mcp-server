@@ -201,7 +201,7 @@
       "expectedArguments": {
         "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
       },
-      "notes": "\"Not working\" / \"is it active\" / \"where is it stuck\" is a diagnosis: one call returns a verdict (active / not_active / cannot_verify) and every check with a hint. Pass the main (balance-holding) account. Leave recentDays at its default unless the user names a window. symbol_harvesting_status only says whether the linked key is unlocked on the node; symbol_harvesting_income only sums rewards."
+      "notes": "\"Not working\" / \"is it active\" / \"where is it stuck\" is a diagnosis: one call returns a verdict (active / not_active / cannot_verify) and every check, with a hint where one applies. Pass the main (balance-holding) account. Leave recentDays at its default unless the user names a window. symbol_harvesting_status only says whether the linked key is unlocked on the node; symbol_harvesting_income only sums rewards."
     },
     {
       "id": "account-by-namespace-name",

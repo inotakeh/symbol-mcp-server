@@ -61,7 +61,7 @@ export function validateNodeUrl(raw: string, label = 'SYMBOL_NODE_URL'): string 
   if (url.protocol === 'http:') {
     if (!LOOPBACK_HOSTS.has(url.hostname)) {
       throw new ConfigError(
-        `${label} must use https:// (http:// is only allowed for localhost / 127.0.0.1)`,
+        `${label} must use https:// (http:// is only allowed for localhost / 127.0.0.1 / [::1])`,
       );
     }
   } else if (url.protocol !== 'https:') {

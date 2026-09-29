@@ -124,6 +124,11 @@ describe('helpText', () => {
     expect(text).toContain('MAILTO');
   });
 
+  it('says which hosts take http:// and which tools read the reference nodes', () => {
+    expect(text).toMatch(/http:\/\/ only for localhost \/\s+127\.0\.0\.1\s+\/\s+\[::1\]/);
+    expect(text).toMatch(/symbol_network_compare\s+and\s+symbol_version_drift\s+check against/);
+  });
+
   it('names no node host: only the <node-host> placeholder and nodewatch', () => {
     // A URL ends before trailing sentence punctuation.
     const urls = new Set(text.match(/https?:\/\/\S*[^\s.,;)]/g) ?? []);

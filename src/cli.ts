@@ -233,7 +233,7 @@ export const ENV_VARS: readonly EnvVarDoc[] = [
     name: 'SYMBOL_NODE_URL',
     required: true,
     description:
-      'REST URL of the Symbol node to query, e.g. https://<node-host>:3001. https:// is required (http:// only for localhost / 127.0.0.1). The port is used exactly as given.',
+      'REST URL of the Symbol node to query, e.g. https://<node-host>:3001. https:// is required (http:// only for localhost / 127.0.0.1 / [::1]). The port is used exactly as given.',
   },
   {
     name: 'SYMBOL_NETWORK',
@@ -251,7 +251,7 @@ export const ENV_VARS: readonly EnvVarDoc[] = [
     name: 'SYMBOL_REFERENCE_NODES',
     required: false,
     description:
-      'Comma-separated https:// node URLs compared by symbol_network_compare. No other host is ever contacted.',
+      'Comma-separated https:// node URLs that symbol_network_compare and symbol_version_drift check against. No other host is ever contacted.',
   },
   {
     name: 'SYMBOL_REQUEST_TIMEOUT_MS',

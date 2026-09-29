@@ -5,7 +5,12 @@ import { truncateText } from '../domain/sanitize.js';
 import { formatInstantText } from '../domain/time.js';
 import { summarizeTransaction, type TransactionSummary } from '../domain/transaction.js';
 import { parseTransactionType, transactionTypeNames } from '../domain/txtype.js';
-import { AccountResolutionSchema, resolveAccountInput, withResolutionPrefix } from './_accounts.js';
+import {
+  ACCOUNT_ARG_FORMS,
+  AccountResolutionSchema,
+  resolveAccountInput,
+  withResolutionPrefix,
+} from './_accounts.js';
 import { defineTool, formatInteger, nullable, ToolInputError } from './_shared.js';
 import { buildSummarizeOptions, TransactionSummarySchema, TypeSchema } from './_transactions.js';
 import { describeTransactionLine, UNTRUSTED_TEXT_NOTE } from './symbol_transaction_get.js';
@@ -21,7 +26,7 @@ const inputSchema = z.object({
     .string()
     .min(1)
     .describe(
-      'Account whose transactions to list: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Matches transactions where the account is signer or recipient.',
+      `Account whose transactions to list: ${ACCOUNT_ARG_FORMS} Matches transactions where the account is signer or recipient.`,
     ),
   type: z
     .string()
