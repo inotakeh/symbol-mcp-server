@@ -112,6 +112,19 @@ export function hasSuccessorKey(
   return futureKeys.some((f) => f.startEpoch <= key.endEpoch + 1);
 }
 
+/**
+ * The active key whose renewal matters: the one with the most days left. The slot warning below
+ * and the CLI check's voting item (src/cli/check.ts) both judge renewal on this key with
+ * hasSuccessorKey, so they agree on when a renewal is already done.
+ */
+export function longestActiveKey<
+  K extends { readonly status: VotingKeyStatus; readonly remainingDays?: number | undefined },
+>(keys: readonly K[]): K | undefined {
+  return keys
+    .filter((k) => k.status === 'active')
+    .sort((a, b) => (b.remainingDays ?? 0) - (a.remainingDays ?? 0))[0];
+}
+
 export function buildVotingStatus(p: VotingStatusParams): VotingStatusReport {
   const G = p.votingSetGrouping;
   const warnWithinDays = p.warnWithinDays ?? 30;
@@ -198,9 +211,20 @@ export function buildVotingStatus(p: VotingStatusParams): VotingStatusReport {
     warn(below(currency), below(summaryCurrency));
   }
   if (slotsFree === 0) {
-    warn(
-      `All ${p.maxVotingKeysPerAccount} voting key slots are used (${expiredCount} expired). Unlink an expired key before registering a new one.`,
-    );
+    if (expiredCount > 0) {
+      warn(
+        `All ${p.maxVotingKeysPerAccount} voting key slots are used (${expiredCount} expired). Unlink an expired key before registering a new one.`,
+      );
+    } else {
+      // No expired key to unlink. With the renewal already done (a successor without a gap, the
+      // CLI check's rule), full slots need no action; otherwise say so without advice to unlink.
+      const renewal = longestActiveKey(votingKeys);
+      if (!renewal || !hasSuccessorKey(renewal, future)) {
+        warn(
+          `All ${p.maxVotingKeysPerAccount} voting key slots are taken by keys that have not expired, so there is no slot for a new key yet.`,
+        );
+      }
+    }
   }
 
   return {

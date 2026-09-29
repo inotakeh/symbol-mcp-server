@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   fixture,
+  H,
   mainnetRoutes,
   resourceNotFound,
   startTestServer,
@@ -123,6 +124,41 @@ describe('symbol_voting_key_status', () => {
       'No active voting key is registered for this account.',
       expect.stringMatching(/below minVoterBalance/),
     ]);
+  });
+
+  // Three keys and no expired one: the fixture's active key 3700-4059 and two future keys.
+  function accountWithKeys(successorStart: number) {
+    const account = fixture<{
+      account: { supplementalPublicKeys: { voting: { publicKeys: unknown[] } } };
+    }>('mainnet/account-voting.json');
+    account.account.supplementalPublicKeys.voting.publicKeys = [
+      { publicKey: H('fixture:voting-key-2'), startEpoch: 3700, endEpoch: 4059 },
+      { publicKey: H('fixture:voting-key-3'), startEpoch: successorStart, endEpoch: 4419 },
+      { publicKey: H('fixture:voting-key-4'), startEpoch: 4420, endEpoch: 4779 },
+    ];
+    return { ...mainnetRoutes(), [`GET /accounts/${ADDRESS}`]: account };
+  }
+
+  it('does not warn about full slots when no key has expired and the successor has no gap', async () => {
+    server = await startTestServer({ routes: accountWithKeys(4060) });
+    const result = await server.callTool('symbol_voting_key_status', { account: ADDRESS });
+    expect(result.structuredContent?.constraints).toMatchObject({
+      slotsFree: 0,
+      expiredKeysOccupyingSlots: 0,
+    });
+    expect(result.structuredContent?.warnings).toEqual([]);
+    expect(result.structuredContent?.summary).not.toMatch(/Warnings:/);
+  });
+
+  it('warns about full slots without advice to unlink when the successor leaves a gap', async () => {
+    server = await startTestServer({ routes: accountWithKeys(4100) });
+    const result = await server.callTool('symbol_voting_key_status', { account: ADDRESS });
+    const warnings = result.structuredContent?.warnings as string[];
+    expect(warnings).toContain(
+      'All 3 voting key slots are taken by keys that have not expired, so there is no slot for a new key yet.',
+    );
+    expect(warnings.some((w) => /[Uu]nlink/.test(w))).toBe(false);
+    expect(result.structuredContent?.summary).not.toMatch(/[Uu]nlink/);
   });
 
   it('returns a hinted error for unknown accounts', async () => {

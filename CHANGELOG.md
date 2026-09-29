@@ -20,6 +20,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - README (Japanese) corrected to match the server: the `symbol_holdings_value` row said that
   `priceSource` and `priceAsOf` are echoed as given; they are cleaned like chain strings before
   they are echoed, and `priceAsOf` is only checked to be a date.
+- `symbol_voting_key_status`: with every voting key slot taken and no expired key among them, the
+  warning told the operator to unlink an expired key, and it did so even when a successor key was
+  already registered without a gap, so there was nothing to do. Now full slots with an expired key
+  keep that advice; full slots with no expired key warn only when the renewal is not done (the key
+  that stays active longest has no successor without a gap, the rule `check` uses), and then say
+  that no slot is free, without advice to unlink.
 
 ### Security
 

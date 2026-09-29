@@ -14,7 +14,7 @@ import { describeSignedStages } from '../domain/finality.js';
 import { sanitizeUntrusted, toSingleLine } from '../domain/sanitize.js';
 import type { Instant } from '../domain/time.js';
 import { formatInstantText } from '../domain/time.js';
-import { hasSuccessorKey, RENEWAL_WINDOW_END_DAYS } from '../domain/voting.js';
+import { hasSuccessorKey, longestActiveKey, RENEWAL_WINDOW_END_DAYS } from '../domain/voting.js';
 import { describeError, maskIdentifier, ToolInputError } from '../tools/_shared.js';
 import { InstantSchema } from '../tools/_transactions.js';
 import {
@@ -219,9 +219,9 @@ export interface VotingKeysView {
  * registered without a gap (the tool's own "covered" rule), because the renewal is done.
  */
 export function mapVotingKeys(output: VotingKeysView, warnDays: number): ItemBody {
-  const active = output.votingKeys.filter((k) => k.status === 'active');
   const future = output.votingKeys.filter((k) => k.status === 'future');
-  const key = [...active].sort((a, b) => (b.remainingDays ?? 0) - (a.remainingDays ?? 0))[0];
+  // The same key the tool's slot warning judges (domain/voting.ts).
+  const key = longestActiveKey(output.votingKeys);
   if (!key) {
     const expired = output.votingKeys.length - future.length;
     return {
