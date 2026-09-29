@@ -729,6 +729,7 @@ export const delegationDiagnoseTool = defineTool({
       );
     } else {
       const nodeAddress = publicKeyToAddress(configuredNodeKey, ctx.network.identifier);
+      // The key the node returned for the address, public chain data; never the argument itself.
       const request = await findDelegationRequest(ctx, publicKey, nodeAddress);
       if (request.height !== null && request.timestamp !== null) {
         const when = ctx.instant(

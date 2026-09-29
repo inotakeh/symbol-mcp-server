@@ -13,10 +13,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runCheck } from '../../src/cli/check.js';
 import { formatCheckJson, formatCheckText } from '../../src/cli/format.js';
-import { publicKeyToAddress } from '../../src/domain/address.js';
+import { base32AddressToHex, publicKeyToAddress } from '../../src/domain/address.js';
 import {
   createTestContext,
   fixture,
+  H,
   jsonResponse,
   mainnetRoutes,
   type RouteHandler,
@@ -213,6 +214,26 @@ describe('a 64-hex account argument', () => {
       expect(containsKey(result.text), result.text).toBe(false);
     });
   }
+
+  it('is not what the delegation search sends: that is the key the node returned', async () => {
+    // A node that answers the derived address with an account whose on-chain key differs from
+    // the argument. The search must use the node's key, and the argument must be in no request.
+    const argument = H('fixture:argument-key');
+    const onChain = H('fixture:on-chain-key');
+    const derived = publicKeyToAddress(argument, 104);
+    const account = fixture<{ account: Record<string, unknown> }>('mainnet/account-voting.json');
+    account.account.address = base32AddressToHex(derived);
+    account.account.publicKey = onChain;
+    server = await startTestServer({
+      routes: { ...mainnetRoutes(), [`GET /accounts/${derived}`]: account },
+    });
+    const result = await server.callTool('symbol_delegation_diagnose', { account: argument });
+    expect(result.isError, result.text).toBe(false);
+    const search = server.requests.find((u) => u.pathname === '/transactions/confirmed');
+    expect(search?.searchParams.get('signerPublicKey')).toBe(onChain);
+    expect(carriers(server.requests, argument)).toEqual([]);
+    expect(contains(result.text, argument)).toBe(false);
+  });
 
   it('is turned into an address of the configured network (testnet: T...)', async () => {
     const info = fixture<Record<string, unknown>>('mainnet/node-info.json');
