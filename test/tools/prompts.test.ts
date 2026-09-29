@@ -91,6 +91,11 @@ describe('prompts', () => {
     expect(text).toMatch(/every entry of warnings\. Report the warnings as the tool words them/);
     expect(text).toMatch(/Give no advice of your own from slotsFree/);
     expect(text).not.toMatch(/If slotsFree is 0/);
+    // After the renewal, what the tool still warns about is reported, not predicted.
+    expect(text).toMatch(
+      /report every warning the tool still returns, as worded, under Open items/,
+    );
+    expect(text).not.toMatch(/should be gone|was unlinked so its slot is free/);
     expect(text).toMatch(/not synced, stop/);
     expect(text).toMatch(/startEpoch has been finalized/);
     expect(text).toMatch(/"participated"/);
@@ -132,6 +137,8 @@ describe('prompts', () => {
     );
     expect(text).toMatch(/Add no expiry warning of your own/);
     expect(text).not.toMatch(/If a key expires within 30 days/);
+    // Whether a future key is a successor is the tool's call (its warnings), not the prompt's.
+    expect(text).not.toMatch(/\(the successor\)/);
     // No arithmetic left to the model: the daily average is gone.
     expect(text).not.toMatch(/average|divided|division/);
     expectCouldNotCompareHandling(text);

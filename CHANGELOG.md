@@ -38,7 +38,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The prompts follow the tools' own judgments instead of rules written into their text.
   `voting_key_renewal_checklist` step 1 said that with no free slot an expired key has to be
   unlinked, even when none had expired; it now reports the warnings of `symbol_voting_key_status`
-  as worded. `monthly_health_check` step 6 put any key expiring within 30 days at the top, even
+  as worded, step 4 asks for an unlink only when such a warning calls for it, and step 5 reports
+  the warnings still returned after the renewal instead of expecting an expired key to have been
+  unlinked. `monthly_health_check` step 6 put any key expiring within 30 days at the top, even
   with a successor already registered without a gap; it now puts the tool's warnings at the top
   and adds none of its own. In both prompts, when `symbol_network_compare` says it could not
   compare, the sync against the network is reported as not confirmed, whatever the numbers say,
