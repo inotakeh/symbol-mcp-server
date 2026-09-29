@@ -45,7 +45,7 @@
     "node_url": {
       "type": "string",
       "title": "Symbol node URL",
-      "description": "REST URL of the Symbol node to query, e.g. https://<node-host>:3001. https:// is required (http:// only for localhost / 127.0.0.1). Your own node is recommended: the operator of a public node can see the addresses you look up.",
+      "description": "REST URL of the Symbol node to query, e.g. https://<node-host>:3001. https:// is required (http:// only for localhost / 127.0.0.1 / [::1]). Your own node is recommended: the operator of a public node can see the addresses you look up.",
       "required": true
     },
     "network": {
