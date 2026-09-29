@@ -1,5 +1,6 @@
 import * as z from 'zod/v4';
 import { TransactionInfoSchema } from '../client/schemas.js';
+import { mosaicLabel, quoteName, quoteUntrusted } from '../domain/quote.js';
 import { truncateText } from '../domain/sanitize.js';
 import { formatInstantText } from '../domain/time.js';
 import { summarizeTransaction, type TransactionSummary } from '../domain/transaction.js';
@@ -44,10 +45,11 @@ export function describeTransactionLine(
   const parts: string[] = [];
   if (t.recipient) {
     const to =
-      t.recipient.address ?? `alias ${t.recipient.namespaceName ?? t.recipient.namespaceId}`;
+      t.recipient.address ??
+      `alias ${t.recipient.namespaceName ? quoteName(t.recipient.namespaceName) : t.recipient.namespaceId}`;
     const amounts =
       t.mosaics.length > 0
-        ? t.mosaics.map((m) => `${m.amount} ${m.alias ?? m.id}`).join(', ')
+        ? t.mosaics.map((m) => `${m.amount} ${mosaicLabel(m.alias, m.id)}`).join(', ')
         : 'no mosaics';
     parts.push(`${t.signer.address} sent ${amounts} to ${to}`);
   } else {
@@ -55,7 +57,10 @@ export function describeTransactionLine(
   }
   if (t.message) {
     if (t.message.kind === 'plain') {
-      parts.push(`untrusted message: "${messagePreview(t.message.messageText ?? '')}"`);
+      // Cut first, then quote: the escapes are never split.
+      parts.push(
+        `untrusted message: ${quoteUntrusted(messagePreview(t.message.messageText ?? ''))}`,
+      );
     } else if (t.message.kind === 'empty') parts.push('no message');
     else parts.push(`message: ${t.message.note ?? t.message.kind}`);
   }
@@ -95,7 +100,7 @@ export const transactionGetTool = defineTool({
       if (!info) continue;
       const opts = await buildSummarizeOptions(ctx, [info], text);
       const transaction = summarizeTransaction(info, opts);
-      const currencyLabel = () => text.useOrNull(currency.alias) ?? currency.mosaicId;
+      const currencyLabel = () => mosaicLabel(text.useOrNull(currency.alias), currency.mosaicId);
       const where =
         group === 'confirmed' && transaction.height !== null
           ? `confirmed at height ${formatInteger(transaction.height)}${transaction.timestamp ? ` (${formatInstantText(transaction.timestamp)})` : ''}`

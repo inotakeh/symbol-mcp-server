@@ -23,6 +23,7 @@ import {
   type RoundingRule,
   roundingRule,
 } from '../domain/price.js';
+import { labelledQuote, mosaicLabel } from '../domain/quote.js';
 import { mosaicBalanceOf } from '../domain/rank.js';
 import { ACCOUNT_ARG_FORMS, AccountResolutionSchema, withResolutionPrefix } from './_accounts.js';
 import { resolveMosaicInput } from './_mosaics.js';
@@ -208,7 +209,8 @@ export const holdingsValueTool = defineTool({
       }
     }
     const isNetworkCurrency = mosaicId === networkCurrency.mosaicId;
-    const label = alias ?? mosaicId;
+    // Summary text only: an alias outside the namespace grammar is quoted (domain/quote.ts).
+    const label = mosaicLabel(alias, mosaicId);
     const unitLabel = isNetworkCurrency ? 'XYM' : label;
 
     const { info, resolution } = await fetchAccount(ctx, account);
@@ -222,8 +224,9 @@ export const holdingsValueTool = defineTool({
     const value = multiplyAndRound(balanceRaw, divisibility, price, rule);
 
     const provenance = ['price supplied by the caller'];
-    if (source !== null) provenance.push(`: ${source}`);
-    if (asOf !== null) provenance.push(`, as of ${asOf}`);
+    // The caller's words, labelled and quoted like any text this server did not write.
+    if (source !== null) provenance.push(`: ${labelledQuote('source', source)}`);
+    if (asOf !== null) provenance.push(`, ${labelledQuote('as of', asOf)}`);
     const lines = [
       `${address} holds ${groupThousands(balance)} ${label}; at ${price.normalized} ${currencyCode} per ${unitLabel} that is ${groupThousands(value.amount)} ${currencyCode} (${provenance.join('')}).`,
       roundingNote(currencyCode, rule, value.decimalsSource === 'rounds_to_zero'),

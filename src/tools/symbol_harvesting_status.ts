@@ -3,6 +3,7 @@ import { MosaicInfoSchema, UnlockedAccountSchema } from '../client/schemas.js';
 import { hexAddressToBase32 } from '../domain/address.js';
 import { formatAmount } from '../domain/amount.js';
 import { classifyHarvesterBalance, type HarvesterBalance } from '../domain/delegation.js';
+import { mosaicLabel } from '../domain/quote.js';
 import {
   type AccountResolution,
   AccountResolutionSchema,
@@ -109,6 +110,9 @@ export const harvestingStatusTool = defineTool({
     }
     const div = harvestingMosaic.divisibility;
     const label = harvestingMosaic.alias ?? harvestingMosaic.id;
+    // The summary quotes an alias outside the namespace grammar (domain/quote.ts); account.warnings
+    // keep the plain label.
+    const summaryLabel = mosaicLabel(harvestingMosaic.alias, harvestingMosaic.id);
     const limits = {
       minHarvesterBalance: formatAmount(properties.minHarvesterBalance, div),
       rawMinHarvesterBalance: properties.minHarvesterBalance.toString(),
@@ -119,7 +123,7 @@ export const harvestingStatusTool = defineTool({
     };
 
     const lines: string[] = [
-      `${ctx.rest.host} (${ctx.network.name}) has ${unlockedKeys.length} delegated harvester${unlockedKeys.length === 1 ? '' : 's'} unlocked. Harvesting requires a balance from ${limits.minHarvesterBalance} to ${limits.maxHarvesterBalance} ${label} (both inclusive) and non-zero importance; the node keeps ${properties.harvestBeneficiaryPercentage}% of block rewards.`,
+      `${ctx.rest.host} (${ctx.network.name}) has ${unlockedKeys.length} delegated harvester${unlockedKeys.length === 1 ? '' : 's'} unlocked. Harvesting requires a balance from ${limits.minHarvesterBalance} to ${limits.maxHarvesterBalance} ${summaryLabel} (both inclusive) and non-zero importance; the node keeps ${properties.harvestBeneficiaryPercentage}% of block rewards.`,
     ];
 
     let report: z.output<typeof AccountReportSchema> | null = null;
@@ -152,28 +156,32 @@ export const harvestingStatusTool = defineTool({
         delegatedConfigured && unlockedHere && balanceWithinLimits && importanceNonZero;
 
       const warnings: string[] = [];
-      if (!linked)
-        warnings.push('No linked (remote) key: register an AccountKeyLink transaction first.');
-      if (!vrf) warnings.push('No VRF key: register a VrfKeyLink transaction first.');
+      const summaryWarnings: string[] = [];
+      const warn = (plain: string, forSummary: string = plain) => {
+        warnings.push(plain);
+        summaryWarnings.push(forSummary);
+      };
+      if (!linked) warn('No linked (remote) key: register an AccountKeyLink transaction first.');
+      if (!vrf) warn('No VRF key: register a VrfKeyLink transaction first.');
       if (!nodeKey)
-        warnings.push('No node key link: the account has not delegated to a node (NodeKeyLink).');
+        warn('No node key link: the account has not delegated to a node (NodeKeyLink).');
       if (linked && !unlockedHere) {
-        warnings.push(
+        warn(
           `The linked key ${linked.slice(0, 8)}… is not unlocked on ${ctx.rest.host}; the account may be delegated to a different node, or the node has not activated the delegation yet.`,
         );
       }
       if (balanceState === 'below') {
-        warnings.push(
-          `Balance ${formatAmount(rawBalance, div)} ${label} is below minHarvesterBalance ${limits.minHarvesterBalance}.`,
-        );
+        const below = (unit: string) =>
+          `Balance ${formatAmount(rawBalance, div)} ${unit} is below minHarvesterBalance ${limits.minHarvesterBalance}.`;
+        warn(below(label), below(summaryLabel));
       }
       if (balanceState === 'above') {
-        warnings.push(
-          `Balance ${formatAmount(rawBalance, div)} ${label} exceeds maxHarvesterBalance ${limits.maxHarvesterBalance}: an account above it cannot harvest, and nodes drop it from their unlocked list. Move the excess to another account.`,
-        );
+        const above = (unit: string) =>
+          `Balance ${formatAmount(rawBalance, div)} ${unit} exceeds maxHarvesterBalance ${limits.maxHarvesterBalance}: an account above it cannot harvest, and nodes drop it from their unlocked list. Move the excess to another account.`;
+        warn(above(label), above(summaryLabel));
       }
       if (!importanceNonZero)
-        warnings.push(
+        warn(
           'Importance is zero; the account cannot harvest until importance is recalculated with a qualifying balance.',
         );
 
@@ -194,9 +202,9 @@ export const harvestingStatusTool = defineTool({
         warnings,
       };
       lines.push(
-        `${address}: delegated harvesting ${delegatedConfigured ? 'configured' : 'NOT configured'}; linked key ${linked ? `${linked.slice(0, 8)}… is ${unlockedHere ? '' : 'NOT '}unlocked on this node` : 'absent'}; balance ${report.balance} ${label} (${BALANCE_STATE_TEXT[balanceState]}); importance ${formatInteger(acct.importance)}. ${canHarvestHere ? 'This account can harvest on this node.' : 'This account cannot currently harvest on this node.'}`,
+        `${address}: delegated harvesting ${delegatedConfigured ? 'configured' : 'NOT configured'}; linked key ${linked ? `${linked.slice(0, 8)}… is ${unlockedHere ? '' : 'NOT '}unlocked on this node` : 'absent'}; balance ${report.balance} ${summaryLabel} (${BALANCE_STATE_TEXT[balanceState]}); importance ${formatInteger(acct.importance)}. ${canHarvestHere ? 'This account can harvest on this node.' : 'This account cannot currently harvest on this node.'}`,
       );
-      if (warnings.length > 0) lines.push(`Warnings: ${warnings.join(' ')}`);
+      if (summaryWarnings.length > 0) lines.push(`Warnings: ${summaryWarnings.join(' ')}`);
     }
 
     return {

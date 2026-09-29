@@ -148,9 +148,11 @@ export const votingKeyStatusTool = defineTool({
       );
     }
     lines.push(
-      `Slots: ${report.constraints.slotsUsed}/${report.constraints.maxVotingKeysPerAccount} used (${report.constraints.expiredKeysOccupyingSlots} expired still occupying). Balance ${report.eligibility.balance} ${report.eligibility.currency} vs minVoterBalance ${report.eligibility.minVoterBalance}: ${report.eligibility.eligible ? 'eligible' : 'NOT eligible'}.`,
+      `Slots: ${report.constraints.slotsUsed}/${report.constraints.maxVotingKeysPerAccount} used (${report.constraints.expiredKeysOccupyingSlots} expired still occupying). Balance ${report.eligibility.balance} ${report.summaryCurrency} vs minVoterBalance ${report.eligibility.minVoterBalance}: ${report.eligibility.eligible ? 'eligible' : 'NOT eligible'}.`,
     );
-    if (report.warnings.length > 0) lines.push(`Warnings: ${report.warnings.join(' ')}`);
+    if (report.summaryWarnings.length > 0) {
+      lines.push(`Warnings: ${report.summaryWarnings.join(' ')}`);
+    }
     lines.push(
       `Dates are estimates based on the measured average block time of ${avgSeconds}s over the last ${formatInteger(blockTime.sampleBlocks)} blocks.`,
     );

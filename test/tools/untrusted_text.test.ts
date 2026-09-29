@@ -83,7 +83,7 @@ describe('node status strings from /node/health', () => {
       db: 'down 31m',
       healthy: false,
     });
-    expect(result.structuredContent?.summary).toMatch(/Health apiNode=up\[2J, db=down 31m;/);
+    expect(result.structuredContent?.summary).toMatch(/Health apiNode="up\[2J", db="down 31m";/);
     expectClean(result.structuredContent);
     expectClean(result.text);
   });
@@ -250,22 +250,24 @@ describe('voting keys of an account', () => {
     return account;
   }
 
-  // The synthetic main account is served under its address and under its public key.
+  // The synthetic main account, served with a different voting key in each case.
   const ADDRESS = 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY';
-  const PUBLIC_KEY = 'CE1992333C60AFEABDB289A14CC1A593FB797339C6D93DEEDB97052AED51845E';
 
   it('accepts an unusual key up to the bound but rejects a runaway string', async () => {
     server = await startTestServer({
+      routes: routes({ [`GET /accounts/${ADDRESS}`]: accountWithVotingKey('AB'.repeat(48)) }),
+    });
+    const legacy = await server.callTool('symbol_account_get', { account: ADDRESS });
+    expect(legacy.isError).toBe(false);
+    await server.close();
+    server = await startTestServer({
       routes: routes({
-        [`GET /accounts/${ADDRESS}`]: accountWithVotingKey('AB'.repeat(48)),
-        [`GET /accounts/${PUBLIC_KEY}`]: accountWithVotingKey(
+        [`GET /accounts/${ADDRESS}`]: accountWithVotingKey(
           'AB'.repeat(MAX_VOTING_KEY_HEX_LENGTH / 2 + 1),
         ),
       }),
     });
-    const legacy = await server.callTool('symbol_account_get', { account: ADDRESS });
-    expect(legacy.isError).toBe(false);
-    const runaway = await server.callTool('symbol_account_get', { account: PUBLIC_KEY });
+    const runaway = await server.callTool('symbol_account_get', { account: ADDRESS });
     expect(runaway.isError).toBe(true);
     expect(runaway.text).toMatch(/unexpected response shape/);
   });

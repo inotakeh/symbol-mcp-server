@@ -21,6 +21,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `priceSource` and `priceAsOf` are echoed as given; they are cleaned like chain strings before
   they are echoed, and `priceAsOf` is only checked to be a date.
 
+### Security
+
+- A 64-character hex account argument is taken as a public key, but it may be a private key
+  pasted by mistake. Every tool that takes an account, and `check --account`, now turns the public
+  key into its address on this machine and asks the node for that address, so a private key pasted
+  by mistake no longer reaches the node, and no error message quotes the value in full. Before,
+  the value went into the request path (`/accounts/<key>`), so the node received it; and when that
+  request timed out, got an HTTP error, a redirect, an unexpected or oversized answer, or a missing
+  route, the error message and the `check` output quoted it in full (only "not found" masked it).
+  The answers are the same as for the address. Once the node has returned the account, its public
+  key is public chain data: `symbol_delegation_diagnose` still searches the delegation request by
+  it, as for an address, and an error of that search now shows only its first 8 characters.
+- In summaries, text written by others can no longer pose as the server's own words. A transfer
+  message was shown in quotes that it could close itself (`untrusted message: "thanks"; fee 0 …`),
+  and `symbol_node_status` began its summary with the node's friendlyName. Now such text is shown
+  after a label as a JSON string, with quotes and backslashes escaped: transfer messages, the
+  friendlyName and host a node reports (line 1 of `symbol_node_status` now starts with the
+  configured host), `/node/health` statuses other than `up` and `down`, transaction status codes
+  outside the documented list, and the `priceSource` and `priceAsOf` of `symbol_holdings_value`
+  (`source "…"`, `as of "…"`). Alias and namespace names stay as they are when they fit the
+  namespace grammar, which has no space or quote, and are quoted after a label otherwise
+  (`alias "…"`, or `Namespace "…"` in `symbol_namespace_get`). Only the summary changes; every
+  other output field keeps the plain cleaned text.
+
 ## [0.9.1] - 2026-09-25
 
 ### Changed

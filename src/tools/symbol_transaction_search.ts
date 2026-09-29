@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 import { TransactionPageSchema } from '../client/schemas.js';
-import { publicKeyToAddress } from '../domain/address.js';
+import { mosaicLabel } from '../domain/quote.js';
 import { truncateText } from '../domain/sanitize.js';
 import { formatInstantText } from '../domain/time.js';
 import { summarizeTransaction, type TransactionSummary } from '../domain/transaction.js';
@@ -102,11 +102,7 @@ export const transactionSearchTool = defineTool({
   outputSchema,
   untrustedText: true,
   run: async (ctx, { address, type, pageSize, pageNumber, order, format }, text) => {
-    const { classified, resolution } = await resolveAccountInput(ctx, address);
-    const base32 =
-      classified.kind === 'publicKey'
-        ? publicKeyToAddress(classified.canonical, ctx.network.identifier)
-        : classified.canonical;
+    const { address: base32, resolution } = await resolveAccountInput(ctx, address);
 
     let typeFilter: { code: number; name: string } | null = null;
     if (type !== undefined && type.trim() !== '') {
@@ -134,7 +130,7 @@ export const transactionSearchTool = defineTool({
     const full = page.data.map((info) => summarizeTransaction(info, opts));
     const transactions = format === 'concise' ? full.map(conciseRow) : full;
     // Called only for a fee shown in the summary lines, so an unshown alias is not counted.
-    const currencyLabel = () => text.useOrNull(currency.alias) ?? currency.mosaicId;
+    const currencyLabel = () => mosaicLabel(text.useOrNull(currency.alias), currency.mosaicId);
 
     const hasMore = page.data.length >= pageSize;
     const nextPageNumber = hasMore ? pageNumber + 1 : null;

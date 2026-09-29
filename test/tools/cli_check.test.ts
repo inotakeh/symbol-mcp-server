@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CHECK_IDS, type CheckReport, CheckReportSchema, runCheck } from '../../src/cli/check.js';
 import { formatCheckJson, formatCheckText } from '../../src/cli/format.js';
+import { publicKeyToAddress } from '../../src/domain/address.js';
 import { UNAVAILABLE_NOTE } from '../../src/tools/symbol_finality_participation.js';
 import {
   NOT_SAVED_NOTE_PREFIX,
@@ -304,9 +305,11 @@ describe('runCheck against the fixture node', () => {
   });
 
   it('never prints a 64-hex value that might be a private key pasted by mistake', async () => {
-    const looksLikeSecret = 'DEADBEEF'.repeat(8); // treated as a public key; unknown -> 404
-    const { ctx } = await createTestContext({
-      routes: routes({ [`GET /accounts/${looksLikeSecret}`]: resourceNotFound(looksLikeSecret) }),
+    // Treated as a public key and asked for by its derived address, which is unknown -> 404.
+    const looksLikeSecret = 'DEADBEEF'.repeat(8);
+    const derived = publicKeyToAddress(looksLikeSecret, 104);
+    const { ctx, requests } = await createTestContext({
+      routes: routes({ [`GET /accounts/${derived}`]: resourceNotFound(derived) }),
     });
     const report = await runCheck(ctx, { account: looksLikeSecret, warnDays: 14 });
 
@@ -315,6 +318,7 @@ describe('runCheck against the fixture node', () => {
     expect(item(report, 'voting_key_status').detail).toContain('public key DEADBEEF…');
     expect(formatCheckJson(report)).not.toContain(looksLikeSecret);
     expect(formatCheckText(report)).not.toContain(looksLikeSecret);
+    expect(requests.some((u) => u.href.includes(looksLikeSecret))).toBe(false);
   });
 
   it('is ok when the prevote stage is split into two groups and the key is in one (epoch 4027 shape)', async () => {

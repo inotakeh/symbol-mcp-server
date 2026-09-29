@@ -7,6 +7,7 @@
  */
 import { formatAmount } from './amount.js';
 import { epochStartHeight, votingKeyExpiryHeight } from './epoch.js';
+import { summaryName } from './quote.js';
 import {
   estimateDateAtHeight,
   formatInstant,
@@ -86,6 +87,13 @@ export interface VotingStatusReport {
     readonly currency: string;
   };
   readonly warnings: readonly string[];
+  /**
+   * Not output fields: the currency and the warnings as the summary shows them, with an alias
+   * outside the namespace grammar quoted (domain/quote.ts). `eligibility.currency` and `warnings`
+   * keep the plain cleaned text.
+   */
+  readonly summaryCurrency: string;
+  readonly summaryWarnings: readonly string[];
 }
 
 const RENEWAL_WINDOW_START_DAYS = 7;
@@ -158,12 +166,18 @@ export function buildVotingStatus(p: VotingStatusParams): VotingStatusReport {
 
   const eligible = p.balanceRaw >= p.minVoterBalance;
   const currency = p.currencyAlias ?? 'currency mosaic';
+  const summaryCurrency = p.currencyAlias ? summaryName('alias', p.currencyAlias) : currency;
 
   const warnings: string[] = [];
+  const summaryWarnings: string[] = [];
+  const warn = (plain: string, forSummary: string = plain) => {
+    warnings.push(plain);
+    summaryWarnings.push(forSummary);
+  };
   const active = votingKeys.filter((k) => k.status === 'active');
   const future = votingKeys.filter((k) => k.status === 'future');
   if (active.length === 0) {
-    warnings.push(
+    warn(
       future.length > 0
         ? `No voting key is active for the current epoch ${p.currentEpoch}; the next key starts at epoch ${future[0]?.startEpoch}.`
         : 'No active voting key is registered for this account.',
@@ -173,18 +187,18 @@ export function buildVotingStatus(p: VotingStatusParams): VotingStatusReport {
     const days = key.remainingDays ?? 0;
     const covered = hasSuccessorKey(key, future);
     if (days <= warnWithinDays && !covered) {
-      warnings.push(
+      warn(
         `Active voting key ${key.publicKey.slice(0, 8)}… expires at epoch ${key.endEpoch} in about ${days} days (${key.expiresAt ? formatInstantText(key.expiresAt) : 'unknown time'}) and no successor key is registered.`,
       );
     }
   }
   if (!eligible) {
-    warnings.push(
-      `Balance ${formatAmount(p.balanceRaw, p.currencyDivisibility)} ${currency} is below minVoterBalance ${formatAmount(p.minVoterBalance, p.currencyDivisibility)}; the account cannot vote.`,
-    );
+    const below = (label: string) =>
+      `Balance ${formatAmount(p.balanceRaw, p.currencyDivisibility)} ${label} is below minVoterBalance ${formatAmount(p.minVoterBalance, p.currencyDivisibility)}; the account cannot vote.`;
+    warn(below(currency), below(summaryCurrency));
   }
   if (slotsFree === 0) {
-    warnings.push(
+    warn(
       `All ${p.maxVotingKeysPerAccount} voting key slots are used (${expiredCount} expired). Unlink an expired key before registering a new one.`,
     );
   }
@@ -210,5 +224,7 @@ export function buildVotingStatus(p: VotingStatusParams): VotingStatusReport {
       currency,
     },
     warnings,
+    summaryCurrency,
+    summaryWarnings,
   };
 }

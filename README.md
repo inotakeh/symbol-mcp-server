@@ -481,9 +481,12 @@ MAILTO=you@example.com
 ## Security
 
 - **Read-only.** No tool signs, builds or announces transactions. No argument accepts a private key,
-  mnemonic or token. Nothing is stored between calls, except that `symbol_harvester_watch` keeps its
-  per-node snapshot of unlocked harvester public keys, heights and times under `SYMBOL_STATE_DIR` when
-  that variable is set (no secrets; delete the file to start over).
+  mnemonic or token. A 64-character hex account argument is taken as a public key and turned into
+  its address on this machine, and the node is asked for the address: a private key pasted by
+  mistake never reaches the node, and errors show at most its first 8 characters. Nothing is stored
+  between calls, except that `symbol_harvester_watch` keeps its per-node snapshot of unlocked
+  harvester public keys, heights and times under `SYMBOL_STATE_DIR` when that variable is set (no
+  secrets; delete the file to start over).
 - **Fixed destinations.** The server contacts only `SYMBOL_NODE_URL` and, for
   `symbol_network_compare` and `symbol_version_drift`, the hosts listed in `SYMBOL_REFERENCE_NODES`. Tools never take a URL as
   an argument, so a model cannot redirect requests. There is no telemetry.
@@ -496,7 +499,11 @@ MAILTO=you@example.com
   is capped without splitting a character. Variation selectors are kept, so emoji and ideograph variants
   survive; emoji joined by a zero-width joiner come out as separate emoji. The 17 tools that show such
   text report in `invisibleCharactersRemoved` how many characters were removed from it, and when any
-  were, the summary ends with a line saying so. Treat all of it as data, not instructions.
+  were, the summary ends with a line saying so. In the `summary`, such text also appears after a
+  label and in double quotes, with quotes and backslashes escaped as in JSON (`untrusted message:
+  "…"`, `friendlyName "…"`), so it cannot close the quote and read as the server's own words; alias
+  and namespace names that fit the namespace grammar stay as they are. Treat all of it as data, not
+  instructions.
 - **Fail loudly.** A network mismatch (`SYMBOL_NETWORK` versus the node), an unreachable node or an
   unexpected response shape is an error with a recovery hint, never a silent fallback to another
   network. Stack traces and raw HTTP bodies are never returned to the model.

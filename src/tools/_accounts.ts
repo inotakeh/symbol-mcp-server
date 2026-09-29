@@ -9,6 +9,11 @@
  * `GET /namespaces/{id}` through the per-process short-TTL cache → the namespace must exist, be
  * active and carry an address alias (AliasTypeEnum 2); anything else is a ToolInputError with a
  * specific hint. Reverse lookup (address → names) is out of scope.
+ *
+ * A public key is turned into its address here, on this machine, with the configured network's
+ * identifier, and tools ask the node about that address. A 64-hex argument may be a private key
+ * pasted by mistake (DESIGN-BRIEF §7), so the value itself never goes into a request path or
+ * query, where the node would see it and an error message could quote it.
  */
 import * as z from 'zod/v4';
 import type { AppContext } from '../context.js';
@@ -16,6 +21,7 @@ import {
   type ClassifiedAccountId,
   classifyAccountId,
   hexAddressToBase32,
+  publicKeyToAddress,
 } from '../domain/address.js';
 import { namespaceNameToHexId } from '../domain/namespace.js';
 import { sanitizeUntrusted } from '../domain/sanitize.js';
@@ -60,12 +66,18 @@ export const AccountResolutionSchema = nullable(
 export interface ResolvedAccountInput {
   /** Never of kind 'namespace': a name has already been turned into its aliased address. */
   readonly classified: ClassifiedAccountId;
+  /**
+   * Base32 address to ask the node about; for a public key, the address derived from it on this
+   * machine. Requests use this, never `classified.canonical` (see the header comment).
+   */
+  readonly address: string;
   readonly resolution: AccountResolution | null;
 }
 
 /**
  * Turns an account argument into an address or public key, resolving namespace names through
- * the node. Throws ToolInputError with a hint for invalid input or an unusable namespace.
+ * the node, and gives the address to request. Throws ToolInputError with a hint for invalid
+ * input or an unusable namespace.
  */
 export async function resolveAccountInput(
   ctx: AppContext,
@@ -77,7 +89,13 @@ export async function resolveAccountInput(
       `"${maskIdentifier(value.trim())}" is not a valid Symbol account identifier. ${ACCOUNT_INPUT_HINT}`,
     );
   }
-  if (classified.kind !== 'namespace') return { classified, resolution: null };
+  if (classified.kind !== 'namespace') {
+    const address =
+      classified.kind === 'publicKey'
+        ? publicKeyToAddress(classified.canonical, ctx.network.identifier)
+        : classified.canonical;
+    return { classified, address, resolution: null };
+  }
 
   const name = classified.canonical;
   const namespaceId = namespaceNameToHexId(name);
@@ -109,6 +127,7 @@ export async function resolveAccountInput(
   const address = hexAddressToBase32(alias.address);
   return {
     classified: { kind: 'address', canonical: address },
+    address,
     resolution: {
       input: sanitizeUntrusted(value.trim(), 64),
       namespace: sanitizeUntrusted(name, 64),
