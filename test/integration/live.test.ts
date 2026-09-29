@@ -12,6 +12,10 @@
  * SYMBOL_INTEGRATION_MULTISIG_ACCOUNT=<address of a multisig account> checks that
  * symbol_account_get reports it as a multisig account and its first cosignatory as a cosignatory;
  * without it that test is skipped.
+ * Every registered tool is called (the last test checks it; run the whole file for it to pass).
+ * Inputs come from the environment or from the node itself (the node's account, a hash found by
+ * a search), never from literals; tools that read many pages get small arguments.
+ * symbol_harvester_watch runs in mode "compare", so no snapshot is written.
  * Never runs in CI (vitest.config.ts excludes this directory unless SYMBOL_INTEGRATION=1).
  */
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
@@ -35,6 +39,12 @@ type Structured = Record<string, unknown>;
  */
 type ToolArgument = string | number | boolean | readonly string[];
 
+/** Tools that only the tests needing SYMBOL_INTEGRATION_ACCOUNT call. */
+const ONLY_WITH_INTEGRATION_ACCOUNT: ReadonlySet<string> = new Set([
+  'symbol_finality_participation',
+  'symbol_harvesting_income',
+]);
+
 /** An optional environment value inside a test that is skipped unless it is set. */
 function required(value: string | undefined): string {
   if (value === undefined) throw new Error('test ran without the environment value it needs');
@@ -50,8 +60,11 @@ describe.skipIf(!enabled)('live node', () => {
   let ctx: AppContext;
   let client: Client;
   let handler: ReturnType<typeof createMcpHandler>;
+  /** Every tool name passed to call(), for the coverage check at the end. */
+  const called = new Set<string>();
 
   const call = async (name: string, args: Record<string, ToolArgument> = {}) => {
+    called.add(name);
     const result = await client.callTool({ name, arguments: args });
     expect(
       result.isError,
@@ -251,11 +264,127 @@ describe.skipIf(!enabled)('live node', () => {
     },
   );
 
+  it('symbol_transaction_status reports a confirmed transaction found by a search, and an unknown hash', async () => {
+    const account = await nodeAccount();
+    const page = await call('symbol_transaction_search', { address: account, pageSize: 10 });
+    const rows = page.transactions as Array<{ hash: string; height: number | null }>;
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const first = rows[0];
+    const unknown = '0'.repeat(64);
+    const result = await call('symbol_transaction_status', {
+      transactionHashes: [first?.hash ?? '', unknown],
+    });
+    const statuses = result.statuses as Array<{
+      hash: string;
+      group: string;
+      height: number | null;
+    }>;
+    expect(statuses.map((s) => s.hash)).toEqual([first?.hash, unknown]);
+    expect(statuses[0]).toMatchObject({ group: 'confirmed', height: first?.height });
+    expect(statuses[1]?.group).toBe('not_found');
+  });
+
+  it('symbol_node_health gives a verdict from its six checks, on the version node_status reports', async () => {
+    const health = await call('symbol_node_health');
+    expect(['healthy', 'degraded', 'unhealthy']).toContain(health.verdict);
+    expect((health.checks as Array<{ id: string }>).map((c) => c.id)).toEqual([
+      'api_node',
+      'db',
+      'storage_consistent',
+      'clock_skew',
+      'finalization_lag',
+      'roles',
+    ]);
+    const status = await call('symbol_node_status');
+    const node = health.node as { version: string } | null;
+    if (node) expect(node.version).toBe((status.node as { version: string }).version);
+  });
+
+  it('symbol_version_drift compares the node version with a sample that adds up', async () => {
+    const drift = await call('symbol_version_drift');
+    expect(['ok', 'behind', 'far_behind', 'unknown']).toContain(drift.verdict);
+    const status = await call('symbol_node_status');
+    expect((drift.node as { version: string }).version).toBe(
+      (status.node as { version: string }).version,
+    );
+    const sample = drift.sample as { size: number };
+    const distribution = drift.distribution as Array<{ count: number }>;
+    expect(distribution.reduce((sum, d) => sum + d.count, 0)).toBe(sample.size);
+  });
+
+  it('symbol_harvester_watch reads the unlocked list without saving (mode compare)', async () => {
+    const watch = await call('symbol_harvester_watch', { mode: 'compare' });
+    expect(watch.saved).toBe(false);
+    expect((watch.current as { count: number }).count).toBeGreaterThanOrEqual(0);
+    if (!ctx.config.stateDir) expect(watch.comparison).toBeNull();
+  });
+
+  it('symbol_delegation_diagnose runs its eleven checks for a real account (one day of blocks)', async () => {
+    const result = await call('symbol_delegation_diagnose', {
+      account: await nodeAccount(),
+      recentDays: 1,
+    });
+    expect(['active', 'not_active', 'cannot_verify']).toContain(result.verdict);
+    expect((result.checks as Array<{ id: string }>).map((c) => c.id)).toEqual([
+      'account_exists',
+      'balance_in_range',
+      'importance_positive',
+      'linked_key',
+      'vrf_key',
+      'node_key',
+      'node_key_matches_configured_node',
+      'unlocked_on_node',
+      'account_type',
+      'recent_harvest',
+      'delegation_request_found',
+    ]);
+  });
+
+  it('symbol_account_rank lists the top holders in order and ranks a real account (one page each)', async () => {
+    const top = await call('symbol_account_rank', { top: 3 });
+    const holders = top.topHolders as Array<{ rank: number; balanceRaw: string }>;
+    expect(holders.length).toBeLessThanOrEqual(3);
+    expect(holders.map((h) => h.rank)).toEqual(holders.map((_, i) => i + 1));
+    for (let i = 1; i < holders.length; i++) {
+      expect(
+        BigInt(holders[i - 1]?.balanceRaw ?? '0') >= BigInt(holders[i]?.balanceRaw ?? '0'),
+      ).toBe(true);
+    }
+    const ranked = await call('symbol_account_rank', {
+      account: await nodeAccount(),
+      top: 1,
+      maxRank: 100,
+    });
+    const target = ranked.account as { rank: number | null; rankBeyond: number | null };
+    if (target.rank !== null) expect(target.rank).toBeLessThanOrEqual(100);
+    else expect([100, null]).toContain(target.rankBeyond);
+  });
+
+  it('symbol_holdings_value at a unit price of 1 equals the balance', async () => {
+    const result = await call('symbol_holdings_value', {
+      account: await nodeAccount(),
+      unitPrice: '1',
+      currency: 'JPY',
+    });
+    expect((result.value as { exact: string }).exact).toBe(
+      (result.balance as { amount: string }).amount,
+    );
+  });
+
   it('symbol_network_compare answers (reference nodes optional)', async () => {
     const result = await call('symbol_network_compare');
     const nodes = result.nodes as Array<{ role: string; reachable: boolean }>;
     expect(nodes[0]?.role).toBe('own');
     expect(nodes[0]?.reachable).toBe(true);
     expect(result.referenceNodesConfigured).toBe(ctx.config.referenceNodes.length > 0);
+  });
+
+  // Last in the file: every registered tool was called above (the two that need
+  // SYMBOL_INTEGRATION_ACCOUNT only when it is set).
+  it('called every registered tool', () => {
+    const expected = TOOLS.map((t) => t.name).filter(
+      (name) => INTEGRATION_ACCOUNT || !ONLY_WITH_INTEGRATION_ACCOUNT.has(name),
+    );
+    expect([...called].sort()).toEqual([...expected].sort());
   });
 });
