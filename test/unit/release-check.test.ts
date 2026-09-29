@@ -4,15 +4,30 @@
  * repository's own files, also when it is started through a symlinked path.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmdirSync, symlinkSync, unlinkSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { DEFINITIONS_SNAPSHOT } from '../../scripts/release-definitions.mjs';
 import {
   extractSection,
+  hasRestartBanner,
+  nextMinorVersion,
+  parseReleaseVersion,
+  previousReleaseVersion,
+  RESTART_BANNER,
   type ReleaseFiles,
   releaseProblems,
+  versionBump,
 } from '../../scripts/release-files.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -20,6 +35,11 @@ const SCRIPT = join(ROOT, 'scripts', 'release-check.mjs');
 const VERSION = (
   JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string }
 ).version;
+const REPO_CHANGELOG = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
+/** The release before package.json's version, whose definitions the check compares with. */
+const PREVIOUS = previousReleaseVersion(REPO_CHANGELOG, VERSION);
+/** The committed definitions snapshot, passed as the previous definitions: no tag is needed. */
+const SNAPSHOT = join(ROOT, DEFINITIONS_SNAPSHOT);
 const SERVER_PACKAGES = (
   JSON.parse(readFileSync(join(ROOT, 'server.json'), 'utf8')) as { packages: unknown[] }
 ).packages;
@@ -196,14 +216,77 @@ describe('releaseProblems', () => {
   });
 });
 
+describe('versions and the restart banner', () => {
+  it('takes release versions only: no pre-release, build part or leading zero', () => {
+    expect(parseReleaseVersion('0.10.0')).toEqual([0, 10, 0]);
+    for (const bad of ['1.0.0-rc.1', '1.0.0+b1', '01.0.0', '1.0', 'v1.0.0', '']) {
+      expect(parseReleaseVersion(bad), bad).toBeNull();
+    }
+  });
+
+  it('finds the release before a version among the dated sections, compared as numbers', () => {
+    expect(previousReleaseVersion(CHANGELOG, '1.2.4')).toBe('1.2.3');
+    // Found before the section of the new version is written.
+    expect(previousReleaseVersion(CHANGELOG, '1.10.0')).toBe('1.2.3');
+    expect(previousReleaseVersion(CHANGELOG, '1.2.3')).toBe('1.2.2');
+    expect(previousReleaseVersion(CHANGELOG, '1.2.2')).toBeNull();
+    // A pre-release heading is not a release; 0.9.10 is after 0.9.2 as a number.
+    const withOthers = CHANGELOG.replace(
+      '## [Unreleased]',
+      '## [Unreleased]\n\n## [1.2.3-rc.1] - 2026-09-20\n\n## [0.9.10] - 2026-08-01',
+    );
+    expect(previousReleaseVersion(withOthers, '1.0.0')).toBe('0.9.10');
+    expect(previousReleaseVersion(REPO_CHANGELOG, '99.0.0')).toBe(VERSION);
+  });
+
+  it('names the bump from one version to the next', () => {
+    expect(versionBump('0.9.2', '0.9.3')).toBe('patch');
+    expect(versionBump('0.9.2', '0.10.0')).toBe('minor');
+    expect(versionBump('0.9.2', '1.0.0')).toBe('major');
+    for (const next of ['0.9.2', '0.9.1', '0.8.9']) {
+      expect(versionBump('0.9.2', next), next).toBe('none');
+    }
+    expect(nextMinorVersion('0.9.2')).toBe('0.10.0');
+    expect(nextMinorVersion('1.4.2')).toBe('1.5.0');
+  });
+
+  it('finds the restart banner only at the start of a section', () => {
+    // The real notes: 0.9.0 added output fields, 0.9.2 changed text only.
+    expect(hasRestartBanner(extractSection(REPO_CHANGELOG, '0.9.0') ?? [])).toBe(true);
+    expect(hasRestartBanner(extractSection(REPO_CHANGELOG, '0.9.2') ?? [])).toBe(false);
+    expect(hasRestartBanner([RESTART_BANNER])).toBe(true);
+    // Wrapped across lines, as the changelog is.
+    expect(
+      hasRestartBanner([
+        '> **After upgrading, restart your MCP host (Claude Desktop, Claude Code',
+        '> and others).** This release adds a field.',
+      ]),
+    ).toBe(true);
+    for (const section of [
+      ['> No need to restart your MCP host after upgrading.'],
+      ['> No MCP host restart is needed after upgrading.'],
+      ['### Added', '', RESTART_BANNER],
+      ['- After upgrading, restart your MCP host (Claude Desktop, Claude Code and others).'],
+      [],
+    ]) {
+      expect(hasRestartBanner(section), section.join(' / ')).toBe(false);
+    }
+  });
+});
+
 describe('scripts/release-check.mjs', () => {
   it("passes for package.json's version, with or without the tag's v", () => {
     for (const version of [VERSION, `v${VERSION}`]) {
-      const { status, stdout, stderr } = run(version);
+      // The committed snapshot as the previous definitions: the same, and no tag is needed.
+      const { status, stdout, stderr } = run(version, '--previous-definitions', SNAPSHOT);
       expect(status).toBe(0);
       expect(stderr).toBe('');
       expect(stdout).toBe(
-        `release-check: ${VERSION} in package.json, package-lock.json, server.json and CHANGELOG.md; server.json names symbol-mcp-server (io.github.inotakeh/symbol).\n`,
+        [
+          `release-check: definitions compared with ${SNAPSHOT} (--previous-definitions, as ${PREVIOUS}): no change.`,
+          `release-check: ${VERSION} in package.json, package-lock.json, server.json and CHANGELOG.md; server.json names symbol-mcp-server (io.github.inotakeh/symbol).`,
+          '',
+        ].join('\n'),
       );
     }
   });
@@ -211,7 +294,9 @@ describe('scripts/release-check.mjs', () => {
   it('lists every version field and the missing changelog section for another version', () => {
     const { status, stdout, stderr } = run('0.0.1');
     expect(status).toBe(1);
-    expect(stdout).toBe('');
+    expect(stdout).toBe(
+      'release-check: definitions not compared: CHANGELOG.md has no release before 0.0.1.\n',
+    );
     expect(stderr.trimEnd().split('\n')).toEqual([
       `release-check: package.json version is ${VERSION}, not 0.0.1.`,
       `release-check: package-lock.json version is ${VERSION}, not 0.0.1.`,
@@ -224,10 +309,107 @@ describe('scripts/release-check.mjs', () => {
     ]);
   });
 
-  it('exits 2 without exactly one non-empty argument', () => {
+  it('exits 2 without exactly one version and at most one --previous-definitions', () => {
     expect(run().status).toBe(2);
     expect(run('').status).toBe(2);
     expect(run(VERSION, VERSION).status).toBe(2);
+    expect(run(VERSION, '--previous-definitions').status).toBe(2);
+    expect(run(VERSION, '--previous-definitions=').status).toBe(2);
+    const twice = [VERSION, '--previous-definitions', SNAPSHOT, '--previous-definitions', SNAPSHOT];
+    expect(run(...twice).status).toBe(2);
+    expect(run(VERSION, '--other').status).toBe(2);
+    expect(run('--previous-definitions', SNAPSHOT).status).toBe(2);
+    expect(run(VERSION, `--previous-definitions=${SNAPSHOT}`).status).toBe(0);
+  });
+
+  it('refuses a pre-release version', () => {
+    const { status, stdout, stderr } = run('1.0.0-rc.1');
+    expect(status).toBe(1);
+    expect(stdout).toBe(
+      'release-check: definitions not compared: 1.0.0-rc.1 is not a release version.\n',
+    );
+    expect(stderr).toContain(
+      'release-check: 1.0.0-rc.1 is not a release version (major.minor.patch, without a pre-release or build part); the release check does not take pre-releases.',
+    );
+  });
+
+  describe('with --previous-definitions', () => {
+    type Snapshot = { tools: Array<{ name: string; description: string }> };
+    const current = JSON.parse(readFileSync(SNAPSHOT, 'utf8')) as Snapshot;
+
+    /** Runs the check against a previous snapshot made from the current one by `edit`. */
+    function againstEdited(edit: (previous: Snapshot) => void) {
+      const dir = mkdtempSync(join(tmpdir(), 'release-check-defs-'));
+      try {
+        const previous = JSON.parse(JSON.stringify(current)) as Snapshot;
+        edit(previous);
+        const file = join(dir, 'previous.json');
+        writeFileSync(file, JSON.stringify(previous));
+        return { file, ...run(VERSION, '--previous-definitions', file) };
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+
+    it('says when only descriptive text changed, and passes', () => {
+      const { file, status, stdout } = againstEdited((previous) => {
+        if (previous.tools[0]) previous.tools[0].description = 'An older description.';
+      });
+      expect(status).toBe(0);
+      expect(stdout.split('\n')[0]).toBe(
+        `release-check: definitions compared with ${file} (--previous-definitions, as ${PREVIOUS}): descriptive text only, 1 path in ${current.tools[0]?.name}; a patch needs no restart note.`,
+      );
+    });
+
+    it('reports a shape change, with the prefix on every line', () => {
+      const { file, status, stdout, stderr } = againstEdited((previous) => {
+        previous.tools.push({ name: 'tool_since_removed', description: 'Gone.' });
+      });
+      expect(stdout.split('\n')[0]).toMatch(
+        /^release-check: definitions compared with .*: the shape changed \(1 change\), so /,
+      );
+      // Between releases package.json's version is a patch over the previous release; a release
+      // PR for a minor version has the banner, so there the check passes.
+      if (PREVIOUS !== null && versionBump(PREVIOUS, VERSION) === 'patch') {
+        expect(status).toBe(1);
+        const lines = stderr.trimEnd().split('\n');
+        expect(lines.every((line) => line.startsWith('release-check: '))).toBe(true);
+        expect(lines).toContain('release-check:   tool removed: tool_since_removed');
+        expect(lines).toContain(`release-check:   ${RESTART_BANNER}`);
+        // Compared with a file, so the diff to look at is with that file, not with a tag.
+        expect(lines).toContain(`release-check: Full diff: diff ${file} ${DEFINITIONS_SNAPSHOT}`);
+      }
+    });
+
+    it('fails closed on definitions that are not an object, with the verdict line and no stack', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'release-check-defs-'));
+      try {
+        const file = join(dir, 'null.json');
+        writeFileSync(file, 'null');
+        const { status, stdout, stderr } = run(VERSION, '--previous-definitions', file);
+        expect(status).toBe(1);
+        expect(stdout).toBe(
+          'release-check: definitions not compared: the definitions are not a JSON object.\n',
+        );
+        expect(stderr).toBe(
+          `release-check: the definitions in ${file} (--previous-definitions, as ${PREVIOUS}) are not a JSON object, so they cannot be compared.\n`,
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('fails on a file it cannot read', () => {
+      const missing = join(ROOT, 'no-such-definitions.json');
+      const { status, stdout, stderr } = run(VERSION, '--previous-definitions', missing);
+      expect(status).toBe(1);
+      expect(stdout).toBe(
+        `release-check: definitions not compared: ${missing} could not be read.\n`,
+      );
+      expect(
+        stderr.startsWith(`release-check: cannot read --previous-definitions ${missing}: `),
+      ).toBe(true);
+    });
   });
 
   // Node gives a module started through a symlink the URL of the real file, so a main guard that
@@ -236,7 +418,7 @@ describe('scripts/release-check.mjs', () => {
     throughSymlink((linkedRoot) => {
       const checker = join(linkedRoot, 'scripts', 'release-check.mjs');
       expect(runScript(checker, ['0.0.1']).status).toBe(1);
-      expect(runScript(checker, [VERSION]).status).toBe(0);
+      expect(runScript(checker, [VERSION, '--previous-definitions', SNAPSHOT]).status).toBe(0);
 
       // The notes are the whole section as CHANGELOG.md has it: a section may start with a notice
       // (a blockquote) before its first "### " heading, so the output is not assumed to start with one.

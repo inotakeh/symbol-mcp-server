@@ -17,9 +17,12 @@ jobs:
       contents: read
       id-token: write   # OIDC for npm trusted publishing (no NPM_TOKEN anywhere)
     steps:
+      # The whole history with its tags, for the release check below: it compares the definitions
+      # with the previous release's tag (scripts/release-check.mjs, docs/RELEASING.md).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       # registry-url as in npm's trusted publishing guide (also what OpenSSF Scorecard's Packaging
       # check looks for). No NODE_AUTH_TOKEN is set: npm exchanges the OIDC token at publish time.
       # No dependency cache in release builds (npm's guide).
@@ -30,8 +33,10 @@ jobs:
           package-manager-cache: false
       # First, before anything is installed or published (scripts/release-check.mjs): the tag's
       # version is in package.json, package-lock.json and server.json, server.json names this npm
-      # package and its mcpName, and CHANGELOG.md has the version's notes. A version on npm cannot
-      # be changed, and the MCP Registry accepts it only with server.json's name as its mcpName.
+      # package and its mcpName, CHANGELOG.md has the version's notes, and the version follows the
+      # shape of the definitions against the previous release's tag (a shape change needs a minor
+      # version and the restart banner). A version on npm cannot be changed, and the MCP Registry
+      # accepts it only with server.json's name as its mcpName.
       - name: Release files must match the tag
         run: node scripts/release-check.mjs "${GITHUB_REF_NAME#v}"
       # Trusted publishing needs npm >= 11.5.1, which Node 24 bundles. Fail instead of installing
