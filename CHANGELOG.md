@@ -23,6 +23,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   function as `chain_tip_age`. On mainnet that is still 300 seconds, so the answer is the same
   there; the tool description says so. These two descriptions are the only definition text that
   changes; no argument or output field is added or removed.
+- `check --account` judged the voting item on the keys alone, so it could report ok for an account
+  whose balance is below `minVoterBalance`, although `symbol_voting_key_status` warns that such an
+  account cannot vote. The item now fails, so `check` exits 2, also when a successor key is
+  registered, with the tool's warning about the balance as the hint. When every voting key slot is
+  taken, the status of the item does not change, but the hint of a warn or fail adds the tool's
+  warning about the slots, since a new key needs a free slot, unless a successor key is already
+  registered. The MCP tools and their definitions do not change.
 
 ## [0.9.2] - 2026-09-29
 

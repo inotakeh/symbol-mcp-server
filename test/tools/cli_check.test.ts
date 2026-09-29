@@ -21,12 +21,14 @@ import {
   createTestContext,
   FIXTURE_BLOCK_TIME,
   fixture,
+  H,
   jsonResponse,
   mainnetRoutes,
   type Routes,
   resourceNotFound,
   TEST_NODE_HOST,
   TEST_NOW,
+  XYM_MOSAIC_ID,
 } from './harness.js';
 
 const ADDRESS = 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY';
@@ -48,6 +50,44 @@ function proofAtLatestEpoch(): Routes {
 
 function routes(extra: Routes = {}): Routes {
   return { ...mainnetRoutes(), ...proofAtLatestEpoch(), ...extra };
+}
+
+interface VotingKey {
+  readonly publicKey: string;
+  readonly startEpoch: number;
+  readonly endEpoch: number;
+}
+
+/**
+ * The fixture voting account (an expired key and an active one), with another XYM balance or a
+ * third voting key registered.
+ */
+function votingAccount(over: { xym?: string; third?: VotingKey }) {
+  const doc = fixture<{
+    account: {
+      mosaics: Array<{ id: string; amount: string }>;
+      supplementalPublicKeys: { voting: { publicKeys: VotingKey[] } };
+    };
+  }>('mainnet/account-voting.json');
+  const { account } = doc;
+  return {
+    ...doc,
+    account: {
+      ...account,
+      mosaics: account.mosaics.map((m) =>
+        m.id === XYM_MOSAIC_ID && over.xym !== undefined ? { ...m, amount: over.xym } : m,
+      ),
+      supplementalPublicKeys: {
+        ...account.supplementalPublicKeys,
+        voting: {
+          publicKeys: [
+            ...account.supplementalPublicKeys.voting.publicKeys,
+            ...(over.third ? [over.third] : []),
+          ],
+        },
+      },
+    },
+  };
 }
 
 function statuses(report: CheckReport): Record<string, string> {
@@ -313,6 +353,55 @@ describe('runCheck against the fixture node', () => {
     expect(voting.hint).toContain('no successor key is registered');
     expect(report.exitCode).toBe(1);
     expect(report.warnDays).toBe(30);
+  });
+
+  it('fails the voting item of an account below minVoterBalance, with the tool warning as the hint', async () => {
+    // 1 µXYM below the fixture's minVoterBalance of 3,000,000 XYM; the key has 27.5 days left,
+    // which is ok at --warn-days 14 (first test).
+    const { ctx } = await createTestContext({
+      routes: routes({ [`GET /accounts/${ADDRESS}`]: votingAccount({ xym: '2999999999999' }) }),
+    });
+    const report = await runCheck(ctx, { account: ADDRESS, warnDays: 14 });
+    const voting = item(report, 'voting_key_status');
+    expect(voting.status).toBe('fail');
+    expect(voting.detail).toMatch(
+      /^active key 534A99C9… expires in about 27\.\d days .*; balance below minVoterBalance, so the account cannot vote$/,
+    );
+    expect(voting.hint).toBe(
+      'Balance 2999999.999999 symbol.xym is below minVoterBalance 3000000.000000; the account cannot vote.',
+    );
+    expect(item(report, 'finality_participation').status).toBe('ok');
+    expect(report.exitCode).toBe(2);
+  });
+
+  it('keeps the voting status when a third key fills the slots, and adds the slot warning to the hint', async () => {
+    const third = { publicKey: H('fixture:voting-key-3'), endEpoch: 4419 };
+    // A successor without a gap: the renewal is done, so full slots leave the item ok.
+    let { ctx } = await createTestContext({
+      routes: routes({
+        [`GET /accounts/${ADDRESS}`]: votingAccount({ third: { ...third, startEpoch: 4060 } }),
+      }),
+    });
+    let report = await runCheck(ctx, { account: ADDRESS, warnDays: 30 });
+    expect(item(report, 'voting_key_status')).toMatchObject({ status: 'ok', hint: null });
+    expect(item(report, 'voting_key_status').detail).toContain('successor registered');
+    expect(report.exitCode).toBe(0);
+    vi.unstubAllGlobals();
+
+    // A third key after a gap: warn within --warn-days as with a free slot; the hint gives the
+    // expiry warning and then the slot warning.
+    ({ ctx } = await createTestContext({
+      routes: routes({
+        [`GET /accounts/${ADDRESS}`]: votingAccount({ third: { ...third, startEpoch: 4070 } }),
+      }),
+    }));
+    report = await runCheck(ctx, { account: ADDRESS, warnDays: 30 });
+    const voting = item(report, 'voting_key_status');
+    expect(voting.status).toBe('warn');
+    expect(voting.hint).toMatch(
+      /^Active voting key 534A99C9… expires at epoch 4059 .* and no successor key is registered\. All 3 voting key slots are used \(1 expired\)\. Unlink an expired key before registering a new one\.$/,
+    );
+    expect(report.exitCode).toBe(1);
   });
 
   it('resolves a namespace name and reports the resolved address', async () => {

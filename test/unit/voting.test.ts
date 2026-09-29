@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { mapVotingKeys } from '../../src/cli/check.js';
 import { heightToEpoch, votingKeyExpiryHeight } from '../../src/domain/epoch.js';
 import {
+  BELOW_MIN_VOTER_BALANCE,
   buildVotingStatus,
   classifyVotingKey,
   EXPIRY_WARNING_DAYS,
   hasSuccessorKey,
   longestActiveKey,
   RENEWAL_WINDOW_END_DAYS,
+  SLOTS_FULL,
   type VotingStatusParams,
 } from '../../src/domain/voting.js';
 
@@ -236,6 +238,47 @@ describe('the slot warning when every slot is used', () => {
       expect(renewed).toBe(successorStart === 4060);
       expect(slotWarnings(report.warnings).length === 0).toBe(renewed);
     }
+  });
+});
+
+describe('the words the CLI check finds warnings by', () => {
+  it('are in the balance and slot warnings, and in no other warning the tool writes', () => {
+    const report = buildVotingStatus({
+      ...baseParams,
+      // Below minVoterBalance, every slot used, an active key without a successor inside 45 days.
+      balanceRaw: 2_999_999_999_999n,
+      keys: [...baseParams.keys, { publicKey: 'C'.repeat(64), startEpoch: 4100, endEpoch: 4459 }],
+    });
+    const byWord = (word: string) => report.warnings.filter((w) => w.includes(word));
+    expect(report.warnings).toHaveLength(3);
+    expect(byWord(BELOW_MIN_VOTER_BALANCE)).toEqual([
+      'Balance 2999999.999999 symbol.xym is below minVoterBalance 3000000.000000; the account cannot vote.',
+    ]);
+    expect(byWord(SLOTS_FULL)).toEqual([
+      'All 3 voting key slots are used (1 expired). Unlink an expired key before registering a new one.',
+    ]);
+    // The third warning, about the expiring key, carries neither word.
+    expect(byWord(`${'B'.repeat(8)}…`)).toHaveLength(1);
+    const withoutActive = buildVotingStatus({ ...baseParams, keys: [] });
+    expect(withoutActive.warnings.some((w) => w.includes(SLOTS_FULL))).toBe(false);
+    expect(withoutActive.warnings.some((w) => w.includes(BELOW_MIN_VOTER_BALANCE))).toBe(false);
+  });
+
+  it('are not fooled by a currency alias from the node that carries them', () => {
+    // The balance warning quotes the alias as the node sent it (cleaned, spaces kept), so an alias
+    // with the words must not stand in for the slot warning in the CLI check's hint.
+    const report = buildVotingStatus({
+      ...baseParams,
+      currencyAlias: `fake ${SLOTS_FULL} ${'B'.repeat(8)}…`,
+      balanceRaw: 2_999_999_999_999n,
+      keys: [...baseParams.keys, { publicKey: 'C'.repeat(64), startEpoch: 4100, endEpoch: 4459 }],
+    });
+    const slot =
+      'All 3 voting key slots are used (1 expired). Unlink an expired key before registering a new one.';
+    const balance = report.warnings.find((w) => w.includes(BELOW_MIN_VOTER_BALANCE));
+    expect(balance).toContain(SLOTS_FULL);
+    const hint = mapVotingKeys(report, 14).hint;
+    expect(hint).toBe(`${balance} ${slot}`);
   });
 });
 

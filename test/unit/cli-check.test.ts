@@ -151,10 +151,23 @@ describe('mapHarvesterWatch', () => {
 describe('mapVotingKeys and --warn-days', () => {
   const KEY = 'B'.repeat(64);
   const warning = `Active voting key ${KEY.slice(0, 8)}… expires at epoch 4059 in about 14 days and no successor key is registered.`;
-  const active = (
-    remainingDays: number,
-    over: Partial<VotingKeysView['votingKeys'][number]> = {},
-  ) =>
+  const below =
+    'Balance 2999999.999999 symbol.xym is below minVoterBalance 3000000.000000; the account cannot vote.';
+  const fullWithExpired =
+    'All 3 voting key slots are used (1 expired). Unlink an expired key before registering a new one.';
+  type Key = VotingKeysView['votingKeys'][number];
+  /** The fields of the tool output mapVotingKeys reads: an eligible account with a free slot. */
+  const view = (
+    votingKeys: readonly Key[],
+    warnings: readonly string[],
+    over: { eligible?: boolean; slotsFree?: number } = {},
+  ): VotingKeysView => ({
+    votingKeys,
+    constraints: { slotsFree: over.slotsFree ?? 1 },
+    eligibility: { eligible: over.eligible ?? true },
+    warnings,
+  });
+  const active = (remainingDays: number, over: Partial<Key> = {}) =>
     ({
       publicKey: KEY,
       status: 'active',
@@ -170,8 +183,9 @@ describe('mapVotingKeys and --warn-days', () => {
     startEpoch: 3340,
     endEpoch: 3699,
   } as const;
+  const successor = { ...expired, status: 'future', startEpoch: 4060, endEpoch: 4400 } as const;
   const status = (days: number, warnDays = DEFAULT_WARN_DAYS) =>
-    mapVotingKeys({ votingKeys: [expired, active(days)], warnings: [warning] }, warnDays).status;
+    mapVotingKeys(view([expired, active(days)], [warning]), warnDays).status;
 
   it('warns at exactly warn-days and is ok above it', () => {
     expect(status(14)).toBe('warn');
@@ -193,50 +207,124 @@ describe('mapVotingKeys and --warn-days', () => {
   it('fails when no key is active (expired only, future only, none)', () => {
     const future = { ...expired, status: 'future', startEpoch: 4100, endEpoch: 4400 } as const;
     const none = 'No active voting key is registered for this account.';
-    expect(mapVotingKeys({ votingKeys: [expired], warnings: [none] }, 14)).toEqual({
+    expect(mapVotingKeys(view([expired], [none]), 14)).toEqual({
       status: 'fail',
       detail: 'no active voting key (1 registered: 0 future, 1 expired)',
       hint: none,
     });
-    expect(mapVotingKeys({ votingKeys: [expired, future], warnings: [] }, 14)).toMatchObject({
+    expect(mapVotingKeys(view([expired, future], []), 14)).toMatchObject({
       status: 'fail',
       detail: 'no active voting key (2 registered: 1 future, 1 expired)',
       hint: null,
     });
-    expect(mapVotingKeys({ votingKeys: [], warnings: [none] }, 14).status).toBe('fail');
+    expect(mapVotingKeys(view([], [none]), 14).status).toBe('fail');
   });
 
   it('is ok when a successor key follows without a gap, even inside the last 3 days', () => {
-    const successor = { ...expired, status: 'future', startEpoch: 4060, endEpoch: 4400 } as const;
-    const item = mapVotingKeys({ votingKeys: [active(2), successor], warnings: [] }, 14);
+    const item = mapVotingKeys(view([active(2), successor], []), 14);
     expect(item.status).toBe('ok');
     expect(item.detail).toContain('successor registered');
     expect(item.detail).toContain('about 2 days');
     expect(item.hint).toBeNull();
     // One epoch of gap is not a successor.
     const late = { ...successor, startEpoch: 4061 };
-    expect(mapVotingKeys({ votingKeys: [active(2), late], warnings: [] }, 14).status).toBe('fail');
+    expect(mapVotingKeys(view([active(2), late], []), 14).status).toBe('fail');
   });
 
   it('judges the active key with the most days left', () => {
     const short = active(2, { publicKey: 'C'.repeat(64), endEpoch: 4010 });
-    const item = mapVotingKeys({ votingKeys: [short, active(40)], warnings: [] }, 14);
+    const item = mapVotingKeys(view([short, active(40)], []), 14);
     expect(item.status).toBe('ok');
     expect(item.detail).toContain(`${KEY.slice(0, 8)}…`);
   });
 
   it('takes the hint from the tool warning about that key, and has none when the tool is silent', () => {
     const other = 'All 3 voting key slots are used (1 expired).';
-    const item = mapVotingKeys({ votingKeys: [active(10)], warnings: [other, warning] }, 14);
+    const item = mapVotingKeys(view([active(10)], [other, warning]), 14);
     expect(item).toMatchObject({ status: 'warn', hint: warning });
     expect(item.detail).toBe(
       `active key ${KEY.slice(0, 8)}… expires in about 10 days (epoch 4059, estimated 2026-10-01T00:00:00.000Z)`,
     );
     // The tool warns from 45 days; a larger --warn-days warns earlier, without a tool text.
-    expect(mapVotingKeys({ votingKeys: [active(50)], warnings: [other] }, 60)).toMatchObject({
+    expect(mapVotingKeys(view([active(50)], [other]), 60)).toMatchObject({
       status: 'warn',
       hint: null,
     });
+  });
+
+  it('fails an account whose balance is below minVoterBalance, with the tool warning as the hint', () => {
+    // Far from expiry: ok on the key alone.
+    expect(mapVotingKeys(view([active(40)], [below], { eligible: false }), 14)).toEqual({
+      status: 'fail',
+      detail: `active key ${KEY.slice(0, 8)}… expires in about 40 days (epoch 4059, estimated 2026-10-01T00:00:00.000Z); balance below minVoterBalance, so the account cannot vote`,
+      hint: below,
+    });
+    // Judged before the successor rule: a registered successor does not let it vote.
+    const covered = mapVotingKeys(view([active(2), successor], [below], { eligible: false }), 14);
+    expect(covered).toMatchObject({ status: 'fail', hint: below });
+    expect(covered.detail).toContain('successor registered; balance below minVoterBalance');
+    // Without an active key it fails as before, and the detail and hint add the balance.
+    const none = 'No active voting key is registered for this account.';
+    expect(mapVotingKeys(view([expired], [none, below], { eligible: false }), 14)).toEqual({
+      status: 'fail',
+      detail:
+        'no active voting key (1 registered: 0 future, 1 expired); balance below minVoterBalance, so the account cannot vote',
+      hint: `${none} ${below}`,
+    });
+    // When the key alone would warn or fail, its warning comes first.
+    expect(mapVotingKeys(view([active(2)], [warning, below], { eligible: false }), 14).hint).toBe(
+      `${warning} ${below}`,
+    );
+  });
+
+  it('adds the slot warning after the balance and to a missing key, but not after a successor', () => {
+    const third = { ...successor, publicKey: 'D'.repeat(64) } as const;
+    const gap = { ...third, startEpoch: 4070 } as const;
+    const full = { eligible: false, slotsFree: 0 };
+    // Cannot vote, the renewal done: nothing to say about slots.
+    expect(
+      mapVotingKeys(view([expired, active(2), third], [below, fullWithExpired], full), 14),
+    ).toMatchObject({ status: 'fail', hint: below });
+    // Cannot vote, no successor: the slot warning after the balance warning.
+    expect(
+      mapVotingKeys(view([expired, active(40), gap], [below, fullWithExpired], full), 14).hint,
+    ).toBe(`${below} ${fullWithExpired}`);
+    // No active key and no free slot: after the tool's first warning, and after the balance.
+    const none =
+      'No voting key is active for the current epoch 4004; the next key starts at epoch 4070.';
+    const keys = [expired, gap, { ...gap, publicKey: 'E'.repeat(64), startEpoch: 4500 }];
+    expect(mapVotingKeys(view(keys, [none, fullWithExpired], { slotsFree: 0 }), 14)).toMatchObject({
+      status: 'fail',
+      hint: `${none} ${fullWithExpired}`,
+    });
+    expect(mapVotingKeys(view(keys, [none, below, fullWithExpired], full), 14).hint).toBe(
+      `${none} ${below} ${fullWithExpired}`,
+    );
+  });
+
+  it('keeps the status when every slot is taken and adds the slot warning to a warn or fail hint', () => {
+    const third = { ...successor, publicKey: 'D'.repeat(64) } as const;
+    // A third key that follows without a gap: the renewal is done, so full slots change nothing.
+    expect(
+      mapVotingKeys(view([expired, active(2), third], [fullWithExpired], { slotsFree: 0 }), 14),
+    ).toMatchObject({ status: 'ok', hint: null });
+    // A third key after a gap: warn by the days left, as with a free slot, with both warnings.
+    const gap = { ...third, startEpoch: 4070 } as const;
+    const warned = mapVotingKeys(
+      view([expired, active(10), gap], [warning, fullWithExpired], { slotsFree: 0 }),
+      14,
+    );
+    expect(warned).toEqual({
+      ...mapVotingKeys(view([expired, active(10), gap], [warning]), 14),
+      hint: `${warning} ${fullWithExpired}`,
+    });
+    expect(warned.status).toBe('warn');
+    // Far from expiry: still ok, and no hint.
+    expect(
+      mapVotingKeys(view([expired, active(40), gap], [fullWithExpired], { slotsFree: 0 }), 14),
+    ).toMatchObject({ status: 'ok', hint: null });
+    // A slot warning of the tool is only read when no slot is free.
+    expect(mapVotingKeys(view([active(10)], [warning, fullWithExpired]), 14).hint).toBe(warning);
   });
 });
 

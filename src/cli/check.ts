@@ -14,7 +14,13 @@ import { describeSignedStages } from '../domain/finality.js';
 import { sanitizeUntrusted, toSingleLine } from '../domain/sanitize.js';
 import type { Instant } from '../domain/time.js';
 import { formatInstantText } from '../domain/time.js';
-import { hasSuccessorKey, longestActiveKey, RENEWAL_WINDOW_END_DAYS } from '../domain/voting.js';
+import {
+  BELOW_MIN_VOTER_BALANCE,
+  hasSuccessorKey,
+  longestActiveKey,
+  RENEWAL_WINDOW_END_DAYS,
+  SLOTS_FULL,
+} from '../domain/voting.js';
 import { describeError, maskIdentifier, ToolInputError } from '../tools/_shared.js';
 import { InstantSchema } from '../tools/_transactions.js';
 import {
@@ -210,39 +216,82 @@ export interface VotingKeysView {
     readonly remainingDays?: number | undefined;
     readonly expiresAt?: InstantView | undefined;
   }>;
+  readonly constraints: { readonly slotsFree: number };
+  readonly eligibility: { readonly eligible: boolean };
   readonly warnings: readonly string[];
 }
 
+/** The tool's warnings joined into one hint, or null when there is none. */
+function joinHints(...hints: ReadonlyArray<string | null | undefined>): string | null {
+  const found = hints.filter((h): h is string => typeof h === 'string');
+  return found.length > 0 ? [...new Set(found)].join(' ') : null;
+}
+
 /**
- * fail at or inside the end of the tool's recommended renewal window (3 days) or without an
- * active key, warn within `warnDays`, ok otherwise; and ok whenever a successor key is already
- * registered without a gap (the tool's own "covered" rule), because the renewal is done.
+ * fail without an active key, when the balance is below minVoterBalance (the account cannot vote
+ * with any key), or at or inside the end of the tool's recommended renewal window (3 days); warn
+ * within `warnDays`; ok otherwise, and ok whenever a successor key is already registered without a
+ * gap (the tool's own "covered" rule), because the renewal is done. Full key slots change no
+ * status: on a warn or fail without a registered successor, the tool's slot warning is added to
+ * the hint, since a new key needs a free slot.
  */
 export function mapVotingKeys(output: VotingKeysView, warnDays: number): ItemBody {
   const future = output.votingKeys.filter((k) => k.status === 'future');
+  const cannotVote = !output.eligibility.eligible;
+  const balanceText = cannotVote
+    ? '; balance below minVoterBalance, so the account cannot vote'
+    : '';
+  const balanceWarning = cannotVote
+    ? output.warnings.find((w) => w.includes(BELOW_MIN_VOTER_BALANCE))
+    : undefined;
+  // The balance warning holds the currency alias, text from the node, so it is never taken for
+  // another warning; no other warning holds such text.
+  const other = (w: string) => w !== balanceWarning;
+  const slotWarning =
+    output.constraints.slotsFree === 0
+      ? output.warnings.find((w) => other(w) && w.includes(SLOTS_FULL))
+      : undefined;
   // The same key the tool's slot warning judges (domain/voting.ts).
   const key = longestActiveKey(output.votingKeys);
   if (!key) {
     const expired = output.votingKeys.length - future.length;
     return {
       status: 'fail',
-      detail: `no active voting key (${output.votingKeys.length} registered: ${future.length} future, ${expired} expired)`,
-      hint: output.warnings[0] ?? null,
+      detail: `no active voting key (${output.votingKeys.length} registered: ${future.length} future, ${expired} expired)${balanceText}`,
+      hint: joinHints(output.warnings[0], balanceWarning, slotWarning),
     };
   }
   const days = key.remainingDays ?? 0;
   const prefix = key.publicKey.slice(0, 8);
   const when = key.expiresAt ? `, estimated ${instantText(key.expiresAt)}` : '';
   const base = `active key ${prefix}… expires in about ${days} days (epoch ${key.endEpoch}${when})`;
-  if (hasSuccessorKey(key, future)) {
+  const covered = hasSuccessorKey(key, future);
+  // How the key alone is judged, and the tool's warning about it when that is not ok.
+  const keyStatus: CheckItemStatus = covered
+    ? 'ok'
+    : days <= RENEWAL_WINDOW_END_DAYS
+      ? 'fail'
+      : days <= warnDays
+        ? 'warn'
+        : 'ok';
+  const keyWarning =
+    keyStatus === 'ok' ? undefined : output.warnings.find((w) => other(w) && w.includes(prefix));
+  // Before the successor rule: a registered successor does not let an account vote without the
+  // balance.
+  if (cannotVote) {
+    return {
+      status: 'fail',
+      detail: `${base}${covered ? '; successor registered' : ''}${balanceText}`,
+      hint: joinHints(keyWarning, balanceWarning, covered ? undefined : slotWarning),
+    };
+  }
+  if (covered) {
     return { status: 'ok', detail: `${base}; successor registered`, hint: null };
   }
-  const status: CheckItemStatus =
-    days <= RENEWAL_WINDOW_END_DAYS ? 'fail' : days <= warnDays ? 'warn' : 'ok';
   return {
-    status,
+    status: keyStatus,
     detail: base,
-    hint: status === 'ok' ? null : (output.warnings.find((w) => w.includes(prefix)) ?? null),
+    hint: keyStatus === 'ok' ? null : joinHints(keyWarning, slotWarning),
   };
 }
 
