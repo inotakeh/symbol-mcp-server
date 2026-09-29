@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `symbol_voting_key_status` warns about an active voting key with no successor from 45 days
+  before its expiry, instead of 30. A check run once a month is at most 31 days apart, so every
+  monthly run now sees the warning at least once, 14 days before expiry at the latest, before the
+  recommended renewal window opens; with 30 days, a run 30.5 days out saw nothing and the next
+  one came after the window had closed. `check --account` gets the tool's warning as its hint for
+  a `--warn-days` of up to 45 (it was 30); its own judgment by `--warn-days` does not change. The
+  tool description says 45 days; only that text changes in the definitions, so there is no need
+  to restart the MCP host.
+
 ### Fixed
 
 - README (English and Japanese) corrected to match the server: the `summary` answers in its first

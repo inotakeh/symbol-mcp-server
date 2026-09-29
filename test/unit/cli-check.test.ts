@@ -232,8 +232,8 @@ describe('mapVotingKeys and --warn-days', () => {
     expect(item.detail).toBe(
       `active key ${KEY.slice(0, 8)}… expires in about 10 days (epoch 4059, estimated 2026-10-01T00:00:00.000Z)`,
     );
-    // The tool warns from 30 days; a larger --warn-days warns earlier, without a tool text.
-    expect(mapVotingKeys({ votingKeys: [active(45)], warnings: [other] }, 60)).toMatchObject({
+    // The tool warns from 45 days; a larger --warn-days warns earlier, without a tool text.
+    expect(mapVotingKeys({ votingKeys: [active(50)], warnings: [other] }, 60)).toMatchObject({
       status: 'warn',
       hint: null,
     });

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { mapVotingKeys } from '../../src/cli/check.js';
+import { heightToEpoch, votingKeyExpiryHeight } from '../../src/domain/epoch.js';
 import {
   buildVotingStatus,
   classifyVotingKey,
+  EXPIRY_WARNING_DAYS,
   hasSuccessorKey,
   longestActiveKey,
   RENEWAL_WINDOW_END_DAYS,
@@ -109,7 +111,7 @@ describe('buildVotingStatus with the mainnet account fixture', () => {
     });
   });
 
-  it('warns because the active key expires within 30 days without a successor', () => {
+  it('warns because the active key expires within 45 days without a successor', () => {
     expect(report.warnings).toHaveLength(1);
     expect(report.warnings[0]).toMatch(/expires at epoch 4059/);
     // Both the local and the UTC form appear, matching the structured expiresAt.
@@ -247,5 +249,50 @@ describe('longestActiveKey', () => {
     ];
     expect(longestActiveKey(keys)?.remainingDays).toBe(40);
     expect(longestActiveKey(keys.filter((k) => k.status !== 'active'))).toBeUndefined();
+  });
+});
+
+describe('the expiry warning window', () => {
+  it('is 45 days, so a monthly check (at most 31 days apart) sees it 14 days before expiry at the latest', () => {
+    expect(EXPIRY_WARNING_DAYS).toBe(45);
+    expect(EXPIRY_WARNING_DAYS - 31).toBe(14);
+  });
+
+  // 30,000 ms per block: one day is 2,880 blocks. The active key 3700-4059 expires at height
+  // (4059 - 1) x 1440; the current height is set that many days before it.
+  const atDaysLeft = (days: number) => {
+    const height = votingKeyExpiryHeight(4059, 1440) - Math.round(days * 2880);
+    return buildVotingStatus({
+      ...baseParams,
+      averageBlockTimeMs: 30_000,
+      currentHeight: height,
+      currentEpoch: heightToEpoch(height, 1440),
+    });
+  };
+  const expiryWarnings = (days: number) =>
+    atDaysLeft(days).warnings.filter((w) => /no successor key is registered/.test(w));
+
+  it('warns at 45.0 days left and not at 45.1', () => {
+    expect(atDaysLeft(45).votingKeys.find((k) => k.status === 'active')?.remainingDays).toBe(45);
+    expect(expiryWarnings(45)).toHaveLength(1);
+    expect(atDaysLeft(45.1).votingKeys.find((k) => k.status === 'active')?.remainingDays).toBe(
+      45.1,
+    );
+    expect(expiryWarnings(45.1)).toEqual([]);
+  });
+
+  it('warns at 31 days left, which the former 30-day window did not', () => {
+    expect(expiryWarnings(31)).toHaveLength(1);
+  });
+
+  it('still respects a caller-supplied window', () => {
+    const report = buildVotingStatus({
+      ...baseParams,
+      averageBlockTimeMs: 30_000,
+      currentHeight: votingKeyExpiryHeight(4059, 1440) - 31 * 2880,
+      currentEpoch: heightToEpoch(votingKeyExpiryHeight(4059, 1440) - 31 * 2880, 1440),
+      warnWithinDays: 30,
+    });
+    expect(report.warnings.filter((w) => /no successor key is registered/.test(w))).toEqual([]);
   });
 });

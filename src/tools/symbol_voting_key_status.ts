@@ -84,7 +84,7 @@ export const votingKeyStatusTool = defineTool({
   name: 'symbol_voting_key_status',
   title: 'Symbol voting key status',
   description:
-    'For a Symbol voting node account, list every registered voting key with its start/end epoch and status (expired, active, future), and for active or upcoming keys compute the remaining epochs, blocks and days, the estimated expiry date/time, and a recommended renewal window (7 to 3 days before expiry). Also reports the current finalization epoch, network limits (max keys per account, min/max key lifetime, free slots), whether the balance meets minVoterBalance, and warnings when no key is active or a key expires within 30 days.',
+    'For a Symbol voting node account, list every registered voting key with its start/end epoch and status (expired, active, future), and for active or upcoming keys compute the remaining epochs, blocks and days, the estimated expiry date/time, and a recommended renewal window (7 to 3 days before expiry). Also reports the current finalization epoch, network limits (max keys per account, min/max key lifetime, free slots), whether the balance meets minVoterBalance, and warnings when no key is active or a key expires within 45 days.',
   inputSchema,
   outputSchema,
   untrustedText: true,
