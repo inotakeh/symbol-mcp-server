@@ -204,3 +204,29 @@ describe('account arguments given as a namespace name', () => {
     );
   });
 });
+
+describe('account arguments given as a 48-character hex address', () => {
+  it('answer every account tool exactly as the base32 address does', async () => {
+    server = await startTestServer();
+    const calls: Array<[string, (account: string) => Record<string, unknown>]> = [
+      ['symbol_account_get', (account) => ({ account })],
+      ['symbol_voting_key_status', (account) => ({ account })],
+      ['symbol_harvesting_status', (account) => ({ account })],
+      [
+        'symbol_harvesting_income',
+        (account) => ({ account, fromHeight: 5_763_675, toHeight: 5_763_675 }),
+      ],
+      ['symbol_finality_participation', (account) => ({ account, epoch: 4010 })],
+      ['symbol_delegation_diagnose', (account) => ({ account })],
+      ['symbol_transaction_search', (address) => ({ address })],
+      ['symbol_account_rank', (account) => ({ account })],
+      ['symbol_holdings_value', (account) => ({ account, unitPrice: '1', currency: 'JPY' })],
+    ];
+    for (const [name, args] of calls) {
+      const byHex = await server.callTool(name, args(HEX_ADDRESS));
+      const byBase32 = await server.callTool(name, args(ADDRESS));
+      expect(byHex.isError, name).toBe(false);
+      expect(byHex.structuredContent, name).toEqual(byBase32.structuredContent);
+    }
+  });
+});

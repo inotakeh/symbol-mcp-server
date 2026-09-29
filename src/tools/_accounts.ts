@@ -31,9 +31,8 @@ export const ACCOUNT_INPUT_HINT =
   'Pass a 39-character base32 address (starts with N on mainnet, T on testnet, e.g. NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY), a 64-character hex public key, or a namespace name such as alice or alice.pay that has an address alias. 48-character hex addresses are converted automatically.';
 
 /**
- * Appended to the account argument descriptions of the tools that import it;
- * symbol_voting_key_status, symbol_harvesting_status, symbol_transaction_search and
- * symbol_address_parse word their own.
+ * Appended to the account argument description of every tool that takes an account;
+ * symbol_address_parse words its own (it also takes dashes and says which form contacts the node).
  */
 export const ACCOUNT_ARG_FORMS =
   'base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Hex addresses (48 chars) are also accepted.';

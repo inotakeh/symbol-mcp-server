@@ -18,7 +18,7 @@
       "environmentVariables": [
         {
           "name": "SYMBOL_NODE_URL",
-          "description": "REST URL of the Symbol node to query, e.g. https://<node-host>:3001; https:// is required (http:// only for localhost / 127.0.0.1) and the port is used exactly as given.",
+          "description": "REST URL of the Symbol node to query, e.g. https://<node-host>:3001; https:// is required (http:// only for localhost / 127.0.0.1 / [::1]) and the port is used exactly as given.",
           "isRequired": true,
           "isSecret": false,
           "format": "string"

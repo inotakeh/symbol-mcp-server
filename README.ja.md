@@ -285,7 +285,7 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 | `symbol_transaction_search` | `address`, `type`, `pageSize`, `pageNumber`, `order`, `format` | アカウントが関わる確定トランザクション。既定は新しい順、種別は名前（`transfer`）またはコード（`16724`）で絞り込み、1 ページ 10〜100 件。 |
 | `symbol_mosaic_get` | `mosaic`（hex ID または `symbol.xym` のようなエイリアス） | 供給量、divisibility、フラグ（supplyMutable / transferable / restrictable / revokable）、所有者、開始高さ、有効期間と推定失効日。 |
 | `symbol_namespace_get` | `namespace`（名前または hex ID） | 所有者、root / sub、各レベルの名前、エイリアス先（アドレスまたはモザイク）、開始 / 終了高さ、推定終了日時。 |
-| `symbol_fee_estimate` | `transactionSizeBytes`（任意） | ノードの現在の乗数から算出した slow / average / median / fast の手数料目安（XYM）。署名も送信もしません。 |
+| `symbol_fee_estimate` | `transactionSizeBytes`（任意） | ノードの現在の乗数から算出した slow / average / median / fast の手数料目安（XYM）。サイズを渡さなければ、モザイク 1 個と ASCII 20 文字のメッセージの転送（197 バイト）として計算します。転送のサイズは 160 バイト + モザイク 1 個につき 16 バイト + 平文メッセージ（種別の 1 バイト + 本文の UTF-8 バイト数。日本語はたいてい 1 文字 3 バイト）です。暗号化メッセージは本文より大きくなります。この数え方はアグリゲートには使えません。署名も送信もしません。 |
 | `symbol_address_parse` | `value`（アドレス、公開鍵、またはネームスペース名） | オフライン検証: チェックサム、ネットワークバイト、base32 / hex / ハイフン区切り形式、公開鍵から導出したアドレス。ネームスペース名はノードでアドレスエイリアスに解決します。 |
 | `symbol_time_convert` | `height` / `epoch` / `timestamp` のいずれか 1 つ | 高さ、確定エポック、ネットワークタイムスタンプ、実時刻の相互変換。過去は実測、将来は推定（その旨を明記）。 |
 | `symbol_harvesting_status` | `account`（任意） | ノードで解錠中の委任ハーベスター、ハーベスティングの残高制限と受益者割合。アカウントを指定すると、その linked キーがこのノードで解錠されているかと、残高が制限の範囲内か（`minHarvesterBalance` 以上 `maxHarvesterBalance` 以下。上限を超えるとハーベストできない）。 |

@@ -21,8 +21,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `symbol_node_status` counts a node as not synced when its latest block is older than 10 target
   block times, read from the network properties, instead of a fixed 5 minutes, using the same
   function as `chain_tip_age`. On mainnet that is still 300 seconds, so the answer is the same
-  there; the tool description says so. These two descriptions are the only definition text that
-  changes; no argument or output field is added or removed.
+  there; the tool description says so. Only these two descriptions change for this fix; no
+  argument or output field is added or removed.
 - `check --account` judged the voting item on the keys alone, so it could report ok for an account
   whose balance is below `minVoterBalance`, although `symbol_voting_key_status` warns that such an
   account cannot vote. The item now fails, so `check` exits 2, also when a successor key is
@@ -30,6 +30,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   taken, the status of the item does not change, but the hint of a warn or fail adds the tool's
   warning about the slots, since a new key needs a free slot, unless a successor key is already
   registered. The MCP tools and their definitions do not change.
+- `symbol_fee_estimate` told callers to count 1 byte per message character and left out the
+  message's type byte, so its own example (a 20-character message, 197 bytes) did not add up, and
+  a Japanese message (3 bytes a character in UTF-8) came out about 17% too small: 196 bytes instead
+  of 237 for 20 characters. The description of `transactionSizeBytes` now counts a transfer as 160
+  bytes, 16 per mosaic and a plain message as 1 type byte plus its UTF-8 bytes, with worked
+  examples, and says that an encrypted message is larger and that the count is not for aggregate
+  transactions; `sizeAssumption` and the summary say how the size was counted. The fees for a
+  given size do not change.
+- Descriptions corrected to match what the tools do (text only):
+  - `symbol_voting_key_status` lists every warning it gives: no active key, an active key expiring
+    within 45 days with no successor registered without a gap, a balance below
+    `minVoterBalance`, and every key slot taken while an expired key holds one or the renewal is
+    not done (it named only the first two).
+  - The account arguments of `symbol_voting_key_status`, `symbol_harvesting_status` and
+    `symbol_transaction_search` say that a 48-character hex address is accepted, as those of the
+    other tools do; all of them answer it as they answer the base32 address.
+  - `symbol_delegation_diagnose`: the tool description and `format: "detailed"` promised a hint on
+    every check, but an unknown check that could not be made, because of an earlier result or
+    missing data, has none.
+  - `symbol_holdings_value`: `price.source` and `price.asOf` were described as the arguments "as
+    given"; they are cleaned like chain strings, null when nothing is left, and `priceAsOf` must
+    parse as a date.
+- `--help`, the error for an `http://` URL, the MCP Registry entry and the `.mcpb` settings name
+  `[::1]` next to `localhost` and `127.0.0.1`; it was already accepted. `--help` also says that
+  `symbol_version_drift` reads the reference nodes, as `symbol_network_compare` does.
 
 ## [0.9.2] - 2026-09-29
 

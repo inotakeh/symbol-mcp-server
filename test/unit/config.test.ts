@@ -18,7 +18,12 @@ describe('validateNodeUrl', () => {
   it('allows http only for loopback', () => {
     expect(validateNodeUrl('http://localhost:3000')).toBe('http://localhost:3000');
     expect(validateNodeUrl('http://127.0.0.1:3000/')).toBe('http://127.0.0.1:3000');
+    expect(validateNodeUrl('http://[::1]:3000')).toBe('http://[::1]:3000');
     expect(() => validateNodeUrl('http://example.test:3000')).toThrow(ConfigError);
+    // The message names every host http:// is allowed for.
+    expect(() => validateNodeUrl('http://example.test:3000', 'SYMBOL_NODE_URL')).toThrow(
+      'SYMBOL_NODE_URL must use https:// (http:// is only allowed for localhost / 127.0.0.1 / [::1])',
+    );
   });
   it('rejects other schemes, credentials and query strings', () => {
     expect(() => validateNodeUrl('ftp://example.test')).toThrow(ConfigError);

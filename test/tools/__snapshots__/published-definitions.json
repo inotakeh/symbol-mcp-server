@@ -803,12 +803,12 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "For a Symbol voting node account, list every registered voting key with its start/end epoch and status (expired, active, future), and for active or upcoming keys compute the remaining epochs, blocks and days, the estimated expiry date/time, and a recommended renewal window (7 to 3 days before expiry). Also reports the current finalization epoch, network limits (max keys per account, min/max key lifetime, free slots), whether the balance meets minVoterBalance, and warnings when no key is active or a key expires within 45 days.",
+      "description": "For a Symbol voting node account, list every registered voting key with its start/end epoch and status (expired, active, future), and for active or upcoming keys compute the remaining epochs, blocks and days, the estimated expiry date/time, and a recommended renewal window (7 to 3 days before expiry). Also reports the current finalization epoch, network limits (max keys per account, min/max key lifetime, free slots), whether the balance meets minVoterBalance, and warnings when no key is active, when an active key expires within 45 days with no successor key registered to take over without a gap, when the balance is below minVoterBalance (the account cannot vote), and when every key slot is taken while an expired key holds one (advice to unlink it) or the renewal is not done.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "account": {
-            "description": "Voting account to inspect: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node).",
+            "description": "Voting account to inspect: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Hex addresses (48 chars) are also accepted.",
             "minLength": 1,
             "type": "string"
           }
@@ -3249,7 +3249,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "address": {
-            "description": "Account whose transactions to list: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Matches transactions where the account is signer or recipient.",
+            "description": "Account whose transactions to list: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Hex addresses (48 chars) are also accepted. Matches transactions where the account is signer or recipient.",
             "minLength": 1,
             "type": "string"
           },
@@ -5953,7 +5953,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "transactionSizeBytes": {
-            "description": "Serialized transaction size in bytes. Omit to use a representative transfer (1 mosaic, 20-character message = 197 bytes). A transfer with no message is 176 bytes; add 16 per extra mosaic and 1 per message character.",
+            "description": "Serialized transaction size in bytes. Omit to use a representative transfer: 1 mosaic and a 20-character ASCII message = 197 bytes. For a transfer, count 160 bytes, plus 16 per mosaic, plus a plain message: 1 type byte and its text in UTF-8 bytes, not characters (1 per ASCII character, usually 3 per Japanese character). No message and 1 mosaic = 176 bytes; a 20-character Japanese message and 1 mosaic = 237 bytes. An encrypted message or a harvesting delegation request carries more than its text, so pass its serialized size. This count is not for aggregate transactions, whose size also includes their inner transactions and cosignatures.",
             "maximum": 1048576,
             "minimum": 1,
             "type": "integer"
@@ -6537,7 +6537,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "account": {
-            "description": "Optional harvester account to check: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). When given, reports whether its linked (remote) key is unlocked on this node and whether its balance is within the harvesting limits.",
+            "description": "Optional harvester account to check: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Hex addresses (48 chars) are also accepted. When given, reports whether its linked (remote) key is unlocked on this node and whether its balance is within the harvesting limits.",
             "minLength": 1,
             "type": "string"
           }
@@ -8211,7 +8211,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Diagnose whether an account's delegated harvesting is active and, if not, where it stops. For the list of harvesters unlocked on the configured node, use symbol_harvesting_status; for how that list changed, symbol_harvester_watch; for the rewards the account earned, symbol_harvesting_income. The checks: account exists, balance within minHarvesterBalance/maxHarvesterBalance, importance above zero (or blocks until the next recalculation), linked/VRF/node keys registered, node key equal to the configured node's nodePublicKey, remote key unlocked on the configured node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Each check is ok/warn/fail/unknown with a hint; the verdict is active, not_active or cannot_verify. Node-side checks are possible only when the account delegates to the configured node; no other node is contacted. Read-only.",
+      "description": "Diagnose whether an account's delegated harvesting is active and, if not, where it stops. For the list of harvesters unlocked on the configured node, use symbol_harvesting_status; for how that list changed, symbol_harvester_watch; for the rewards the account earned, symbol_harvesting_income. The checks: account exists, balance within minHarvesterBalance/maxHarvesterBalance, importance above zero (or blocks until the next recalculation), linked/VRF/node keys registered, node key equal to the configured node's nodePublicKey, remote key unlocked on the configured node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Each check is ok/warn/fail/unknown, with a hint when there is something to do or explain; the verdict is active, not_active or cannot_verify. Node-side checks are possible only when the account delegates to the configured node; no other node is contacted. Read-only.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -8222,7 +8222,7 @@
           },
           "format": {
             "default": "concise",
-            "description": "concise (default): hints only on checks that are not ok. detailed: a hint on every check, including what was compared for the ok ones.",
+            "description": "concise (default): hints only on checks that are not ok. detailed: also the hints of the ok checks (what was compared). In both, an unknown check that could not be made, because of an earlier result or missing data, has no hint.",
             "enum": [
               "concise",
               "detailed"
@@ -9770,7 +9770,7 @@
               "asOf": {
                 "anyOf": [
                   {
-                    "description": "The priceAsOf argument as given (sanitized); null when omitted.",
+                    "description": "The priceAsOf argument with invisible and control characters removed and made one line, not otherwise reformatted (it must parse as a date); null when omitted or when nothing is left.",
                     "type": "string"
                   },
                   {
@@ -9784,7 +9784,7 @@
               "source": {
                 "anyOf": [
                   {
-                    "description": "The priceSource argument as given (untrusted, sanitized); null when omitted.",
+                    "description": "The priceSource argument, untrusted, with invisible and control characters removed and made one line; null when omitted or when nothing is left.",
                     "type": "string"
                   },
                   {

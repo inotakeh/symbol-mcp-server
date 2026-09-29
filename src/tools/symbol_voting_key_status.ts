@@ -4,19 +4,14 @@ import { hexAddressToBase32 } from '../domain/address.js';
 import { parseHeight } from '../domain/epoch.js';
 import { formatInstantText, roundTo } from '../domain/time.js';
 import { buildVotingStatus } from '../domain/voting.js';
-import { AccountResolutionSchema, withResolutionPrefix } from './_accounts.js';
+import { ACCOUNT_ARG_FORMS, AccountResolutionSchema, withResolutionPrefix } from './_accounts.js';
 import { defineTool, formatInteger, nullable } from './_shared.js';
 import { fetchAccount } from './symbol_account_get.js';
 
 const InstantSchema = z.object({ utc: z.string(), local: z.string().optional() });
 
 const inputSchema = z.object({
-  account: z
-    .string()
-    .min(1)
-    .describe(
-      'Voting account to inspect: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node).',
-    ),
+  account: z.string().min(1).describe(`Voting account to inspect: ${ACCOUNT_ARG_FORMS}`),
 });
 
 const VotingKeyReportSchema = z.object({
@@ -84,7 +79,7 @@ export const votingKeyStatusTool = defineTool({
   name: 'symbol_voting_key_status',
   title: 'Symbol voting key status',
   description:
-    'For a Symbol voting node account, list every registered voting key with its start/end epoch and status (expired, active, future), and for active or upcoming keys compute the remaining epochs, blocks and days, the estimated expiry date/time, and a recommended renewal window (7 to 3 days before expiry). Also reports the current finalization epoch, network limits (max keys per account, min/max key lifetime, free slots), whether the balance meets minVoterBalance, and warnings when no key is active or a key expires within 45 days.',
+    'For a Symbol voting node account, list every registered voting key with its start/end epoch and status (expired, active, future), and for active or upcoming keys compute the remaining epochs, blocks and days, the estimated expiry date/time, and a recommended renewal window (7 to 3 days before expiry). Also reports the current finalization epoch, network limits (max keys per account, min/max key lifetime, free slots), whether the balance meets minVoterBalance, and warnings when no key is active, when an active key expires within 45 days with no successor key registered to take over without a gap, when the balance is below minVoterBalance (the account cannot vote), and when every key slot is taken while an expired key holds one (advice to unlink it) or the renewal is not done.',
   inputSchema,
   outputSchema,
   untrustedText: true,

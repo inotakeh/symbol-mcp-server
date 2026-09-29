@@ -279,6 +279,21 @@ describe('symbol_delegation_diagnose', () => {
     expect(delegationDiagnoseTool.outputSchema.safeParse(out).success).toBe(true);
   });
 
+  it('gives no hint, even in detailed format, to a check that could not be made', async () => {
+    server = await startTestServer({
+      routes: routes({ [`GET /accounts/${ADDRESS}`]: () => jsonResponse({}, 404) }),
+    });
+    const result = await server.callTool('symbol_delegation_diagnose', {
+      account: ADDRESS,
+      format: 'detailed',
+    });
+    const out = result.structuredContent as unknown as Output;
+    expect(out.checks[0]).toMatchObject({ id: 'account_exists', hint: expect.any(String) });
+    expect(out.checks.slice(1).map((c) => [c.status, c.detail, c.hint])).toEqual(
+      out.checks.slice(1).map(() => ['unknown', 'Not checked: the account does not exist.', null]),
+    );
+  });
+
   it('keeps the other checks when /node/unlockedaccount fails', async () => {
     server = await startTestServer({
       routes: routes({
