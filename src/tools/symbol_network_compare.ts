@@ -191,8 +191,10 @@ export const networkCompareTool = defineTool({
         lines.push(`${head}: ${verdict}${partial}.`);
       }
       for (const n of nodes) {
+        // A best / behind marker only where a comparison was made: not when no reference was
+        // compared, and never for a node on another network.
         const where =
-          compared === 0
+          compared === 0 || n.sameNetwork !== true
             ? ''
             : ` (${n.heightBehindBest === 0 ? 'best' : `-${formatInteger(n.heightBehindBest ?? 0)}`})`;
         lines.push(

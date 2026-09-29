@@ -199,6 +199,42 @@ describe('symbol_network_compare', () => {
     expect(sc?.own).toMatchObject({ heightBehindBest: 5, lagging: false });
   });
 
+  it('lists a reference on another network as not compared, without a best or behind marker', async () => {
+    const testnetSeed = '49D6E1CE276A85B70EAFE52349AACCA389302E7A9754BCF1221E79494FC665A4';
+    server = await startTestServer({
+      env: { SYMBOL_REFERENCE_NODES: `${REF_A},${REF_B}` },
+      routes: perHostRoutes({
+        'reference-a.test:3001': { height: '5763680' },
+        'reference-b.test:3001': { height: '9999999', seed: testnetSeed },
+      }),
+    });
+    const summary = String(
+      (await server.callTool('symbol_network_compare')).structuredContent?.summary,
+    );
+    expect(summary.split('\n')[0]).toBe(
+      'node.test:3001 vs 2 reference nodes on mainnet: in sync (5 blocks behind the best node), compared with 1 of 2 reference nodes; not compared (1 is on another network): reference-b.test:3001.',
+    );
+    expect(summary).toMatch(
+      /- reference-b\.test:3001: height 9,999,999, finalized .*\[WRONG NETWORK: testnet\]/,
+    );
+  });
+
+  it('says so when every reference node is on another network', async () => {
+    const testnetSeed = '49D6E1CE276A85B70EAFE52349AACCA389302E7A9754BCF1221E79494FC665A4';
+    server = await startTestServer({
+      env: { SYMBOL_REFERENCE_NODES: `${REF_A},${REF_B}` },
+      routes: perHostRoutes({
+        'reference-a.test:3001': { seed: testnetSeed },
+        'reference-b.test:3001': { seed: testnetSeed },
+      }),
+    });
+    const summary = String(
+      (await server.callTool('symbol_network_compare')).structuredContent?.summary,
+    );
+    expectNoComparisonClaim(summary);
+    expect(summary).toMatch(/could not compare, .*\(2 are on another network; details below\)\./);
+  });
+
   it('survives an unreachable own node', async () => {
     server = await startTestServer({
       env: { SYMBOL_REFERENCE_NODES: REF_A },

@@ -32,7 +32,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   did not answer, how many are on another network), lists each reference with its failure, and
   notes that `heightBehindBest` 0 and `lagging` false in the structured output then compare the
   own node with itself only. When only some reference nodes answer, the first line names the
-  ones that could not be compared. The output fields are unchanged.
+  ones that could not be compared, and a node on another network no longer gets a behind marker
+  such as `(--4,236,319)`. This applies while the own node answers; when it does not, the first
+  line says so, as before. The output fields are unchanged.
 
 ### Security
 
