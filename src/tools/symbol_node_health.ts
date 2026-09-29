@@ -19,7 +19,7 @@ import {
   type HealthVerdict,
   pickNodeTimestamp,
   serviceStatus,
-  serviceStatusText,
+  serviceStatusSentence,
   skewThresholds,
 } from '../domain/nodehealth.js';
 import { decodeRoles } from '../domain/roles.js';
@@ -154,8 +154,8 @@ export const nodeHealthTool = defineTool({
     if (health.ok) {
       const apiNode = serviceStatus(health.value.status.apiNode, text);
       const db = serviceStatus(health.value.status.db, text);
-      summaryDetails.set('api_node', `API node service is ${serviceStatusText(apiNode)}.`);
-      summaryDetails.set('db', `Database service is ${serviceStatusText(db)}.`);
+      summaryDetails.set('api_node', serviceStatusSentence('API node', apiNode));
+      summaryDetails.set('db', serviceStatusSentence('Database', db));
       checks.push(
         apiNode === 'up'
           ? check({

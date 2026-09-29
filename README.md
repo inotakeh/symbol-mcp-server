@@ -482,10 +482,11 @@ MAILTO=you@example.com
 
 - **Read-only.** No tool signs, builds or announces transactions. No argument accepts a private key,
   mnemonic or token. A 64-character hex account argument is taken as a public key and turned into
-  its address on this machine before any request, so the value itself is never sent to a node or
-  quoted in an error, in case a private key was pasted by mistake. Nothing is stored between calls, except that `symbol_harvester_watch` keeps its
-  per-node snapshot of unlocked harvester public keys, heights and times under `SYMBOL_STATE_DIR` when
-  that variable is set (no secrets; delete the file to start over).
+  its address on this machine, and the node is asked for the address: a private key pasted by
+  mistake never reaches the node, and errors show at most its first 8 characters. Nothing is stored
+  between calls, except that `symbol_harvester_watch` keeps its per-node snapshot of unlocked
+  harvester public keys, heights and times under `SYMBOL_STATE_DIR` when that variable is set (no
+  secrets; delete the file to start over).
 - **Fixed destinations.** The server contacts only `SYMBOL_NODE_URL` and, for
   `symbol_network_compare` and `symbol_version_drift`, the hosts listed in `SYMBOL_REFERENCE_NODES`. Tools never take a URL as
   an argument, so a model cannot redirect requests. There is no telemetry.

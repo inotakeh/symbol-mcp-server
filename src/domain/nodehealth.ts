@@ -32,9 +32,21 @@ export function serviceStatus(value: string, text: UntrustedText): string {
  * as the server's words (domain/quote.ts).
  */
 export function serviceStatusText(status: string): string {
-  return status === 'up' || status === 'down' || status === EMPTY_SERVICE_STATUS
-    ? status
-    : quoteUntrusted(status);
+  return isDocumentedStatus(status) ? status : quoteUntrusted(status);
+}
+
+/**
+ * A summary sentence about one service (`API node`, `Database`): `… service is down.` for a
+ * documented status, `… service reports status "…".` for any other text the node sent.
+ */
+export function serviceStatusSentence(service: string, status: string): string {
+  return isDocumentedStatus(status)
+    ? `${service} service is ${status}.`
+    : `${service} service reports status ${quoteUntrusted(status)}.`;
+}
+
+function isDocumentedStatus(status: string): boolean {
+  return status === 'up' || status === 'down' || status === EMPTY_SERVICE_STATUS;
 }
 
 /** Wall-clock window whose worth of blocks the node database may lag the chain height. */

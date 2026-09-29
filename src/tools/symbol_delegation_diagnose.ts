@@ -5,6 +5,7 @@ import {
   ChainInfoSchema,
   MosaicInfoSchema,
   NodeInfoSchema,
+  type TransactionPage,
   TransactionPageSchema,
   type TransactionStatementInfo,
   TransactionStatementPageSchema,
@@ -295,10 +296,23 @@ async function findDelegationRequest(
     order: 'desc',
     pageNumber: '1',
   });
-  const page = await ctx.rest.get(
-    `/transactions/confirmed?${params.toString()}`,
-    TransactionPageSchema,
-  );
+  let page: TransactionPage;
+  try {
+    page = await ctx.rest.get(
+      `/transactions/confirmed?${params.toString()}`,
+      TransactionPageSchema,
+    );
+  } catch (err) {
+    // The query carries the account's on-chain public key: the node returned it for the address,
+    // so it is public, and it is the same request as for an address argument. An error still
+    // quotes no 64-hex account value in full (DESIGN-BRIEF §7), so the key is masked there.
+    if (err instanceof RestError) {
+      const masked = (value: string) =>
+        value.split(signerPublicKey).join(maskIdentifier(signerPublicKey));
+      throw new RestError(err.kind, masked(err.message), masked(err.path), err.status);
+    }
+    throw err;
+  }
   const found = page.data.find((info) => isPersistentDelegationMessage(info.transaction.message));
   return {
     height: found?.meta.height !== undefined ? parseHeight(found.meta.height) : null,

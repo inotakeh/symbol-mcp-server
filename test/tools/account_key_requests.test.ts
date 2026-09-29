@@ -199,6 +199,45 @@ describe('a 64-hex account argument', () => {
   }
 
   for (const [kind, failure] of FAILURES) {
+    it(`is not quoted when the delegation request search fails (${kind})`, async () => {
+      // The search carries the on-chain key the node returned for the address; a failure of it
+      // must not quote that key in full either.
+      server = await startTestServer({
+        routes: { ...mainnetRoutes(), 'GET /transactions/confirmed': failure },
+      });
+      const before = server.requests.length;
+      const result = await server.callTool('symbol_delegation_diagnose', { account: PUBLIC_KEY });
+      const sent = server.requests.slice(before);
+      expect(sent.some((u) => u.pathname === '/transactions/confirmed')).toBe(true);
+      expect(result.isError).toBe(true);
+      expect(containsKey(result.text), result.text).toBe(false);
+    });
+  }
+
+  it('is turned into an address of the configured network (testnet: T...)', async () => {
+    const info = fixture<Record<string, unknown>>('mainnet/node-info.json');
+    const testnetAddress = publicKeyToAddress(PUBLIC_KEY, 152);
+    server = await startTestServer({
+      routes: {
+        ...mainnetRoutes(),
+        'GET /node/info': {
+          ...info,
+          networkIdentifier: 152,
+          networkGenerationHashSeed:
+            '49D6E1CE276A85B70EAFE52349AACCA389302E7A9754BCF1221E79494FC665A4',
+        },
+        [`GET /accounts/${testnetAddress}`]: resourceNotFound(testnetAddress),
+      },
+    });
+    expect(server.ctx.network.name).toBe('testnet');
+    const result = await server.callTool('symbol_account_get', { account: PUBLIC_KEY });
+    expect(result.text).toMatch(/No account with public key CE199233… exists on testnet/);
+    const asked = server.requests.filter((u) => u.pathname.startsWith('/accounts/'));
+    expect(asked.map((u) => u.pathname)).toEqual([`/accounts/${testnetAddress}`]);
+    expect(testnetAddress.startsWith('T')).toBe(true);
+  });
+
+  for (const [kind, failure] of FAILURES) {
     it(`is never printed by the CLI check when the account lookup fails (${kind})`, async () => {
       const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
       const proof = fixture<Record<string, unknown>>('mainnet/finalization-proof-epoch.json');
