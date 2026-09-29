@@ -12,6 +12,7 @@ import * as z from 'zod/v4';
 import { AccountPageSchema, MosaicInfoSchema } from '../client/schemas.js';
 import { hexAddressToBase32 } from '../domain/address.js';
 import { formatAmount, groupThousands } from '../domain/amount.js';
+import { mosaicLabel } from '../domain/quote.js';
 import {
   HOLDER_PAGE_SIZE,
   mosaicBalanceOf,
@@ -229,33 +230,35 @@ export const accountRankTool = defineTool({
     const rankBeyond = hitPageLimit ? maxRank : null;
     const topShare = percentOfSupply(topSum, supplyRaw);
 
-    // Summary and notes.
+    // Summary and notes. The summary quotes an alias outside the namespace grammar
+    // (domain/quote.ts); the notes keep the plain label.
+    const summaryLabel = mosaicLabel(alias, mosaicId);
     const lines: string[] = [];
     if (target) {
       const share = percentOfSupply(target.balanceRaw, supplyRaw);
-      const holding = `${target.address} holds ${groupThousands(fmt(target.balanceRaw))} ${label}${share === null ? '' : ` (${share}% of supply)`}`;
+      const holding = `${target.address} holds ${groupThousands(fmt(target.balanceRaw))} ${summaryLabel}${share === null ? '' : ` (${share}% of supply)`}`;
       if (rank !== null) {
-        lines.push(`${holding}, rank ${formatInteger(rank)} by ${label} balance.`);
+        lines.push(`${holding}, rank ${formatInteger(rank)} by ${summaryLabel} balance.`);
       } else if (target.balanceRaw === 0n) {
-        lines.push(`${holding}, so it has no rank among ${label} holders.`);
+        lines.push(`${holding}, so it has no rank among ${summaryLabel} holders.`);
       } else if (hitPageLimit) {
         lines.push(
           `${holding} but is not within the top ${formatInteger(maxRank)} holders; raise maxRank (up to ${formatInteger(MAX_MAX_RANK)}) to look further.`,
         );
       } else {
         lines.push(
-          `${holding} but did not appear among the ${formatInteger(accountsScanned)} holders the node listed for ${label}.`,
+          `${holding} but did not appear among the ${formatInteger(accountsScanned)} holders the node listed for ${summaryLabel}.`,
         );
       }
     }
     const shown = topHolders.length;
     lines.push(
-      `Top ${formatInteger(shown)} ${label} holders own ${topShare === null ? 'an unknown share' : `${topShare}%`} of supply (${groupThousands(fmt(supplyRaw))} ${label} in circulation).`,
+      `Top ${formatInteger(shown)} ${summaryLabel} holders own ${topShare === null ? 'an unknown share' : `${topShare}%`} of supply (${groupThousands(fmt(supplyRaw))} ${summaryLabel} in circulation).`,
     );
     if (format === 'detailed') {
       for (const h of topHolders) {
         lines.push(
-          `#${h.rank} ${h.address}: ${groupThousands(h.balance)} ${label}${h.sharePercent === null ? '' : ` (${h.sharePercent}%)`}`,
+          `#${h.rank} ${h.address}: ${groupThousands(h.balance)} ${summaryLabel}${h.sharePercent === null ? '' : ` (${h.sharePercent}%)`}`,
         );
       }
     }

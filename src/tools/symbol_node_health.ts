@@ -19,6 +19,7 @@ import {
   type HealthVerdict,
   pickNodeTimestamp,
   serviceStatus,
+  serviceStatusText,
   skewThresholds,
 } from '../domain/nodehealth.js';
 import { decodeRoles } from '../domain/roles.js';
@@ -103,15 +104,21 @@ function failureText(host: string, path: string, error: RestError): string {
   return `${host} did not answer ${path} (${error.kind}${error.status ? ` ${error.status}` : ''}).`;
 }
 
+/**
+ * `summaryDetails` replaces the detail of a check in the summary only: there a status the node
+ * sent is quoted (serviceStatusText), while checks[].detail keeps the plain cleaned text.
+ */
 function buildSummary(
   host: string,
   network: string,
   verdict: HealthVerdict,
   checks: readonly DiagnoseCheck[],
+  summaryDetails: ReadonlyMap<string, string>,
 ): string {
   const lines = [`node health: ${VERDICT_TEXT[verdict]} (${host}, ${network}).`];
   for (const c of checks) {
-    if (c.status !== 'ok') lines.push(`- ${c.id} ${c.status}: ${c.detail}`);
+    if (c.status !== 'ok')
+      lines.push(`- ${c.id} ${c.status}: ${summaryDetails.get(c.id) ?? c.detail}`);
   }
   return lines.join('\n');
 }
@@ -141,11 +148,14 @@ export const nodeHealthTool = defineTool({
     const now = ctx.now();
     const blockTimeMs = properties.blockGenerationTargetTimeMs;
     const checks: DiagnoseCheck[] = [];
+    const summaryDetails = new Map<string, string>();
 
     // 1-2. api_node, db
     if (health.ok) {
       const apiNode = serviceStatus(health.value.status.apiNode, text);
       const db = serviceStatus(health.value.status.db, text);
+      summaryDetails.set('api_node', `API node service is ${serviceStatusText(apiNode)}.`);
+      summaryDetails.set('db', `Database service is ${serviceStatusText(db)}.`);
       checks.push(
         apiNode === 'up'
           ? check({
@@ -304,7 +314,7 @@ export const nodeHealthTool = defineTool({
 
     const verdict = deriveHealthVerdict(checks);
     return {
-      summary: buildSummary(host, ctx.network.name, verdict, checks),
+      summary: buildSummary(host, ctx.network.name, verdict, checks, summaryDetails),
       network: ctx.network.name,
       verdict,
       checks: stripOkHints(checks, format),

@@ -1,6 +1,7 @@
 import * as z from 'zod/v4';
 import { TransactionFeesSchema } from '../client/schemas.js';
 import { DEFAULT_TRANSFER_SIZE_BYTES, estimateFees } from '../domain/fee.js';
+import { mosaicLabel } from '../domain/quote.js';
 import { defineTool } from './_shared.js';
 
 /** catapult rejects transactions above maxTransactionSize; 1 MiB is a safe upper bound. */
@@ -65,11 +66,12 @@ export const feeEstimateTool = defineTool({
         ? `Representative transfer: 128-byte header + 32-byte transfer body + 1 mosaic (16 bytes) + 20-character plain message (21 bytes) = ${DEFAULT_TRANSFER_SIZE_BYTES} bytes.`
         : `Size supplied by the caller: ${sizeBytes} bytes.`;
     const estimate = estimateFees(sizeBytes, fees, currency.divisibility);
-    const label = text.useOrNull(currency.alias) ?? currency.mosaicId;
+    const alias = text.useOrNull(currency.alias);
+    const label = alias ?? currency.mosaicId;
 
     const summary = [
       `Fee estimate on ${ctx.network.name} for a ${sizeBytes}-byte transaction (multipliers from ${ctx.rest.host}):`,
-      `slow ${estimate.slow.fee} ${label} (x${estimate.slow.multiplier}, this node's minimum), average ${estimate.average.fee} (x${estimate.average.multiplier}), median ${estimate.median.fee} (x${estimate.median.multiplier}), fast ${estimate.fast.fee} (x${estimate.fast.multiplier}).`,
+      `slow ${estimate.slow.fee} ${mosaicLabel(alias, currency.mosaicId)} (x${estimate.slow.multiplier}, this node's minimum), average ${estimate.average.fee} (x${estimate.average.multiplier}), median ${estimate.median.fee} (x${estimate.median.multiplier}), fast ${estimate.fast.fee} (x${estimate.fast.multiplier}).`,
       transactionSizeBytes === undefined
         ? `Size assumes a transfer with 1 mosaic and a 20-character message; pass transactionSizeBytes for other transactions. Nothing was sent.`
         : 'Nothing was sent.',

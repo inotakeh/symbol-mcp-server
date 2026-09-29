@@ -3,6 +3,7 @@ import { ChainInfoSchema } from '../client/schemas.js';
 import { hexAddressToBase32 } from '../domain/address.js';
 import { parseHeight } from '../domain/epoch.js';
 import { UNLIMITED_END_HEIGHT } from '../domain/namespace.js';
+import { quoteName } from '../domain/quote.js';
 import { estimateDateAtHeight, formatInstantText, msToDays, roundTo } from '../domain/time.js';
 import { fetchNamespace, namespaceLevels, resolveNamespaceInput } from './_namespaces.js';
 import { defineTool, formatInteger, nullable } from './_shared.js';
@@ -126,7 +127,7 @@ export const namespaceGetTool = defineTool({
       : expired
         ? `expired at height ${formatInteger(endHeight ?? 0)}`
         : `expires at height ${formatInteger(endHeight ?? 0)} in ${formatInteger(remainingBlocks ?? 0)} blocks (about ${remainingDays} days), estimated ${expiresAt ? formatInstantText(expiresAt) : 'unknown'}`;
-    const summary = `Namespace ${fullName ?? resolved.id} (${resolved.id}) on ${ctx.network.name}: ${ns.registrationType === 0 ? 'root' : `sub-namespace of ${parentId}`}, depth ${ns.depth}, ${aliasText}; owner ${owner}; registered at height ${formatInteger(startHeight)}, ${lifetime}.`;
+    const summary = `Namespace ${fullName ? quoteName(fullName) : resolved.id} (${resolved.id}) on ${ctx.network.name}: ${ns.registrationType === 0 ? 'root' : `sub-namespace of ${parentId}`}, depth ${ns.depth}, ${aliasText}; owner ${owner}; registered at height ${formatInteger(startHeight)}, ${lifetime}.`;
 
     return {
       summary,

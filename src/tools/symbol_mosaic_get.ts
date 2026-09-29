@@ -3,6 +3,7 @@ import { ChainInfoSchema } from '../client/schemas.js';
 import { hexAddressToBase32 } from '../domain/address.js';
 import { formatAmount } from '../domain/amount.js';
 import { parseHeight } from '../domain/epoch.js';
+import { summaryName } from '../domain/quote.js';
 import { estimateDateAtHeight, formatInstantText, msToDays, roundTo } from '../domain/time.js';
 import { resolveMosaicInput } from './_mosaics.js';
 import { defineTool, formatInteger, nullable } from './_shared.js';
@@ -116,7 +117,7 @@ export const mosaicGetTool = defineTool({
       .map(([k]) => k);
 
     const summary = [
-      `Mosaic ${mosaicId}${alias ? ` (${alias})` : ''} on ${ctx.network.name}: supply ${supply}, divisibility ${m.divisibility}, flags ${flagNames.length > 0 ? flagNames.join('/') : 'none'}.`,
+      `Mosaic ${mosaicId}${alias ? ` (${summaryName('alias', alias)})` : ''} on ${ctx.network.name}: supply ${supply}, divisibility ${m.divisibility}, flags ${flagNames.length > 0 ? flagNames.join('/') : 'none'}.`,
       `Owner ${owner}; registered at height ${formatInteger(startHeight)}; ${
         unlimited
           ? 'unlimited duration (never expires).'

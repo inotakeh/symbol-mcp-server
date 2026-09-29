@@ -31,6 +31,7 @@ import {
   formatCalendarDate,
   parseCalendarDate,
 } from '../domain/localdate.js';
+import { mosaicLabel } from '../domain/quote.js';
 import { receiptTypeCode } from '../domain/receipttype.js';
 import {
   dateToNetworkTimestamp,
@@ -527,6 +528,8 @@ export const harvestingIncomeTool = defineTool({
     const div = currency.divisibility;
     const alias = text.useOrNull(currency.alias);
     const label = alias ?? currency.mosaicId;
+    // The summary quotes an alias outside the namespace grammar; the notes keep the plain label.
+    const summaryLabel = mosaicLabel(alias, currency.mosaicId);
     const totals = flatTotals(aggregate.totals, div);
 
     const truncationReasons: Array<'pageLimit' | 'receiptList'> = [];
@@ -587,7 +590,7 @@ export const harvestingIncomeTool = defineTool({
         ? `${formatCalendarDate(period.from)} to ${formatCalendarDate(period.to)} (${zoneLabel}; heights ${formatInteger(fromHeight)}-${formatInteger(toHeight)}, ${plural(toHeight - fromHeight + 1, 'block')})`
         : `heights ${formatInteger(fromHeight)}-${formatInteger(toHeight)} (${formatInstantText(fromTime)} to ${formatInstantText(toTime)})`;
     const lines: string[] = [
-      `${base32} on ${ctx.network.name}, ${periodText}: ${plural(totals.receipts, 'harvest receipt')} totalling ${totals.xym} ${label} from ${plural(totals.blocks, 'block')} (harvester share ${totals.xymHarvester} in ${plural(totals.receiptsHarvester, 'receipt')}, beneficiary share ${totals.xymBeneficiary} in ${plural(totals.receiptsBeneficiary, 'receipt')}${totals.receiptsUnknown > 0 ? `, unknown ${totals.xymUnknown} in ${plural(totals.receiptsUnknown, 'receipt')}` : ''}).`,
+      `${base32} on ${ctx.network.name}, ${periodText}: ${plural(totals.receipts, 'harvest receipt')} totalling ${totals.xym} ${summaryLabel} from ${plural(totals.blocks, 'block')} (harvester share ${totals.xymHarvester} in ${plural(totals.receiptsHarvester, 'receipt')}, beneficiary share ${totals.xymBeneficiary} in ${plural(totals.receiptsBeneficiary, 'receipt')}${totals.receiptsUnknown > 0 ? `, unknown ${totals.xymUnknown} in ${plural(totals.receiptsUnknown, 'receipt')}` : ''}).`,
     ];
     if (totals.receipts > 0) {
       // Receipts are shares, not blocks: an operator that is its own node's beneficiary gets two
@@ -610,7 +613,7 @@ export const harvestingIncomeTool = defineTool({
       // One line per month after the period total; the total stays first however many months.
       for (const m of aggregate.monthly) {
         lines.push(
-          `${m.month}: ${plural(m.receipts, 'receipt')}, ${groupThousands(formatAmount(m.raw, div))} ${label}; ${plural(m.blocks, 'block')}: ${formatInteger(m.blocksHarvested)} harvested by this account, ${formatInteger(m.blocksBeneficiaryOnly)} by others${m.blocksUnrecognised > 0 ? `, ${formatInteger(m.blocksUnrecognised)} not recognised` : ''} (receipts ${formatInteger(m.harvester.receipts)} harvester / ${formatInteger(m.beneficiary.receipts)} beneficiary${m.unknown.receipts > 0 ? ` / ${formatInteger(m.unknown.receipts)} unknown` : ''})`,
+          `${m.month}: ${plural(m.receipts, 'receipt')}, ${groupThousands(formatAmount(m.raw, div))} ${summaryLabel}; ${plural(m.blocks, 'block')}: ${formatInteger(m.blocksHarvested)} harvested by this account, ${formatInteger(m.blocksBeneficiaryOnly)} by others${m.blocksUnrecognised > 0 ? `, ${formatInteger(m.blocksUnrecognised)} not recognised` : ''} (receipts ${formatInteger(m.harvester.receipts)} harvester / ${formatInteger(m.beneficiary.receipts)} beneficiary${m.unknown.receipts > 0 ? ` / ${formatInteger(m.unknown.receipts)} unknown` : ''})`,
         );
       }
     } else if (receiptRows) {

@@ -11,6 +11,7 @@ import type { AppContext } from '../context.js';
 import { hexAddressToBase32 } from '../domain/address.js';
 import { formatAmount } from '../domain/amount.js';
 import { parseHeight } from '../domain/epoch.js';
+import { mosaicLabel } from '../domain/quote.js';
 import {
   ACCOUNT_ARG_FORMS,
   type AccountResolution,
@@ -185,8 +186,10 @@ export const accountGetTool = defineTool({
 
     const currencyEntry = mosaics.find((m) => m.id === currency.mosaicId);
     // The alias of a listed currency entry is already counted; otherwise use the cached one.
-    const currencyLabel =
-      currencyEntry?.alias ?? text.useOrNull(currency.alias) ?? currency.mosaicId;
+    const currencyLabel = mosaicLabel(
+      currencyEntry?.alias ?? text.useOrNull(currency.alias),
+      currency.mosaicId,
+    );
     const balanceText = `${currencyEntry ? currencyEntry.amount : '0'} ${currencyLabel}`;
 
     const summary = [

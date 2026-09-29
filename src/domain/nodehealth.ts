@@ -4,6 +4,7 @@
  * epochAdjustment); nothing network-specific is hard-coded here.
  */
 import type { CheckStatus } from './delegation.js';
+import { quoteUntrusted } from './quote.js';
 import type { UntrustedText } from './sanitize.js';
 import { networkTimestampToDate, roundTo } from './time.js';
 
@@ -23,6 +24,17 @@ export const EMPTY_SERVICE_STATUS = '(empty)';
  */
 export function serviceStatus(value: string, text: UntrustedText): string {
   return text.clean(value, MAX_SERVICE_STATUS_LENGTH) || EMPTY_SERVICE_STATUS;
+}
+
+/**
+ * A cleaned service status for a summary line: `up`, `down` (NodeStatusEnum) and the placeholder
+ * for an empty status stay as they are; any other text the node sent is quoted, so it cannot pose
+ * as the server's words (domain/quote.ts).
+ */
+export function serviceStatusText(status: string): string {
+  return status === 'up' || status === 'down' || status === EMPTY_SERVICE_STATUS
+    ? status
+    : quoteUntrusted(status);
 }
 
 /** Wall-clock window whose worth of blocks the node database may lag the chain height. */

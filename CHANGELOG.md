@@ -32,6 +32,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the error message and the `check` output quoted it in full (only "not found" masked it). The
   answers are the same as for the address. One difference: an account whose public key the chain
   does not know yet (it has only received transfers) is now found when given by its public key.
+- In summaries, text written by others can no longer pose as the server's own words. A transfer
+  message was shown in quotes that it could close itself (`untrusted message: "thanks"; fee 0 …`),
+  and `symbol_node_status` began its summary with the node's friendlyName. Now such text is shown
+  after a label as a JSON string, with quotes and backslashes escaped: transfer messages, the
+  friendlyName and host a node reports (line 1 of `symbol_node_status` now starts with the
+  configured host), `/node/health` statuses other than `up` and `down`, transaction status codes
+  outside the documented list, and the `priceSource` and `priceAsOf` of `symbol_holdings_value`
+  (`source "…"`, `as of "…"`). Alias and namespace names stay as they are when they fit the
+  namespace grammar, which has no space or quote, and are shown as `alias "…"` otherwise. Only the
+  summary changes; every other output field keeps the plain cleaned text.
 
 ## [0.9.1] - 2026-09-25
 

@@ -2,8 +2,13 @@ import * as z from 'zod/v4';
 import { RestError } from '../client/rest.js';
 import { type TransactionStatus, TransactionStatusListSchema } from '../client/schemas.js';
 import { parseHeight } from '../domain/epoch.js';
+import { labelledQuote } from '../domain/quote.js';
 import { formatInstantText, type Instant, networkTimestampToDate } from '../domain/time.js';
-import { describeTransactionStatusCode, TRANSACTION_GROUPS } from '../domain/txstatus.js';
+import {
+  describeTransactionStatusCode,
+  TRANSACTION_GROUPS,
+  TRANSACTION_STATUS_CODES,
+} from '../domain/txstatus.js';
 import { defineTool, formatInteger, maskIdentifier, nullable, ToolInputError } from './_shared.js';
 import { InstantSchema } from './_transactions.js';
 
@@ -70,6 +75,15 @@ interface StatusEntry {
   readonly deadline: Instant | null;
 }
 
+/**
+ * The node's status code for a summary line: a code of TransactionStatusEnum stays as it is, and
+ * anything else the node sent is labelled and quoted (domain/quote.ts).
+ */
+function statusCodeText(code: string | null): string {
+  if (code === null) return 'no code reported';
+  return TRANSACTION_STATUS_CODES.has(code) ? code : labelledQuote('code', code);
+}
+
 function describeStatus(entry: StatusEntry): string {
   const short = `${entry.hash.slice(0, 8)}…`;
   const deadline = entry.deadline ? `deadline ${formatInstantText(entry.deadline)}` : '';
@@ -81,7 +95,7 @@ function describeStatus(entry: StatusEntry): string {
     case 'partial':
       return `${short} partial: waiting for cosignatures (aggregate bonded with missing cosignatures; it confirms only after every required cosigner signs before the ${deadline}).`;
     case 'failed':
-      return `${short} failed: ${entry.code ?? 'no code reported'}${entry.codeMeaning ? ` (${entry.codeMeaning})` : ''}.`;
+      return `${short} failed: ${statusCodeText(entry.code)}${entry.codeMeaning ? ` (${entry.codeMeaning})` : ''}.`;
     default:
       return `${short} not found on this node: never announced here, rejected before being tracked, or already pruned; check the node that received the announce, or symbol_transaction_get for an older confirmed transaction.`;
   }

@@ -26,6 +26,7 @@ import {
 import { parseHeight } from '../domain/epoch.js';
 import { aggregateHarvestIncome, type HarvestShares } from '../domain/harvesting.js';
 import { isPersistentDelegationMessage } from '../domain/message.js';
+import { mosaicLabel } from '../domain/quote.js';
 import { receiptTypeCode } from '../domain/receipttype.js';
 import type { CleanedText } from '../domain/sanitize.js';
 import { formatInstantText, type Instant, networkTimestampToDate } from '../domain/time.js';
@@ -153,6 +154,10 @@ const NOTES = [
   'The recent-harvest window is converted to a height range with the measured average block time, so its start is approximate.',
 ];
 
+/**
+ * `summaryDetails` replaces the detail of a check in the summary only: there an alias outside the
+ * namespace grammar is quoted (domain/quote.ts), while checks[].detail keeps the plain label.
+ */
 function buildSummary(
   address: string,
   verdict: Output['verdict'],
@@ -163,11 +168,12 @@ function buildSummary(
     lastHeight: number | null;
     lastTime: Instant | null;
   } | null,
+  summaryDetails: ReadonlyMap<string, string> = new Map(),
 ): string {
   const lines = [`delegated harvesting: ${VERDICT_TEXT[verdict]} (${address}).`];
   for (const c of checks) {
     if (c.status === 'fail' || c.status === 'warn')
-      lines.push(`- ${c.id} ${c.status}: ${c.detail}`);
+      lines.push(`- ${c.id} ${c.status}: ${summaryDetails.get(c.id) ?? c.detail}`);
   }
   if (verdict === 'cannot_verify') {
     const unknown = checks.filter((c) => c.status === 'unknown').map((c) => c.id);
@@ -392,10 +398,16 @@ export const delegationDiagnoseTool = defineTool({
     const rawBalance = BigInt(
       acct.mosaics.find((m) => m.id.toUpperCase() === harvestingMosaicId)?.amount ?? '0',
     );
-    const harvestingLabel = text.useOrNull(harvestingAlias) ?? harvestingMosaicId;
-    const balanceText = `${formatAmount(rawBalance, harvestingDivisibility)} ${harvestingLabel}`;
-    const minText = `${formatAmount(properties.minHarvesterBalance, harvestingDivisibility)} ${harvestingLabel}`;
-    const maxText = `${formatAmount(properties.maxHarvesterBalance, harvestingDivisibility)} ${harvestingLabel}`;
+    const harvestingAliasText = text.useOrNull(harvestingAlias);
+    const harvestingLabel = harvestingAliasText ?? harvestingMosaicId;
+    const amountText = (raw: bigint, unit: string) =>
+      `${formatAmount(raw, harvestingDivisibility)} ${unit}`;
+    const balanceText = amountText(rawBalance, harvestingLabel);
+    const minText = amountText(properties.minHarvesterBalance, harvestingLabel);
+    const maxText = amountText(properties.maxHarvesterBalance, harvestingLabel);
+    // The same amounts for the summary lines (buildSummary): the alias quoted outside the grammar.
+    const summaryUnit = mosaicLabel(harvestingAliasText, harvestingMosaicId);
+    const summaryDetails = new Map<string, string>();
     const importance = BigInt(acct.importance);
     const importanceHeight = parseHeight(acct.importanceHeight);
     const checks: DiagnoseCheck[] = [];
@@ -417,6 +429,10 @@ export const delegationDiagnoseTool = defineTool({
     );
     const balanceOk = balanceState === 'within';
     if (balanceState === 'below') {
+      summaryDetails.set(
+        'balance_in_range',
+        `Balance ${amountText(rawBalance, summaryUnit)} is below minHarvesterBalance ${amountText(properties.minHarvesterBalance, summaryUnit)}.`,
+      );
       checks.push(
         check({
           id: 'balance_in_range',
@@ -426,6 +442,10 @@ export const delegationDiagnoseTool = defineTool({
         }),
       );
     } else if (balanceState === 'above') {
+      summaryDetails.set(
+        'balance_in_range',
+        `Balance ${amountText(rawBalance, summaryUnit)} exceeds maxHarvesterBalance ${amountText(properties.maxHarvesterBalance, summaryUnit)}.`,
+      );
       checks.push(
         check({
           id: 'balance_in_range',
@@ -725,7 +745,7 @@ export const delegationDiagnoseTool = defineTool({
 
     return {
       summary: withResolutionPrefix(
-        buildSummary(address, verdict, checks, recentHarvest),
+        buildSummary(address, verdict, checks, recentHarvest, summaryDetails),
         resolution,
       ),
       network: ctx.network.name,

@@ -1,6 +1,7 @@
 import * as z from 'zod/v4';
 import { ChainInfoSchema, TransactionFeesSchema } from '../client/schemas.js';
 import { parseHeight } from '../domain/epoch.js';
+import { mosaicLabel } from '../domain/quote.js';
 import { defineTool, formatInteger, nullable } from './_shared.js';
 
 const outputSchema = z.object({
@@ -55,7 +56,7 @@ export const networkInfoTool = defineTool({
 
     const summary = [
       `Symbol ${ctx.network.name} (identifier ${ctx.network.identifier}) via ${ctx.rest.host}: height ${formatInteger(height)}, finalized ${formatInteger(finalizedHeight)} (epoch ${chain.latestFinalizedBlock.finalizationEpoch}).`,
-      `Currency ${alias ?? currency.mosaicId} = mosaic ${currency.mosaicId}, divisibility ${currency.divisibility}; block target ${properties.blockGenerationTargetTimeMs / 1000}s, voting set grouping ${properties.votingSetGrouping}.`,
+      `Currency ${mosaicLabel(alias, currency.mosaicId)} = mosaic ${currency.mosaicId}, divisibility ${currency.divisibility}; block target ${properties.blockGenerationTargetTimeMs / 1000}s, voting set grouping ${properties.votingSetGrouping}.`,
       `Fee multipliers: min ${fees.minFeeMultiplier}, average ${fees.averageFeeMultiplier}, median ${fees.medianFeeMultiplier}, highest ${fees.highestFeeMultiplier}.`,
     ].join('\n');
 

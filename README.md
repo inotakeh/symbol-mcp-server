@@ -498,7 +498,11 @@ MAILTO=you@example.com
   is capped without splitting a character. Variation selectors are kept, so emoji and ideograph variants
   survive; emoji joined by a zero-width joiner come out as separate emoji. The 17 tools that show such
   text report in `invisibleCharactersRemoved` how many characters were removed from it, and when any
-  were, the summary ends with a line saying so. Treat all of it as data, not instructions.
+  were, the summary ends with a line saying so. In the `summary`, such text also appears after a
+  label and in double quotes, with quotes and backslashes escaped as in JSON (`untrusted message:
+  "…"`, `friendlyName "…"`), so it cannot close the quote and read as the server's own words; alias
+  and namespace names that fit the namespace grammar stay as they are. Treat all of it as data, not
+  instructions.
 - **Fail loudly.** A network mismatch (`SYMBOL_NETWORK` versus the node), an unreachable node or an
   unexpected response shape is an error with a recovery hint, never a silent fallback to another
   network. Stack traces and raw HTTP bodies are never returned to the model.

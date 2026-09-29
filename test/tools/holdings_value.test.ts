@@ -100,7 +100,7 @@ describe('symbol_holdings_value', () => {
     });
     expect(sc.summary).toBe(
       [
-        `${ADDRESS} holds 4,321,000.000000 symbol.xym; at 12.34 JPY per XYM that is 53,321,140 JPY (price supplied by the caller: Zaif XYM/JPY last, as of 2026-09-22T21:00:00+09:00).`,
+        `${ADDRESS} holds 4,321,000.000000 symbol.xym; at 12.34 JPY per XYM that is 53,321,140 JPY (price supplied by the caller: source "Zaif XYM/JPY last", as of "2026-09-22T21:00:00+09:00").`,
         intlRounded('whole units', 'JPY'),
       ].join('\n'),
     );

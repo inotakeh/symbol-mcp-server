@@ -8,7 +8,8 @@ import {
 } from '../client/schemas.js';
 import { parseHeight } from '../domain/epoch.js';
 import { findNetworkBySeed } from '../domain/network.js';
-import { serviceStatus } from '../domain/nodehealth.js';
+import { serviceStatus, serviceStatusText } from '../domain/nodehealth.js';
+import { labelledQuote } from '../domain/quote.js';
 import { decodeRoles } from '../domain/roles.js';
 import { networkTimestampToDate } from '../domain/time.js';
 import { decodeVersion } from '../domain/version.js';
@@ -106,9 +107,15 @@ export const nodeStatusTool = defineTool({
       warnings.push('The node now reports a different network than at startup.');
     }
 
+    // What the node says about itself is labelled and quoted; line 1 starts with the configured
+    // host, so a friendlyName cannot read as the subject of the server's sentence.
+    const reported = [
+      friendlyName ? labelledQuote('friendlyName', friendlyName) : null,
+      host ? labelledQuote('host', host) : null,
+    ].filter((part) => part !== null);
     const summary = [
-      `${friendlyName || host || ctx.rest.host} (${host || ctx.rest.host}) runs Symbol ${version} on ${ctx.network.name} with roles ${roles.join('/') || 'none'}.`,
-      `Health apiNode=${apiNode}, db=${db}; height ${formatInteger(height)}, finalized ${formatInteger(parseHeight(chain.latestFinalizedBlock.height))} (epoch ${chain.latestFinalizedBlock.finalizationEpoch}); ${peers.length} peers.`,
+      `${ctx.rest.host}${reported.length > 0 ? ` (${reported.join(', ')})` : ''} runs Symbol ${version} on ${ctx.network.name} with roles ${roles.join('/') || 'none'}.`,
+      `Health apiNode=${serviceStatusText(apiNode)}, db=${serviceStatusText(db)}; height ${formatInteger(height)}, finalized ${formatInteger(parseHeight(chain.latestFinalizedBlock.height))} (epoch ${chain.latestFinalizedBlock.finalizationEpoch}); ${peers.length} peers.`,
       synced
         ? `Synced: latest block ${ageSeconds}s old.`
         : `NOT synced: latest block ${ageSeconds}s old (threshold ${SYNC_THRESHOLD_SECONDS}s).`,

@@ -83,7 +83,7 @@ describe('node status strings from /node/health', () => {
       db: 'down 31m',
       healthy: false,
     });
-    expect(result.structuredContent?.summary).toMatch(/Health apiNode=up\[2J, db=down 31m;/);
+    expect(result.structuredContent?.summary).toMatch(/Health apiNode="up\[2J", db="down 31m";/);
     expectClean(result.structuredContent);
     expectClean(result.text);
   });
