@@ -6,6 +6,8 @@
  * when the process exits immediately, so help, version and every error go to stderr. The only
  * thing ever written to stdout is the report of the `check` subcommand, which never serves MCP.
  */
+import { resolve } from 'node:path';
+import { CERT_FAIL_DAYS, DEFAULT_CERT_WARN_DAYS, MIN_CERT_WARN_DAYS } from './cli/certificate.js';
 import {
   type CheckReport,
   DEFAULT_WARN_DAYS,
@@ -23,6 +25,7 @@ import {
 } from './config.js';
 import { createAppContext } from './context.js';
 import { classifyAccountId } from './domain/address.js';
+import { toSingleLine } from './domain/sanitize.js';
 import { SERVER_NAME } from './server.js';
 import { ACCOUNT_INPUT_HINT } from './tools/_accounts.js';
 import { maskIdentifier } from './tools/_shared.js';
@@ -30,6 +33,9 @@ import { maskIdentifier } from './tools/_shared.js';
 export interface CheckCliOptions {
   readonly account: string | null;
   readonly warnDays: number;
+  /** The --cert paths as given, in the order given; empty without --cert. */
+  readonly certPaths: readonly string[];
+  readonly certWarnDays: number;
   readonly format: 'text' | 'json';
   readonly quiet: boolean;
 }
@@ -48,8 +54,12 @@ const VERSION_FLAGS = new Set(['--version', '-v', '-V', 'version']);
 const CHECK_VALUE_FLAGS: ReadonlyMap<string, string> = new Map([
   ['--account', '<address|publicKey|namespace>'],
   ['--warn-days', String(DEFAULT_WARN_DAYS)],
+  ['--cert', '<path>'],
+  ['--cert-warn-days', String(DEFAULT_CERT_WARN_DAYS)],
   ['--format', 'json'],
 ]);
+/** The one flag of `check` that may be repeated: one certificate file each time. */
+const CERT_FLAG = '--cert';
 
 /** Interprets `process.argv.slice(2)`. The first recognised word wins; anything else is unknown. */
 export function parseCliArgs(argv: readonly string[]): CliCommand {
@@ -65,6 +75,7 @@ export function parseCliArgs(argv: readonly string[]): CliCommand {
 function parseCheckArgs(args: readonly string[]): CliCommand {
   const usage = (message: string): CliCommand => ({ mode: 'check_usage', message });
   const values = new Map<string, string>();
+  const certPaths: string[] = [];
   let quiet = false;
   for (let i = 0; i < args.length; i++) {
     const token = args[i] ?? '';
@@ -78,10 +89,10 @@ function parseCheckArgs(args: readonly string[]): CliCommand {
     }
     if (!CHECK_VALUE_FLAGS.has(flag)) {
       return usage(
-        `unknown argument ${JSON.stringify(maskIdentifier(token))}. Options are --account, --warn-days, --format and --quiet.`,
+        `unknown argument ${JSON.stringify(maskIdentifier(token))}. Options are --account, --warn-days, --cert, --cert-warn-days, --format and --quiet.`,
       );
     }
-    if (values.has(flag)) return usage(`${flag} was given more than once.`);
+    if (flag !== CERT_FLAG && values.has(flag)) return usage(`${flag} was given more than once.`);
     let value: string | undefined;
     if (eq >= 0) {
       value = token.slice(eq + 1);
@@ -92,7 +103,34 @@ function parseCheckArgs(args: readonly string[]): CliCommand {
     if (value === undefined || value === '' || value.startsWith('--')) {
       return usage(`${flag} needs a value, e.g. ${flag} ${CHECK_VALUE_FLAGS.get(flag)}.`);
     }
-    values.set(flag, value);
+    if (flag === CERT_FLAG) certPaths.push(value);
+    else values.set(flag, value);
+  }
+
+  // The same path twice would make the comparison of the copies pass without comparing anything.
+  // Paths are compared as written (after resolving "." and ".."); the file system is not asked,
+  // so a link to the same file, or another spelling of it, is not noticed.
+  const seenCerts = new Set<string>();
+  for (const path of certPaths) {
+    const file = resolve(path);
+    if (seenCerts.has(file)) {
+      return usage(
+        `${CERT_FLAG} ${JSON.stringify(toSingleLine(path))} was given more than once. Pass each copy of the certificate once.`,
+      );
+    }
+    seenCerts.add(file);
+  }
+
+  let certWarnDays = DEFAULT_CERT_WARN_DAYS;
+  const rawCertDays = values.get('--cert-warn-days');
+  if (rawCertDays !== undefined) {
+    const n = /^\d+$/.test(rawCertDays) ? Number(rawCertDays) : Number.NaN;
+    if (!(Number.isSafeInteger(n) && n >= MIN_CERT_WARN_DAYS)) {
+      return usage(
+        `--cert-warn-days must be a whole number, ${MIN_CERT_WARN_DAYS} or more (default ${DEFAULT_CERT_WARN_DAYS}), got ${JSON.stringify(maskIdentifier(rawCertDays))}.`,
+      );
+    }
+    certWarnDays = n;
   }
 
   let warnDays = DEFAULT_WARN_DAYS;
@@ -118,7 +156,10 @@ function parseCheckArgs(args: readonly string[]): CliCommand {
       `--account ${JSON.stringify(maskIdentifier(account.trim()))} is not a valid Symbol account identifier. ${ACCOUNT_INPUT_HINT}`,
     );
   }
-  return { mode: 'check', options: { account, warnDays, format, quiet } };
+  return {
+    mode: 'check',
+    options: { account, warnDays, certPaths, certWarnDays, format, quiet },
+  };
 }
 
 export interface CliDeps {
@@ -176,6 +217,8 @@ async function runCheckCommand(options: CheckCliOptions, deps: CliDeps): Promise
     report = await runCheck(ctx, {
       account: options.account,
       warnDays: options.warnDays,
+      certPaths: options.certPaths,
+      certWarnDays: options.certWarnDays,
       onDiagnostic: say,
     });
   } catch (err) {
@@ -305,14 +348,28 @@ export function helpText(serverName: string, version: string): string {
   out.push('');
   out.push('Check mode (no MCP client; same environment variables, SYMBOL_NODE_URL required):');
   out.push(`  ${serverName} check [--account <address|publicKey|namespace>]`);
-  out.push('      [--warn-days <n>] [--format text|json] [--quiet]');
+  out.push('      [--warn-days <n>] [--cert <path>]... [--cert-warn-days <n>]');
+  out.push('      [--format text|json] [--quiet]');
   out.push('  Runs node_health, version_drift, harvester_watch (needs SYMBOL_STATE_DIR) and, with');
   out.push('  --account, voting_key_status and finality_participation: the judgments of the MCP');
-  out.push('  tools, read as ok / warn / fail / skip. The report goes to stdout. Nothing is sent');
-  out.push("  anywhere: let cron's MAILTO mail the output.");
+  out.push('  tools, read as ok / warn / fail / skip. With --cert it also reads the given node');
+  out.push('  certificate files on this machine (certificate): their expiry, and whether they are');
+  out.push('  copies of one certificate. The report goes to stdout. Nothing is sent anywhere: let');
+  out.push("  cron's MAILTO mail the output.");
   out.push('    --account <id>    Voting account: address, public key or namespace name');
   out.push(
     `    --warn-days <n>   Warn when the active voting key expires within n days (${MIN_WARN_DAYS}-${MAX_WARN_DAYS}, default ${DEFAULT_WARN_DAYS})`,
+  );
+  out.push('    --cert <path>     Certificate file to check (node.crt.pem); repeat for each copy.');
+  out.push('                      Run on the machine that holds the files. A PEM private key');
+  out.push('                      is refused; of a certificate only the expiry date, the');
+  out.push('                      fingerprint and the common name are reported');
+  out.push('    --cert-warn-days <n>');
+  out.push(
+    `                      Warn when a certificate has fewer than n days left (${MIN_CERT_WARN_DAYS} or more,`,
+  );
+  out.push(
+    `                      default ${DEFAULT_CERT_WARN_DAYS}); fewer than ${CERT_FAIL_DAYS} days left, or expired, always fails`,
   );
   out.push('    --format <f>      text (default) or json');
   out.push('    --quiet           Print nothing when the exit code is 0');

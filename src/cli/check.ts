@@ -4,6 +4,9 @@
  * and re-reads its output as ok / warn / fail; no threshold of any tool is changed or duplicated
  * here. Nothing is sent anywhere: cron's MAILTO does the notifying.
  *
+ * The one exception is the `certificate` item (certificate.ts): no tool can see a node's
+ * certificate files, so with --cert the check reads them on this machine and judges them itself.
+ *
  * This directory must stay free of MCP SDK imports so the CLI can move to its own package later
  * (test/unit/cli-check.test.ts checks the import lines).
  */
@@ -37,6 +40,12 @@ import {
 import { nodeHealthTool } from '../tools/symbol_node_health.js';
 import { versionDriftTool } from '../tools/symbol_version_drift.js';
 import { votingKeyStatusTool } from '../tools/symbol_voting_key_status.js';
+import {
+  type CertificateFile,
+  CertificateFileSchema,
+  checkCertificates,
+  DEFAULT_CERT_WARN_DAYS,
+} from './certificate.js';
 
 export const DEFAULT_WARN_DAYS = 14;
 export const MIN_WARN_DAYS = 1;
@@ -50,6 +59,7 @@ export const CHECK_IDS = [
   'harvester_watch',
   'voting_key_status',
   'finality_participation',
+  'certificate',
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
@@ -63,11 +73,17 @@ export interface CheckItem {
   readonly detail: string;
   /** Taken from the tool's own output (a check hint, a warning, a note); never written here. */
   readonly hint: string | null;
+  /** Only on the certificate item when it ran: one entry per --cert file, in the order given. */
+  readonly files?: readonly CertificateFile[];
 }
 
 export interface CheckOptions {
   readonly account: string | null;
   readonly warnDays: number;
+  /** Certificate files to read on this machine (--cert), as given. None: the item is skipped. */
+  readonly certPaths?: readonly string[];
+  /** Default 30. Independent of `warnDays`, which is about the voting key. */
+  readonly certWarnDays?: number;
   /** Upper bound for the whole run. Default 120 s; not a command-line flag. */
   readonly timeLimitMs?: number;
   /** One line per problem that is about the run itself (time limit, node unreachable). */
@@ -96,6 +112,7 @@ export const CheckReportSchema = z.object({
       status: z.enum(['ok', 'warn', 'fail', 'skip']),
       detail: z.string(),
       hint: z.union([z.string(), z.null()]),
+      files: z.array(CertificateFileSchema).optional(),
     }),
   ),
   warnDays: z.number(),
@@ -112,14 +129,16 @@ type ItemBody = Omit<CheckItem, 'id'>;
 /**
  * Details and hints end up on a terminal or in a cron mail, as text or as JSON. Node strings are
  * cleaned where the tools read them; this is the last line of defence for both formats: one line,
- * no control or format character.
+ * no control or format character. The file entries of the certificate item are made of cleaned
+ * values where they are built (certificate.ts) and pass through as they are.
  */
 export function printableItem(body: ItemBody): ItemBody {
-  return {
+  const item = {
     status: body.status,
     detail: toSingleLine(body.detail),
     hint: body.hint === null ? null : toSingleLine(body.hint),
   };
+  return body.files === undefined ? item : { ...item, files: body.files };
 }
 
 export interface NodeHealthView {
@@ -434,13 +453,22 @@ interface Step {
   /** Reason not to run at all, or null. */
   readonly skip: string | null;
   readonly run: () => Promise<ItemBody>;
+  /**
+   * Reads only this machine and never asks the node, so its result says nothing about whether the
+   * node could be reached (exit code 3 is decided by the other items).
+   */
+  readonly local?: true;
 }
 
 const NO_ACCOUNT =
   'no --account given; pass --account <address|publicKey|namespace> to check the voting key';
+const NO_CERT =
+  'no --cert given; pass --cert <path> for each copy of the node certificate to check its expiry';
 
 export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<CheckReport> {
   const { account, warnDays } = options;
+  const certPaths = options.certPaths ?? [];
+  const certWarnDays = options.certWarnDays ?? DEFAULT_CERT_WARN_DAYS;
   const timeLimitMs = options.timeLimitMs ?? DEFAULT_TIME_LIMIT_MS;
   const limitText =
     timeLimitMs >= 1000
@@ -490,6 +518,12 @@ export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<
           }),
         ),
     },
+    {
+      id: 'certificate',
+      skip: certPaths.length === 0 ? NO_CERT : null,
+      run: () => checkCertificates(certPaths, certWarnDays, ctx.now()),
+      local: true,
+    },
   ];
 
   const started = performance.now();
@@ -516,7 +550,7 @@ export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<
     try {
       const raced = await withinTimeLimit(step.run(), remainingMs);
       if (raced.done) {
-        ran++;
+        if (!step.local) ran++;
         checks.push({ id: step.id, ...printableItem(raced.value) });
       } else {
         cutShort++;
@@ -528,7 +562,7 @@ export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<
         });
       }
     } catch (err) {
-      ran++;
+      if (!step.local) ran++;
       const failure = describeFailure(step.id, err, ctx);
       if (failure.unreachable) unreachable++;
       checks.push({ id: step.id, ...printableItem(failure.body) });
@@ -542,8 +576,12 @@ export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<
     );
   }
   if (nodeUnreachable) {
+    // The certificate item reads local files, so it may have been judged all the same.
+    const ofTheNode = checks.some((c) => c.id === 'certificate' && c.status !== 'skip')
+      ? ' of the node'
+      : '';
     options.onDiagnostic?.(
-      `${ctx.rest.host} stopped answering after start-up, or answers only with redirects, so no check could be made. Verify that SYMBOL_NODE_URL is the node's REST API URL and that the node is up and reachable from this machine.`,
+      `${ctx.rest.host} stopped answering after start-up, or answers only with redirects, so no check${ofTheNode} could be made. Verify that SYMBOL_NODE_URL is the node's REST API URL and that the node is up and reachable from this machine.`,
     );
   }
 

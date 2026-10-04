@@ -2,10 +2,21 @@
  * `symbol-mcp-server check` against the fixture node: runCheck calls the tools' run functions
  * directly (no MCP client or transport here) with the node-side fetch stubbed by the harness.
  */
-import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { generateKeyPairSync, X509Certificate } from 'node:crypto';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NOT_A_CERTIFICATE_REASON, PRIVATE_KEY_REASON } from '../../src/cli/certificate.js';
 import { CHECK_IDS, type CheckReport, CheckReportSchema, runCheck } from '../../src/cli/check.js';
 import { formatCheckJson, formatCheckText } from '../../src/cli/format.js';
 import { publicKeyToAddress } from '../../src/domain/address.js';
@@ -125,7 +136,7 @@ describe('runCheck against the fixture node', () => {
     expect(report.verdict).toBe('ok');
     expect(report.exitCode).toBe(0);
     expect(report.checks.map((c) => c.id)).toEqual([...CHECK_IDS]);
-    expect(report.checks.map((c) => c.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok']);
+    expect(report.checks.map((c) => c.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'skip']);
     expect(item(report, 'node_health').detail).toBe('healthy (finalization lag 19 blocks)');
     expect(item(report, 'harvester_watch').detail).toContain('baseline saved');
     expect(item(report, 'voting_key_status').detail).toMatch(
@@ -156,11 +167,13 @@ describe('runCheck against the fixture node', () => {
       harvester_watch: 'skip',
       voting_key_status: 'skip',
       finality_participation: 'skip',
+      certificate: 'skip',
     });
     expect(report.exitCode).toBe(0);
     expect(report.account).toBeNull();
     expect(item(report, 'harvester_watch').detail).toBe(UNSET_NOTE);
     expect(item(report, 'voting_key_status').detail).toContain('--account');
+    expect(item(report, 'certificate').detail).toContain('--cert <path>');
     // Skipped items make no request: no unlocked list, no account, no proof.
     const paths = requests.map((u) => u.pathname);
     expect(paths).not.toContain('/node/unlockedaccount');
@@ -257,6 +270,7 @@ describe('runCheck against the fixture node', () => {
       harvester_watch: 'fail',
       voting_key_status: 'ok',
       finality_participation: 'ok',
+      certificate: 'skip',
     });
     expect(report.exitCode).toBe(2);
     const drift = item(report, 'version_drift');
@@ -279,11 +293,15 @@ describe('runCheck against the fixture node', () => {
 
     expect(report.verdict).toBe('error');
     expect(report.exitCode).toBe(3);
-    expect(report.checks.map((c) => c.status)).toEqual(['fail', 'fail', 'fail', 'fail', 'fail']);
-    for (const c of report.checks) expect(c.detail).toMatch(/^could not run: unreachable on \//);
+    const asked = report.checks.filter((c) => c.id !== 'certificate');
+    expect(asked.map((c) => c.status)).toEqual(['fail', 'fail', 'fail', 'fail', 'fail']);
+    for (const c of asked) expect(c.detail).toMatch(/^could not run: unreachable on \//);
+    expect(item(report, 'certificate').status).toBe('skip');
     expect(report.account).toBe('NCV5HRBS…');
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]).toContain(`${TEST_NODE_HOST} stopped answering`);
+    // Without --cert the sentence is the one from before the certificate item.
+    expect(diagnostics[0]).toContain('so no check could be made.');
     expect(formatCheckText(report).split('\n')[0]).toMatch(/^symbol check: ERROR /);
   });
 
@@ -585,7 +603,14 @@ describe('runCheck against the fixture node', () => {
       onDiagnostic: (line) => diagnostics.push(line),
     });
 
-    expect(report.checks.map((c) => c.status)).toEqual(['ok', 'skip', 'skip', 'skip', 'skip']);
+    expect(report.checks.map((c) => c.status)).toEqual([
+      'ok',
+      'skip',
+      'skip',
+      'skip',
+      'skip',
+      'skip',
+    ]);
     expect(item(report, 'version_drift').detail).toBe(
       'time limit of 300 ms reached while this check was running',
     );
@@ -598,5 +623,262 @@ describe('runCheck against the fixture node', () => {
     expect(diagnostics[0]).toContain('4 check(s) skipped');
     // Nothing was written by the items that never ran.
     expect(readdirSync(dir)).toEqual([]);
+  });
+});
+
+describe('runCheck: the certificate item (--cert)', () => {
+  // Synthetic certificates (test/fixtures/cert/README.md): notAfter at the end of 2099 and 2098.
+  const certDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'cert');
+  const nodeA = join(certDir, 'node-a.crt');
+  const nodeB = join(certDir, 'node-b.crt');
+  const fingerprintOf = (file: string) => new X509Certificate(readFileSync(file)).fingerprint256;
+  const daysFromTestNow = (notAfter: string) =>
+    Math.floor((new Date(notAfter).getTime() - TEST_NOW.getTime()) / 86_400_000);
+  const A_DAYS = daysFromTestNow('2099-12-31T23:59:59.000Z');
+  const B_DAYS = daysFromTestNow('2098-12-31T23:59:59.000Z');
+
+  it('is ok for the node certificate and a copy of it, and the whole check exits 0', async () => {
+    const copy = join(dir, 'rest-gateway-copy.crt');
+    writeFileSync(copy, readFileSync(nodeA));
+    const { ctx, requests } = await createTestContext({
+      routes: routes(),
+      env: { SYMBOL_TIMEZONE: 'Asia/Tokyo' },
+    });
+    const report = await runCheck(ctx, {
+      account: ADDRESS,
+      warnDays: 14,
+      certPaths: [nodeA, copy],
+    });
+
+    expect(report.checks.map((c) => c.id)).toEqual([...CHECK_IDS]);
+    expect(report.verdict).toBe('ok');
+    expect(report.exitCode).toBe(0);
+    const fingerprint = fingerprintOf(nodeA);
+    const fileEntry = (path: string) => ({
+      path,
+      status: 'ok',
+      notAfter: '2099-12-31T23:59:59.000Z',
+      daysLeft: A_DAYS,
+      fingerprint256: fingerprint,
+      commonName: 'test-node-a',
+      reason: null,
+    });
+    expect(item(report, 'certificate')).toEqual({
+      id: 'certificate',
+      status: 'ok',
+      detail: `ok (2 files, expires 2099-12-31, ${A_DAYS} days left)`,
+      hint: null,
+      files: [fileEntry(nodeA), fileEntry(copy)],
+    });
+    expect(CheckReportSchema.parse(report)).toEqual(report);
+    expect(formatCheckText(report).split('\n').slice(-4)).toEqual([
+      `[ok] certificate: ok (2 files, expires 2099-12-31, ${A_DAYS} days left)`,
+      `  ${nodeA}: ok, expires 2099-12-31T23:59:59.000Z, ${A_DAYS} days left, sha256 ${fingerprint}`,
+      `  ${copy}: ok, expires 2099-12-31T23:59:59.000Z, ${A_DAYS} days left, sha256 ${fingerprint}`,
+      '',
+    ]);
+
+    // JSON: the top-level keys are those of a run without --cert; the item gains `files`.
+    const parsed = JSON.parse(formatCheckJson(report)) as {
+      checks: Array<Record<string, unknown>>;
+    };
+    expect(Object.keys(parsed)).toEqual([
+      'verdict',
+      'exitCode',
+      'node',
+      'checkedAt',
+      'checks',
+      'warnDays',
+      'account',
+    ]);
+    expect(parsed.checks.map((c) => Object.keys(c))).toEqual([
+      ...CHECK_IDS.slice(0, -1).map(() => ['id', 'status', 'detail', 'hint']),
+      ['id', 'status', 'detail', 'hint', 'files'],
+    ]);
+    const files = parsed.checks[5]?.files as Array<Record<string, unknown>>;
+    expect(files.map((f) => Object.keys(f))).toEqual([
+      ['path', 'status', 'notAfter', 'daysLeft', 'fingerprint256', 'commonName', 'reason'],
+      ['path', 'status', 'notAfter', 'daysLeft', 'fingerprint256', 'commonName', 'reason'],
+    ]);
+    expect(new Set(requests.map((u) => u.host))).toEqual(new Set([TEST_NODE_HOST]));
+  });
+
+  it('warns (exit 1) when the two files are not copies of one certificate', async () => {
+    const { ctx } = await createTestContext({ routes: routes() });
+    // Relative paths, as typed in the bootstrap directory, are reported as given.
+    const a = relative(process.cwd(), nodeA);
+    const b = relative(process.cwd(), nodeB);
+    const report = await runCheck(ctx, { account: null, warnDays: 14, certPaths: [a, b] });
+
+    expect(report.verdict).toBe('warn');
+    expect(report.exitCode).toBe(1);
+    expect(item(report, 'certificate')).toMatchObject({
+      status: 'warn',
+      detail: `warn (copies differ: ${a} vs ${b})`,
+      hint: null,
+      files: [
+        { path: a, status: 'ok', daysLeft: A_DAYS, commonName: 'test-node-a' },
+        { path: b, status: 'ok', daysLeft: B_DAYS, commonName: 'test-node-b' },
+      ],
+    });
+    expect(formatCheckText(report).split('\n').slice(-4)).toEqual([
+      `[warn] certificate: warn (copies differ: ${a} vs ${b})`,
+      `  ${a}: ok, expires 2099-12-31T23:59:59.000Z, ${A_DAYS} days left, sha256 ${fingerprintOf(nodeA)}`,
+      `  ${b}: ok, expires 2098-12-31T23:59:59.000Z, ${B_DAYS} days left, sha256 ${fingerprintOf(nodeB)}`,
+      '',
+    ]);
+  });
+
+  it('judges the days left with --cert-warn-days, apart from --warn-days', async () => {
+    const { ctx } = await createTestContext({ routes: routes() });
+    const run = (certWarnDays: number) =>
+      runCheck(ctx, { account: null, warnDays: 120, certPaths: [nodeA], certWarnDays });
+    expect(item(await run(A_DAYS), 'certificate').status).toBe('ok');
+    const warned = await run(A_DAYS + 1);
+    expect(item(warned, 'certificate')).toMatchObject({
+      status: 'warn',
+      detail: `warn (1 file, expires 2099-12-31, ${A_DAYS} days left)`,
+    });
+    expect(warned.exitCode).toBe(1);
+    // The report still names the voting threshold only.
+    expect(warned.warnDays).toBe(120);
+  });
+
+  it('counts the days left from the clock of the check (ctx.now)', async () => {
+    // 1 ms less than 7 days before notAfter. The fixture node is far in the past from there and
+    // fails on its own, so only the certificate item is looked at; the exit code that a failed
+    // certificate item gives with a healthy node is in the tests below.
+    const now = new Date(new Date('2099-12-31T23:59:59.000Z').getTime() - 7 * 86_400_000 + 1);
+    const { ctx } = await createTestContext({ routes: routes(), now });
+    const report = await runCheck(ctx, { account: null, warnDays: 14, certPaths: [nodeA] });
+    expect(item(report, 'certificate')).toMatchObject({
+      status: 'fail',
+      detail: 'fail (1 file, expires 2099-12-31, 6 days left)',
+      files: [{ status: 'fail', daysLeft: 6 }],
+    });
+  });
+
+  it('fails a file that is not a certificate and one that is missing, and the node items still run', async () => {
+    const notes = join(dir, 'notes.txt');
+    writeFileSync(notes, 'SECRET-NOTE-0123456789 is not a certificate\n');
+    const missing = join(dir, 'missing.crt');
+    const { ctx, requests } = await createTestContext({ routes: routes() });
+    const report = await runCheck(ctx, {
+      account: ADDRESS,
+      warnDays: 14,
+      certPaths: [notes, missing],
+    });
+
+    expect(statuses(report)).toEqual({
+      node_health: 'ok',
+      version_drift: 'ok',
+      harvester_watch: 'skip',
+      voting_key_status: 'ok',
+      finality_participation: 'ok',
+      certificate: 'fail',
+    });
+    expect(report.verdict).toBe('fail');
+    expect(report.exitCode).toBe(2);
+    const fileEntry = (path: string, reason: string) => ({
+      path,
+      status: 'fail',
+      notAfter: null,
+      daysLeft: null,
+      fingerprint256: null,
+      commonName: null,
+      reason,
+    });
+    expect(item(report, 'certificate')).toEqual({
+      id: 'certificate',
+      status: 'fail',
+      detail: `fail (${notes}: ${NOT_A_CERTIFICATE_REASON}; ${missing}: cannot be read (ENOENT))`,
+      hint: null,
+      files: [
+        fileEntry(notes, NOT_A_CERTIFICATE_REASON),
+        fileEntry(missing, 'cannot be read (ENOENT)'),
+      ],
+    });
+    expect(CheckReportSchema.parse(report)).toEqual(report);
+    expect(formatCheckText(report).split('\n').slice(-4)).toEqual([
+      `[fail] certificate: fail (${notes}: ${NOT_A_CERTIFICATE_REASON}; ${missing}: cannot be read (ENOENT))`,
+      `  ${notes}: fail, ${NOT_A_CERTIFICATE_REASON}`,
+      `  ${missing}: fail, cannot be read (ENOENT)`,
+      '',
+    ]);
+    // Reading files adds no request and no host.
+    expect(new Set(requests.map((u) => u.host))).toEqual(new Set([TEST_NODE_HOST]));
+    const plain = await createTestContext({ routes: routes() });
+    await runCheck(plain.ctx, { account: ADDRESS, warnDays: 14 });
+    expect(requests.map((u) => u.href)).toEqual(plain.requests.map((u) => u.href));
+  });
+
+  it('refuses a private key and prints nothing of it, as text or as JSON', async () => {
+    // A real key made for this run only; no key file is ever in the repository.
+    const pem = generateKeyPairSync('ed25519')
+      .privateKey.export({ type: 'pkcs8', format: 'pem' })
+      .toString();
+    const key = join(dir, 'passed-by-mistake.txt');
+    writeFileSync(key, pem);
+    const { ctx } = await createTestContext({ routes: routes() });
+    const report = await runCheck(ctx, { account: null, warnDays: 14, certPaths: [key] });
+
+    const certificate = item(report, 'certificate');
+    expect(certificate.status).toBe('fail');
+    expect(certificate.detail).toBe(`fail (${key}: ${PRIVATE_KEY_REASON})`);
+    expect(certificate.files?.[0]?.reason).toBe(
+      'a private key was passed; pass the certificate (.crt.pem)',
+    );
+    expect(report.exitCode).toBe(2);
+    const printed = `${formatCheckText(report)}${formatCheckJson(report)}`;
+    for (const line of pem.split('\n').filter((l) => l.length > 0)) {
+      expect(printed).not.toContain(line);
+    }
+    expect(printed).not.toContain('-----BEGIN');
+  });
+
+  it('stays ERROR (exit 3) when the node stops answering: the files say nothing about the node', async () => {
+    const missing = join(dir, 'missing.crt');
+    const { ctx } = await createTestContext({ routes: routes() });
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('fetch failed');
+    });
+    const diagnostics: string[] = [];
+    const report = await runCheck(ctx, {
+      account: null,
+      warnDays: 14,
+      certPaths: [missing],
+      onDiagnostic: (line) => diagnostics.push(line),
+    });
+    expect(report.verdict).toBe('error');
+    expect(report.exitCode).toBe(3);
+    expect(statuses(report)).toMatchObject({
+      node_health: 'fail',
+      version_drift: 'fail',
+      certificate: 'fail',
+    });
+    // The certificate item was still judged, from the file alone, and the diagnostic says that
+    // it is the node that could not be checked.
+    expect(item(report, 'certificate').detail).toBe(`fail (${missing}: cannot be read (ENOENT))`);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toContain('so no check of the node could be made.');
+  });
+
+  it('is skipped like any other item once the time limit is reached', async () => {
+    const { ctx } = await createTestContext({
+      routes: routes({ 'GET /node/peers': () => new Promise<Response>(() => {}) }),
+    });
+    const report = await runCheck(ctx, {
+      account: null,
+      warnDays: 14,
+      certPaths: [join(dir, 'missing.crt')],
+      timeLimitMs: 300,
+    });
+    expect(item(report, 'certificate')).toEqual({
+      id: 'certificate',
+      status: 'skip',
+      detail: 'time limit of 300 ms reached before this check ran',
+      hint: null,
+    });
+    expect(report.exitCode).toBe(1);
   });
 });

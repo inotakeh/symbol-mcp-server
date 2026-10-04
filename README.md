@@ -422,6 +422,7 @@ the tools above, prints one report and exits non-zero when something is wrong:
 
 ```
 symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <n>]
+                        [--cert <path>]... [--cert-warn-days <n>]
                         [--format text|json] [--quiet]
 ```
 
@@ -436,10 +437,12 @@ Node.js 22 or newer. Started without arguments the binary is still the MCP serve
 | 3 | `harvester_watch` | `symbol_harvester_watch` (compare and save): warn when fewer harvesters are unlocked than at the previous run, or when the snapshot could not be saved. Skipped without `SYMBOL_STATE_DIR` |
 | 4 | `voting_key_status` | With `--account`: warn when the active voting key expires within `--warn-days` (default 14, 1 to 120), fail within 3 days or without an active key; ok when a successor key is already registered without a gap. Fail also when the balance is below `minVoterBalance` (the account cannot vote), successor or not. Full key slots change no status, but the hint of a warn or fail then adds the tool's slot warning, unless a successor key is already registered. Skipped without `--account` |
 | 5 | `finality_participation` | With `--account`, latest finalized epoch: participated / missed or no proof on the node / no key covers the epoch. Skipped without `--account` |
+| 6 | `certificate` | With `--cert <path>`, once for each copy of the node certificate: fail when a certificate has expired or has fewer than 7 days left, warn with fewer than `--cert-warn-days` (default 30) or when the files are not copies of one certificate. A file that cannot be read, or is not a certificate, fails with the reason. Skipped without `--cert`. See [Node certificate files](#node-certificate-files---cert) |
 
-The judgments are the tools' own; the check only reads their output, and the hint printed under a
-warn or fail line is the tool's text. A tool that fails (for example an HTTP error) fails its item
-and the others still run.
+For items 1 to 5 the judgments are the tools' own; the check only reads their output, and the hint
+printed under a warn or fail line is the tool's text. A tool that fails (for example an HTTP error)
+fails its item and the others still run. Item 6 is the exception: no REST endpoint shows a node's
+certificate files, so the check reads the files itself and has no MCP tool behind it.
 
 | Exit code | Meaning |
 |---|---|
@@ -458,6 +461,7 @@ symbol check: WARN (node.example:3001, mainnet, 2026-01-15T07:00:03+09:00)
 [warn] voting_key_status: active key 0A1B2C3D… expires in about 12.4 days (epoch 4321, estimated 2026-01-27T16:40:00+09:00 (2026-01-27T07:40:00.000Z))
   hint: Active voting key 0A1B2C3D… expires at epoch 4321 in about 12.4 days (...) and no successor key is registered.
 [ok] finality_participation: epoch 4290: participated (signed prevote and precommit)
+[skip] certificate: no --cert given; pass --cert <path> for each copy of the node certificate to check its expiry
 ```
 
 `--format json` prints the same report as one JSON document: `{ verdict, exitCode, node: { host,
@@ -468,16 +472,75 @@ prints nothing when the exit code is 0, so cron only mails when there is somethi
 ```
 MAILTO=you@example.com
 0 7 * * * SYMBOL_NODE_URL=https://node.example:3001 SYMBOL_STATE_DIR=/var/lib/symbol-mcp-server \
-  npx --yes symbol-mcp-server check --account NXXX... --warn-days 14 --quiet
+  npx --yes symbol-mcp-server check --account NXXX... --warn-days 14 --quiet \
+  --cert /path/to/target/nodes/node/cert/node.crt.pem \
+  --cert /path/to/target/gateways/rest-gateway/api-node-config/cert/node.crt.pem
 ```
+
+The entry is broken into lines here only to fit the page: cron has no line continuation, so write
+it on one line in the crontab.
 
 - **The check sends no notification.** It writes to stdout and stderr and sets the exit code; mail
   is cron's job (`MAILTO`). It contacts `SYMBOL_NODE_URL` and the `SYMBOL_REFERENCE_NODES`, nothing
   else, and is as read-only as the server. With `SYMBOL_STATE_DIR` set, every run appends one
-  snapshot to the file `symbol_harvester_watch` uses (the newest 60 are kept).
+  snapshot to the file `symbol_harvester_watch` uses (the newest 60 are kept). With `--cert` it
+  reads the named files on the machine it runs on; nothing of them is sent anywhere.
 - The whole run is limited to 120 seconds. At the limit the remaining items are skipped, the reason
   goes to stderr, and the result is WARN at best, printed even with `--quiet`.
 - A typo in the subcommand name is an unknown argument of the server and exits with 2, as before.
+
+### Node certificate files (`--cert`)
+
+A node set up with symbol-bootstrap keeps its certificate in two places: the node itself uses
+`target/nodes/node/cert/node.crt.pem`, and the REST gateway has its own copy at
+`target/gateways/rest-gateway/api-node-config/cert/node.crt.pem`. `symbol-bootstrap
+renewCertificates` renews the first and does not touch the second. When only the REST gateway's
+copy expires, the gateway can no longer talk to the node and `/node/health` reports
+`apiNode: down`. Pass both files, and `check` tells you before that happens:
+
+```
+symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
+  --cert target/gateways/rest-gateway/api-node-config/cert/node.crt.pem
+```
+
+```
+[warn] certificate: warn (copies differ: target/nodes/node/cert/node.crt.pem vs target/gateways/rest-gateway/api-node-config/cert/node.crt.pem)
+  target/nodes/node/cert/node.crt.pem: ok, expires 2027-01-20T02:11:09.000Z, 370 days left, sha256 0A:1B:2C:…
+  target/gateways/rest-gateway/api-node-config/cert/node.crt.pem: ok, expires 2026-03-01T02:11:09.000Z, 45 days left, sha256 3D:4E:5F:…
+```
+
+- **Each file**: `fail` when the certificate has expired or has fewer than 7 days left (fixed, not
+  an option), `warn` with fewer than `--cert-warn-days` days left (default 30, a whole number of 1
+  or more; independent of `--warn-days`), `ok` otherwise. Days left are whole days from now to the
+  certificate's notAfter, rounded down, so the last day counts as 0. A file that holds several
+  certificates (`node.full.crt.pem`) is judged by its first one.
+- **Copies**: with two or more files, their SHA-256 fingerprints must all be the same; if not, the
+  item is at least `warn` and names the files that differ. A renewal that replaced one copy and
+  not the other shows up here on the same day, long before the old copy expires. Giving the same
+  path twice is refused as a usage error, since it would compare the file with itself (paths are
+  compared as written, after resolving `.` and `..`; a link to the same file, or another spelling
+  of it on a file system that ignores case, is not noticed).
+- **The item's verdict** is the worst of the files and the comparison. A file that cannot be read
+  or is not a certificate fails with the reason (`cannot be read (ENOENT)`,
+  `not a certificate …`), and the other files and the other items are still checked.
+- **Run it on the node's server.** The files are read from the local disk; no MCP tool can do
+  this, because the REST API does not show them. A relative path is resolved against the current
+  directory; cron starts commands in the home directory, so give absolute paths there.
+- **Never pass a key.** A file whose content contains `PRIVATE KEY` (the label of every PEM
+  private key) is not parsed and fails with
+  `a private key was passed; pass the certificate (.crt.pem)`. Any other file that is not a
+  certificate fails as `not a certificate`. Either way, the report holds only the path you gave,
+  the verdict, notAfter (ISO 8601, UTC), the days left, the SHA-256 fingerprint and, in the JSON,
+  the subject's common name; no other content of a file is printed.
+- `--format json` adds `files: [{ path, status, notAfter, daysLeft, fingerprint256, commonName,
+  reason }]` to the `certificate` item when it ran (`reason` says why a file could not be used and
+  is null otherwise; `daysLeft` is negative once expired).
+- When the node stops answering during the run and every node-backed item fails for that reason,
+  the exit code stays 3 whatever the files say; the `certificate` lines are still printed. When
+  `/node/info` cannot be read at start-up (the node does not answer, or answers with an error),
+  nothing is checked, `certificate` included: the exit code is 3 and only the lines on stderr are
+  printed. The item is there to warn ahead of time; once the node is in that state, look at the
+  files by hand (`openssl x509 -noout -enddate -in <file>`).
 
 ## Security
 
@@ -488,6 +551,11 @@ MAILTO=you@example.com
   between calls, except that `symbol_harvester_watch` keeps its per-node snapshot of unlocked
   harvester public keys, heights and times under `SYMBOL_STATE_DIR` when that variable is set (no
   secrets; delete the file to start over).
+- **Certificate files only on request.** The MCP server reads no certificate or key. Only
+  `check --cert <path>` does, and only the files named there, on the machine it runs on. It opens
+  no key file on its own, and a PEM private key passed by mistake (a file whose content contains
+  `PRIVATE KEY`) is refused without being parsed. Nothing of a file is printed except the
+  certificate's expiry date, SHA-256 fingerprint and common name, and nothing is sent anywhere.
 - **Fixed destinations.** The server contacts only `SYMBOL_NODE_URL` and, for
   `symbol_network_compare` and `symbol_version_drift`, the hosts listed in `SYMBOL_REFERENCE_NODES`. Tools never take a URL as
   an argument, so a model cannot redirect requests. There is no telemetry.

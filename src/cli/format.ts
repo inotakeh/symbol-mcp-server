@@ -1,8 +1,10 @@
 /**
  * Plain-text rendering of a check report for a terminal or a cron mail: no colour, no decoration,
- * one line per item, and the tool's own hint under every warn / fail line.
+ * one line per item, the tool's own hint under every warn / fail line, and under the certificate
+ * item one line per file.
  */
 import { toSingleLine } from '../domain/sanitize.js';
+import { certificateFileLine } from './certificate.js';
 import type { CheckReport } from './check.js';
 
 /**
@@ -24,6 +26,7 @@ export function formatCheckText(report: CheckReport): string {
     if ((c.status === 'warn' || c.status === 'fail') && c.hint !== null) {
       lines.push(`  hint: ${oneLine(c.hint)}`);
     }
+    for (const file of c.files ?? []) lines.push(`  ${oneLine(certificateFileLine(file))}`);
   }
   return `${lines.join('\n')}\n`;
 }
