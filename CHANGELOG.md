@@ -16,7 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gateway's copy. A PEM private key passed by mistake (a file whose content contains
   `PRIVATE KEY`) is refused without being parsed, and only the path, expiry date, days left,
   SHA-256 fingerprint and common name are reported. Without `--cert` the report lists the item as
-  skipped; the MCP tools and their definitions do not change.
+  skipped. With `--format json`, `checks` now has 6 entries instead of 5: `certificate` is always
+  included, and is `skip` without `--cert`. The MCP tools and their definitions do not change.
 
 ## [0.9.3] - 2026-09-29
 
