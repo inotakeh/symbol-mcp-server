@@ -25,7 +25,14 @@ describe('parseCliArgs', () => {
   it('recognises the check subcommand (flags are covered in cli-check.test.ts)', () => {
     expect(parseCliArgs(['check'])).toEqual({
       mode: 'check',
-      options: { account: null, warnDays: 14, format: 'text', quiet: false },
+      options: {
+        account: null,
+        warnDays: 14,
+        certPaths: [],
+        certWarnDays: 30,
+        format: 'text',
+        quiet: false,
+      },
     });
     // Only as the first word: the server takes no arguments.
     expect(parseCliArgs(['--quiet', 'check'])).toEqual({ mode: 'unknown', arg: '--quiet' });
@@ -114,10 +121,21 @@ describe('helpText', () => {
 
   it('documents the check subcommand, its options and its exit codes', () => {
     expect(text).toContain('symbol-mcp-server check [--account <address|publicKey|namespace>]');
-    for (const flag of ['--account', '--warn-days', '--format', '--quiet']) {
+    for (const flag of [
+      '--account <id>',
+      '--warn-days <n>',
+      '--cert <path>',
+      '--cert-warn-days <n>',
+      '--format <f>',
+      '--quiet',
+    ]) {
       expect(text).toContain(flag);
     }
+    expect(text).toContain('[--warn-days <n>] [--cert <path>]... [--cert-warn-days <n>]');
     expect(text).toContain('(1-120, default 14)');
+    expect(text).toMatch(/fewer than n days left \(1 or more,\s+default 30\)/);
+    expect(text).toMatch(/fewer than 7 days left, or expired, always fails/);
+    expect(text).toMatch(/A PEM private key\s+is refused/);
     expect(text).toMatch(
       /Exit codes: 0 all ok or skipped, 1 warnings, 2 failures,\s+3 could not run/,
     );

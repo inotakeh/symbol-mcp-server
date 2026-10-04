@@ -398,6 +398,7 @@ Claude Desktop で「今いくら？」と聞いたときの流れは、まず�
 
 ```
 symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <n>]
+                        [--cert <path>]... [--cert-warn-days <n>]
                         [--format text|json] [--quiet]
 ```
 
@@ -411,9 +412,11 @@ symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <
 | 3 | `harvester_watch` | `symbol_harvester_watch`（比較して保存）: 解錠中のハーベスターが前回より減った、またはスナップショットを保存できなかったら warn。`SYMBOL_STATE_DIR` 未設定なら skip |
 | 4 | `voting_key_status` | `--account` 指定時: アクティブな Voting キーの失効まで `--warn-days`（既定 14、1〜120）日以内なら warn、3 日以内またはアクティブなキーが無ければ fail。後継キーが切れ目なく登録済みなら ok。残高が `minVoterBalance` 未満（投票できない）なら、後継キーの有無にかかわらず fail。キーの登録枠に空きが無いことは判定を変えませんが、warn / fail のヒントにツールの枠の警告を足します（後継キーが登録済みなら足しません）。`--account` 無しなら skip |
 | 5 | `finality_participation` | `--account` 指定時、最新の確定エポック: participated / missed またはノードに proof が無い / そのエポックをカバーする鍵が無い。`--account` 無しなら skip |
+| 6 | `certificate` | `--cert <path>` 指定時（ノード証明書のコピーごとに 1 回ずつ指定）: 期限切れ、または残り 7 日未満なら fail。残りが `--cert-warn-days`（既定 30）日未満、またはファイルどうしが同じ証明書のコピーでなければ warn。読めないファイル・証明書でないファイルは理由付きで fail。`--cert` 無しなら skip。下の「ノード証明書ファイル」を参照 |
 
-判定はツールのものをそのまま使い、check はその出力を読み替えるだけです。warn / fail の行の下に出る hint もツールの文言です。
+項目 1〜5 の判定はツールのものをそのまま使い、check はその出力を読み替えるだけです。warn / fail の行の下に出る hint もツールの文言です。
 ツールが 1 つ失敗しても（HTTP エラーなど）その項目が fail になるだけで、他の項目は実行されます。
+項目 6 だけは例外です。ノードの証明書ファイルは REST API からは見えないため、check が自分でファイルを読んで判定します（対応する MCP ツールはありません）。
 
 | exit code | 意味 |
 |---|---|
@@ -432,6 +435,7 @@ symbol check: WARN (node.example:3001, mainnet, 2026-01-15T07:00:03+09:00)
 [warn] voting_key_status: active key 0A1B2C3D… expires in about 12.4 days (epoch 4321, estimated 2026-01-27T16:40:00+09:00 (2026-01-27T07:40:00.000Z))
   hint: Active voting key 0A1B2C3D… expires at epoch 4321 in about 12.4 days (...) and no successor key is registered.
 [ok] finality_participation: epoch 4290: participated (signed prevote and precommit)
+[skip] certificate: no --cert given; pass --cert <path> for each copy of the node certificate to check its expiry
 ```
 
 `--format json` は同じレポートを 1 つの JSON で出力します: `{ verdict, exitCode, node: { host, network }, checkedAt,
@@ -442,15 +446,65 @@ checks: [{ id, status, detail, hint }], warnDays, account }`。`verdict` は `ok
 ```
 MAILTO=you@example.com
 0 7 * * * SYMBOL_NODE_URL=https://node.example:3001 SYMBOL_STATE_DIR=/var/lib/symbol-mcp-server \
-  npx --yes symbol-mcp-server check --account NXXX... --warn-days 14 --quiet
+  npx --yes symbol-mcp-server check --account NXXX... --warn-days 14 --quiet \
+  --cert /path/to/target/nodes/node/cert/node.crt.pem \
+  --cert /path/to/target/gateways/rest-gateway/api-node-config/cert/node.crt.pem
 ```
+
+ここでは紙面に収めるために改行しています。cron には行の継続が無いので、crontab では 1 行で書いてください。
 
 - **check は通知を行いません。** stdout / stderr への出力と exit code だけで、メールは cron（`MAILTO`）に任せます。
   通信先は `SYMBOL_NODE_URL` と `SYMBOL_REFERENCE_NODES` だけで、サーバーと同じく読み取り専用です。`SYMBOL_STATE_DIR` を
   設定している場合、実行のたびに `symbol_harvester_watch` と同じファイルへスナップショットを 1 件追記します（新しい 60 件を保持）。
+  `--cert` を指定した場合は、実行しているマシン上の指定ファイルを読みます。その内容をどこかへ送ることはありません。
 - 全体の実行時間は 120 秒が上限です。上限に達すると残りの項目は skip になり、理由を stderr に出し、総合判定は最良でも WARN で、
   `--quiet` でも出力します。
 - サブコマンド名の打ち間違いは従来どおりサーバーの「未知の引数」として exit 2 になります。
+
+### ノード証明書ファイル（`--cert`）
+
+symbol-bootstrap で構築したノードは、証明書を 2 か所に持っています。ノード本体が使う
+`target/nodes/node/cert/node.crt.pem` と、REST ゲートウェイ用のコピー
+`target/gateways/rest-gateway/api-node-config/cert/node.crt.pem` です。`symbol-bootstrap renewCertificates` は
+前者を更新しますが、後者には触れません。REST 側のコピーだけが期限切れになると、ゲートウェイがノードと通信できなくなり、
+`/node/health` が `apiNode: down` を返します。両方のファイルを渡しておけば、そうなる前に `check` が知らせます。
+
+```
+symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
+  --cert target/gateways/rest-gateway/api-node-config/cert/node.crt.pem
+```
+
+```
+[warn] certificate: warn (copies differ: target/nodes/node/cert/node.crt.pem vs target/gateways/rest-gateway/api-node-config/cert/node.crt.pem)
+  target/nodes/node/cert/node.crt.pem: ok, expires 2027-01-20T02:11:09.000Z, 370 days left, sha256 0A:1B:2C:…
+  target/gateways/rest-gateway/api-node-config/cert/node.crt.pem: ok, expires 2026-03-01T02:11:09.000Z, 45 days left, sha256 3D:4E:5F:…
+```
+
+- **ファイルごとの判定**: 期限切れ、または残り 7 日未満なら `fail`（7 日は固定で、オプションはありません）。残りが
+  `--cert-warn-days` 日未満なら `warn`（既定 30、1 以上の整数。`--warn-days` とは独立）。それ以外は `ok`。残り日数は
+  現在時刻から証明書の notAfter までの日数の切り捨てなので、最後の 1 日は 0 です。複数の証明書を含むファイル
+  （`node.full.crt.pem`）は先頭の証明書で判定します。
+- **コピーの一致**: 2 ファイル以上を渡すと、SHA-256 指紋がすべて同じかを確かめます。違えば項目は少なくとも `warn` になり、
+  どのファイルどうしが違うかを出します。片方だけ更新された状態は、古いコピーの期限よりずっと前、更新したその日から
+  ここに出ます。同じパスを 2 回渡すと、自分自身と比べることになるため、引数エラーにします（パスは書かれたとおりに、
+  `.` と `..` を解決したうえで比べます。同じファイルへのリンクや、大文字小文字を区別しないファイルシステムでの別の書き方は
+  検出しません）。
+- **項目の判定**は、各ファイルの判定と一致チェックのうち最も悪いものです。読めないファイル・証明書でないファイルは
+  理由付きで fail になり（`cannot be read (ENOENT)`、`not a certificate …`）、ほかのファイルとほかの項目の確認は続きます。
+- **ノードのサーバー上で実行してください。** ファイルはローカルディスクから読みます。REST API からは見えないので、
+  MCP ツールではできません。相対パスはカレントディレクトリ基準です。cron はホームディレクトリでコマンドを起動するので、
+  cron では絶対パスを指定してください。
+- **鍵は渡さないでください。** 内容に `PRIVATE KEY`（PEM 形式の秘密鍵に必ず付くラベル）を含むファイルは解析せず、
+  `a private key was passed; pass the certificate (.crt.pem)` という理由で fail にします。それ以外の「証明書でないファイル」は
+  `not a certificate` で fail になります。どちらの場合も、レポートに載るのは、指定されたパス、判定、notAfter（ISO 8601、UTC）、
+  残り日数、SHA-256 指紋と、JSON では subject の CN だけです。ファイルのそれ以外の内容は出力しません。
+- `--format json` では、実行された `certificate` 項目に `files: [{ path, status, notAfter, daysLeft, fingerprint256,
+  commonName, reason }]` が付きます（`reason` は使えなかったファイルの理由で、それ以外は null。`daysLeft` は期限切れ後は負）。
+- 実行の途中でノードが応答しなくなり、ノードに問い合わせる項目がすべてそのために失敗した場合の exit code は、ファイルの結果に
+  かかわらず 3 のままです。`certificate` の行は出力されます。起動時に `/node/info` を読めない場合（ノードが応答しない、
+  またはエラーを返す場合）は、`certificate` も含めて何も確認しません。exit code は 3 で、stderr の行だけが出力されます。
+  この項目は事前に知らせるためのものです。ノードがその状態になった後は、ファイルを直接確認してください
+  （`openssl x509 -noout -enddate -in <file>`）。
 
 ## セキュリティ
 
@@ -459,6 +513,10 @@ MAILTO=you@example.com
   ノードにはそのアドレスを問い合わせます。秘密鍵を誤って貼り付けてもノードには届かず、エラー文にも先頭 8 文字までしか出ません。
   呼び出し間で何も保存しません。例外は `symbol_harvester_watch` で、`SYMBOL_STATE_DIR` を設定した
   ときだけ、解錠中ハーベスターの公開鍵・高さ・時刻のスナップショットをノードごとに保存します（秘密情報なし。ファイルを消せば初期化）。
+- **証明書ファイルは指定されたときだけ。** MCP サーバーは証明書も鍵も読みません。読むのは `check --cert <path>` だけで、
+  対象は指定されたファイルだけ、場所は実行しているマシン上です。鍵ファイルを自分から開くことはなく、PEM 形式の秘密鍵
+  （内容に `PRIVATE KEY` を含むファイル）を誤って渡された場合は解析せずに拒否します。ファイルの内容で出力するのは証明書の
+  期限・SHA-256 指紋・CN だけで、どこにも送りません。
 - **通信先は固定。** 通信するのは `SYMBOL_NODE_URL` と、`symbol_network_compare` / `symbol_version_drift` に限り
   `SYMBOL_REFERENCE_NODES` のホストだけです。ツール引数で URL を受け取らないため、モデルがリクエストを別ホストへ向けることはできません。
   テレメトリはありません。

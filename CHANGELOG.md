@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `check --cert <path>` (repeat it for each copy) adds a `certificate` item that reads the node's
+  certificate files on the machine it runs on: fail when a certificate has expired or has fewer
+  than 7 days left, warn with fewer than `--cert-warn-days` (default 30) or when the files are not
+  copies of one certificate, as after a renewal that updated the node's file but not the REST
+  gateway's copy. A PEM private key passed by mistake (a file whose content contains
+  `PRIVATE KEY`) is refused without being parsed, and only the path, expiry date, days left,
+  SHA-256 fingerprint and common name are reported. Without `--cert` the report lists the item as
+  skipped; the MCP tools and their definitions do not change.
+
 ## [0.9.3] - 2026-09-29
 
 > No MCP host restart is needed after upgrading: the tool and prompt definitions differ from 0.9.2

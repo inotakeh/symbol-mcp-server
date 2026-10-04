@@ -459,16 +459,32 @@ describe('parseCliArgs: check', () => {
   };
 
   it('has defaults', () => {
-    expect(options([])).toEqual({ account: null, warnDays: 14, format: 'text', quiet: false });
+    expect(options([])).toEqual({
+      account: null,
+      warnDays: 14,
+      certPaths: [],
+      certWarnDays: 30,
+      format: 'text',
+      quiet: false,
+    });
   });
 
   it('accepts --flag value and --flag=value, in any order', () => {
     expect(
       options(['--quiet', '--account', ADDRESS, '--warn-days', '30', '--format', 'json']),
-    ).toEqual({ account: ADDRESS, warnDays: 30, format: 'json', quiet: true });
+    ).toEqual({
+      account: ADDRESS,
+      warnDays: 30,
+      certPaths: [],
+      certWarnDays: 30,
+      format: 'json',
+      quiet: true,
+    });
     expect(options([`--account=${ADDRESS}`, '--warn-days=1', '--format=text'])).toEqual({
       account: ADDRESS,
       warnDays: 1,
+      certPaths: [],
+      certWarnDays: 30,
       format: 'text',
       quiet: false,
     });
@@ -501,6 +517,45 @@ describe('parseCliArgs: check', () => {
     expect(usage(['--warn-days='])).toContain('--warn-days needs a value');
     expect(usage(['--format', 'json', '--format=text'])).toContain('more than once');
     expect(usage(['--quiet=1'])).toContain('--quiet takes no value');
+  });
+
+  it('collects --cert in the order given, as --cert path or --cert=path', () => {
+    expect(
+      options(['--cert', 'a.crt', '--cert=dir/b.crt', '--quiet', '--cert', '/abs/c.crt']).certPaths,
+    ).toEqual(['a.crt', 'dir/b.crt', '/abs/c.crt']);
+    expect(options(['--cert', 'a.crt']).certWarnDays).toBe(30);
+  });
+
+  it('takes --cert-warn-days as a whole number of 1 or more, apart from --warn-days', () => {
+    expect(options(['--cert-warn-days', '45']).certWarnDays).toBe(45);
+    expect(options(['--cert-warn-days=1']).certWarnDays).toBe(1);
+    expect(options(['--cert-warn-days', '3650']).certWarnDays).toBe(3650);
+    expect(options(['--warn-days', '20', '--cert-warn-days', '60'])).toMatchObject({
+      warnDays: 20,
+      certWarnDays: 60,
+    });
+    for (const bad of ['0', '-1', '1.5', '1e2', 'thirty', ' 30', '0x1e', '9'.repeat(30)]) {
+      expect(usage(['--cert-warn-days', bad])).toContain(
+        '--cert-warn-days must be a whole number, 1 or more (default 30)',
+      );
+    }
+    expect(usage(['--cert-warn-days', '30', '--cert-warn-days=31'])).toContain('more than once');
+  });
+
+  it('rejects a --cert without a value and the same file given twice', () => {
+    expect(usage(['--cert'])).toContain('--cert needs a value, e.g. --cert <path>');
+    expect(usage(['--cert', '--quiet'])).toContain('--cert needs a value');
+    expect(usage(['--cert='])).toContain('--cert needs a value');
+    expect(usage(['--cert', 'a.crt', '--cert', 'a.crt'])).toContain(
+      '--cert "a.crt" was given more than once',
+    );
+    // The same file written another way, relative or absolute.
+    expect(usage(['--cert', 'a.crt', '--cert=./dir/../a.crt'])).toContain('more than once');
+    expect(usage(['--cert', 'a.crt', '--cert', join(process.cwd(), 'a.crt')])).toContain(
+      'more than once',
+    );
+    // An unknown flag names the two new options too.
+    expect(usage(['--certs', 'a.crt'])).toContain('--cert, --cert-warn-days');
   });
 
   it('shows the general help for check --help', () => {
@@ -572,6 +627,74 @@ describe('runCli check', () => {
     expect(loud.out.join('')).toMatch(/^symbol check: OK \(node\.test:3001, mainnet, /);
   });
 
+  it('reads the --cert files and fails the certificate item for one that is missing', async () => {
+    const fake = createFakeFetch(mainnetRoutes());
+    vi.stubGlobal('fetch', fake.fetch);
+    const missing = join(dirname(fileURLToPath(import.meta.url)), 'no-such-certificate.crt');
+    const { cliDeps, out, err } = deps();
+    expect(await runCli(['check', '--quiet', '--cert', missing], cliDeps)).toBe(2);
+    const lines = out.join('').split('\n');
+    expect(lines[0]).toMatch(/^symbol check: FAIL /);
+    expect(lines.slice(-3)).toEqual([
+      `[fail] certificate: fail (${missing}: cannot be read (ENOENT))`,
+      `  ${missing}: fail, cannot be read (ENOENT)`,
+      '',
+    ]);
+    expect(err).toEqual([]);
+    // The file is read on this machine: the requests are those of a run without --cert.
+    const without = createFakeFetch(mainnetRoutes());
+    vi.stubGlobal('fetch', without.fetch);
+    expect(await runCli(['check'], deps().cliDeps)).toBe(0);
+    expect(fake.requests.map((u) => u.href)).toEqual(without.requests.map((u) => u.href));
+  });
+
+  it('passes --cert-warn-days from the command line to the certificate item', async () => {
+    // A synthetic certificate (test/fixtures/cert/README.md) that expires at the end of 2099.
+    const cert = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      'fixtures',
+      'cert',
+      'node-a.crt',
+    );
+    const notAfter = new Date('2099-12-31T23:59:59.000Z').getTime();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      // 45 days before notAfter: ok at the default 30, warn at 60 and at 46.
+      vi.setSystemTime(notAfter - 45 * 86_400_000);
+      const run = async (...extra: string[]) => {
+        vi.stubGlobal('fetch', createFakeFetch(mainnetRoutes()).fetch);
+        const { cliDeps, out } = deps({ now: () => new Date() });
+        await runCli(['check', '--cert', cert, ...extra], cliDeps);
+        return out.join('').split('\n');
+      };
+      expect(await run()).toContain(
+        '[ok] certificate: ok (1 file, expires 2099-12-31, 45 days left)',
+      );
+      expect(await run('--cert-warn-days', '60')).toContain(
+        '[warn] certificate: warn (1 file, expires 2099-12-31, 45 days left)',
+      );
+      expect(await run('--cert-warn-days=46', '--format', 'json')).toContain(
+        '      "detail": "warn (1 file, expires 2099-12-31, 45 days left)",',
+      );
+      expect(await run('--cert-warn-days=45', '--format', 'json')).toContain(
+        '      "detail": "ok (1 file, expires 2099-12-31, 45 days left)",',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('exits 3 for the same --cert twice, before any request', async () => {
+    const fake = createFakeFetch(mainnetRoutes());
+    vi.stubGlobal('fetch', fake.fetch);
+    const { cliDeps, out, err } = deps();
+    expect(await runCli(['check', '--cert', 'a.crt', '--cert', 'a.crt'], cliDeps)).toBe(3);
+    expect(out).toEqual([]);
+    expect(err[0]).toContain('symbol-mcp-server check: --cert "a.crt" was given more than once');
+    expect(fake.requests).toEqual([]);
+  });
+
   it('still prints with --quiet when the exit code is not 0', async () => {
     const routes = {
       ...mainnetRoutes(),
@@ -615,6 +738,52 @@ describe('formatCheckText and formatCheckJson', () => {
         '',
       ].join('\n'),
     );
+  });
+
+  it('prints one line per file under the certificate item, after its hint line', () => {
+    const fingerprint = Array.from({ length: 32 }, () => 'AB').join(':');
+    const files = [
+      {
+        path: 'node/cert/node.crt.pem',
+        status: 'ok',
+        notAfter: '2027-10-05T02:11:09.000Z',
+        daysLeft: 366,
+        fingerprint256: fingerprint,
+        commonName: 'test-node-a',
+        reason: null,
+      },
+      {
+        path: 'rest/cert/node.key.pem',
+        status: 'fail',
+        notAfter: null,
+        daysLeft: null,
+        fingerprint256: null,
+        commonName: null,
+        reason: 'a private key was passed; pass the certificate (.crt.pem)',
+      },
+    ] as const;
+    const withFiles: CheckReport = {
+      ...report,
+      checks: [
+        { id: 'node_health', status: 'ok', detail: 'healthy', hint: null },
+        { id: 'certificate', status: 'fail', detail: 'fail (two files)', hint: 'a hint', files },
+      ],
+    };
+    expect(formatCheckText(withFiles).split('\n').slice(1)).toEqual([
+      '[ok] node_health: healthy',
+      '[fail] certificate: fail (two files)',
+      '  hint: a hint',
+      `  node/cert/node.crt.pem: ok, expires 2027-10-05T02:11:09.000Z, 366 days left, sha256 ${fingerprint}`,
+      '  rest/cert/node.key.pem: fail, a private key was passed; pass the certificate (.crt.pem)',
+      '',
+    ]);
+    expect(JSON.parse(formatCheckJson(withFiles))).toEqual(withFiles);
+    // A skipped certificate item has no file lines.
+    const skipped = formatCheckText({
+      ...report,
+      checks: [{ id: 'certificate', status: 'skip', detail: 'no --cert given', hint: null }],
+    });
+    expect(skipped.split('\n').slice(1)).toEqual(['[skip] certificate: no --cert given', '']);
   });
 
   it('falls back to UTC without a time zone and uses no escape sequences', () => {
@@ -674,7 +843,7 @@ describe('src/cli/', () => {
   it('imports nothing from the MCP SDK, so it can move to its own package', () => {
     const dir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'cli');
     const files = readdirSync(dir).filter((f) => f.endsWith('.ts'));
-    expect(files.sort()).toEqual(['check.ts', 'format.ts']);
+    expect(files.sort()).toEqual(['certificate.ts', 'check.ts', 'format.ts']);
     for (const file of files) {
       expect(readFileSync(join(dir, file), 'utf8')).not.toMatch(/from\s+'@modelcontextprotocol/);
     }

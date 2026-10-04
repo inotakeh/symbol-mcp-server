@@ -3,6 +3,10 @@
 JSON bodies served by the fake `fetch` in `test/tools/harness.ts`. They are real REST response
 shapes so the tool layer is exercised against payloads a node actually returns.
 
+`cert/` holds the two synthetic certificates for the `certificate` item of `symbol-mcp-server
+check`; its own README has the rule for certificate and key files in tests (no `.pem` or `.key`
+file, no stored key) and the commands that made them.
+
 ## Verbatim public data
 
 Captured from a Symbol mainnet node and stored unchanged (`scripts/capture-fixtures.mjs` for the
