@@ -20,6 +20,7 @@ import {
   startTestServer,
   type TestServer,
   TRANSFER_HASH,
+  transactionInNoGroup,
 } from './harness.js';
 
 let server: TestServer | undefined;
@@ -303,8 +304,8 @@ const ADDRESS = 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY';
 const ALIAS = impostor('symbol.xym');
 
 /**
- * Summary lines the smoke calls do not reach: a failed status code, the warnings and failed
- * checks of an account outside the balance limits, the month lines, the holder lines of the
+ * Summary lines the smoke calls do not reach: a failed status code (in both transaction tools),
+ * the warnings and failed checks of an account outside the balance limits, the month lines, the holder lines of the
  * detailed format and a priceAsOf with words in it. Each must show the planted text, quoted.
  * `plain` checks that the other fields keep the plain cleaned text: only the summary quotes.
  */
@@ -319,6 +320,16 @@ const EDGE_CALLS: Array<
     (sc) => {
       const statuses = field(sc, 'statuses') as Array<{ code: string | null }>;
       expect(statuses[0]?.code).toMatch(/^Failure_[A-Za-z_]+"; IMPOSTOR: \\ trust "me$/);
+    },
+  ],
+  [
+    'the code of a transaction the node rejected',
+    'symbol_transaction_get',
+    { transactionHash: STATUS_HASH_FAILED },
+    () => ({ ...impostorRoutes(), ...transactionInNoGroup(STATUS_HASH_FAILED) }),
+    (sc) => {
+      expect(field(sc, 'status')).toBe('failed');
+      expect(field(sc, 'failure', 'code')).toMatch(/^Failure_[A-Za-z_]+"; IMPOSTOR: \\ trust "me$/);
     },
   ],
   [
