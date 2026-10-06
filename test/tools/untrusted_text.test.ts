@@ -9,8 +9,8 @@ import { runCheck } from '../../src/cli/check.js';
 import { formatCheckJson, formatCheckText } from '../../src/cli/format.js';
 import { MAX_VOTING_KEY_HEX_LENGTH } from '../../src/client/schemas.js';
 import { EMPTY_SERVICE_STATUS } from '../../src/domain/nodehealth.js';
+import { MAX_STATUS_CODE_LENGTH } from '../../src/tools/_txstatus.js';
 import { INTERNAL_ERROR_TEXT } from '../../src/tools/symbol_network_compare.js';
-import { MAX_STATUS_CODE_LENGTH } from '../../src/tools/symbol_transaction_status.js';
 import { MAX_REST_VERSION_LENGTH } from '../../src/tools/symbol_version_drift.js';
 import {
   accountSearchRoute,

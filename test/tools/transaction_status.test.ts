@@ -129,6 +129,18 @@ describe('symbol_transaction_status', () => {
     expect(sc.counts.notFound).toBe(2);
   });
 
+  it('answers with an error, not not_found, when the status request fails otherwise', async () => {
+    server = await startTestServer({
+      routes: { ...mainnetRoutes(), 'POST /transactionStatus': () => jsonResponse({}, 500) },
+    });
+    const result = await server.callTool('symbol_transaction_status', {
+      transactionHashes: [TRANSFER_HASH],
+    });
+    expect(result.isError).toBe(true);
+    expect(result.text).toMatch(/answered HTTP 500 for \/transactionStatus/);
+    expect(result.structuredContent).toBeUndefined();
+  });
+
   it('rejects malformed hashes with a hint and without contacting the node', async () => {
     server = await startTestServer();
     const before = server.requests.length;

@@ -1,25 +1,13 @@
 import * as z from 'zod/v4';
-import { RestError } from '../client/rest.js';
-import { type TransactionStatus, TransactionStatusListSchema } from '../client/schemas.js';
 import { parseHeight } from '../domain/epoch.js';
-import { labelledQuote } from '../domain/quote.js';
 import { formatInstantText, type Instant, networkTimestampToDate } from '../domain/time.js';
-import {
-  describeTransactionStatusCode,
-  TRANSACTION_GROUPS,
-  TRANSACTION_STATUS_CODES,
-} from '../domain/txstatus.js';
+import { TRANSACTION_GROUPS } from '../domain/txstatus.js';
 import { defineTool, formatInteger, maskIdentifier, nullable, ToolInputError } from './_shared.js';
 import { InstantSchema } from './_transactions.js';
+import { failedStatusText, fetchTransactionStatuses, readStatusCode } from './_txstatus.js';
 
 /** Hashes checked per call; the node answers one POST for the whole batch. */
 export const MAX_STATUS_HASHES = 20;
-
-/**
- * Longest status code kept. The code is untrusted text from the node; the longest name in
- * TransactionStatusEnum has 67 characters.
- */
-export const MAX_STATUS_CODE_LENGTH = 128;
 
 const HASH_HINT = `Pass 1 to ${MAX_STATUS_HASHES} transaction hashes, each the 64-character hex hash printed when the transaction was announced (symbol_transaction_search lists hashes for an address).`;
 
@@ -75,15 +63,6 @@ interface StatusEntry {
   readonly deadline: Instant | null;
 }
 
-/**
- * The node's status code for a summary line: a code of TransactionStatusEnum stays as it is, and
- * anything else the node sent is labelled and quoted (domain/quote.ts).
- */
-function statusCodeText(code: string | null): string {
-  if (code === null) return 'no code reported';
-  return TRANSACTION_STATUS_CODES.has(code) ? code : labelledQuote('code', code);
-}
-
 function describeStatus(entry: StatusEntry): string {
   const short = `${entry.hash.slice(0, 8)}…`;
   const deadline = entry.deadline ? `deadline ${formatInstantText(entry.deadline)}` : '';
@@ -95,7 +74,7 @@ function describeStatus(entry: StatusEntry): string {
     case 'partial':
       return `${short} partial: waiting for cosignatures (aggregate bonded with missing cosignatures; it confirms only after every required cosigner signs before the ${deadline}).`;
     case 'failed':
-      return `${short} failed: ${statusCodeText(entry.code)}${entry.codeMeaning ? ` (${entry.codeMeaning})` : ''}.`;
+      return `${short} ${failedStatusText(entry)}.`;
     default:
       return `${short} not found on this node: never announced here, rejected before being tracked, or already pruned; check the node that received the announce, or symbol_transaction_get for an older confirmed transaction.`;
   }
@@ -130,15 +109,7 @@ export const transactionStatusTool = defineTool({
     }
 
     const { properties } = await ctx.getNetworkData();
-    let found: TransactionStatus[];
-    try {
-      found = await ctx.rest.post('/transactionStatus', { hashes }, TransactionStatusListSchema);
-    } catch (err) {
-      // A 404 for the whole batch means the node tracks none of them: not an error for the caller.
-      if (err instanceof RestError && err.kind === 'not_found') found = [];
-      else throw err;
-    }
-    const byHash = new Map(found.map((s) => [s.hash.toUpperCase(), s] as const));
+    const byHash = await fetchTransactionStatuses(ctx, hashes);
 
     const statuses = hashes.map((hash): StatusEntry => {
       const s = byHash.get(hash);
@@ -152,16 +123,13 @@ export const transactionStatusTool = defineTool({
           deadline: null,
         };
       }
-      // Cleaned before it is looked up, so the meaning always belongs to the code that is shown;
-      // nothing left after cleaning counts as no code reported.
-      const code = text.clean(s.code ?? '', MAX_STATUS_CODE_LENGTH) || null;
+      const { code, codeMeaning } = readStatusCode(s.code, text);
       const height = s.height === undefined ? 0 : parseHeight(s.height);
       return {
         hash,
         group: s.group,
         code,
-        codeMeaning:
-          code !== null && code !== 'Success' ? describeTransactionStatusCode(code) : null,
+        codeMeaning,
         height: s.group === 'confirmed' && height > 0 ? height : null,
         deadline: ctx.instant(
           networkTimestampToDate(s.deadline, properties.epochAdjustmentSeconds),
