@@ -803,7 +803,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "For a Symbol voting node account, list every registered voting key with its start/end epoch and status (expired, active, future), and for active or upcoming keys compute the remaining epochs, blocks and days, the estimated expiry date/time, and a recommended renewal window (7 to 3 days before expiry). Also reports the current finalization epoch, network limits (max keys per account, min/max key lifetime, free slots), whether the balance meets minVoterBalance, and warnings when no key is active, when an active key expires within 45 days with no successor key registered to take over without a gap, when the balance is below minVoterBalance (the account cannot vote), and when every key slot is taken while an expired key holds one (advice to unlink it) or the renewal is not done.",
+      "description": "List every voting key registered on a Symbol voting node account with its start/end epoch and status (expired, active, future), and for active or upcoming keys compute the remaining epochs, blocks and days, the estimated expiry date/time, and a recommended renewal window (7 to 3 days before expiry). For whether a voting key actually signs the finalization votes, use symbol_finality_participation. Also reports the current finalization epoch, network limits (max keys per account, min/max key lifetime, free slots), whether the balance meets minVoterBalance, and warnings when no key is active, when an active key expires within 45 days with no successor key registered to take over without a gap, when the balance is below minVoterBalance (the account cannot vote), and when every key slot is taken while an expired key holds one (advice to unlink it) or the renewal is not done.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -7844,7 +7844,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Check whether a Symbol account's voting key actually took part in finalization voting: for the requested epoch (default: the latest finalized one) and optionally the N epochs before it, read the finalization proof from the node and report per epoch whether one of the account's registered voting keys signed both stages (prevote and precommit), only one, or none, plus the number of signatures in each stage. Use it after a voting key renewal to confirm the new key votes, and for periodic voting-node health checks. symbol_voting_key_status tells when a key expires; this tool tells whether it is used.",
+      "description": "Check whether a Symbol account's voting key actually took part in finalization voting: for the requested epoch (default: the latest finalized one) and optionally the N epochs before it, read the finalization proof from the node and report per epoch whether one of the account's registered voting keys signed both stages (prevote and precommit), only one, or none, plus the number of signatures in each stage. For when a voting key expires and whether a successor is registered, use symbol_voting_key_status. Use this tool after a voting key renewal to confirm the new key votes, and for periodic voting-node health checks.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {

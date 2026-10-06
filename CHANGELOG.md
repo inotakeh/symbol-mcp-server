@@ -19,6 +19,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   skipped. With `--format json`, `checks` now has 6 entries instead of 5: `certificate` is always
   included, and is `skip` without `--cert`. The MCP tools and their definitions do not change.
 
+### Changed
+
+- The descriptions of `symbol_voting_key_status` and `symbol_finality_participation` now point to
+  each other in their second sentence: the first tool says when a voting key expires, the second
+  whether the key actually signs the finalization votes. The description of
+  `symbol_voting_key_status` starts with what it does ("List every voting key …"). Only this
+  descriptive text changes; no argument or output field is added or removed.
+
 ## [0.9.3] - 2026-09-29
 
 > No MCP host restart is needed after upgrading: the tool and prompt definitions differ from 0.9.2
