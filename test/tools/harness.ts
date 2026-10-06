@@ -68,6 +68,19 @@ export function resourceNotFound(id: string): RouteHandler {
     jsonResponse({ code: 'ResourceNotFound', message: `no resource exists with id '${id}'` }, 404);
 }
 
+/**
+ * The three group lookups of symbol_transaction_get answering "no such transaction" for `hash`,
+ * as a node does for a hash it holds in none of them (a rejected transaction, an unknown hash).
+ */
+export function transactionInNoGroup(hash: string): Routes {
+  return Object.fromEntries(
+    ['confirmed', 'unconfirmed', 'partial'].map((group) => [
+      `GET /transactions/${group}/${hash}`,
+      resourceNotFound(hash),
+    ]),
+  );
+}
+
 /** Synthetic value rule of test/fixtures/README.md: SHA3-256 of a label, upper-case hex. */
 export const H = (label: string) =>
   createHash('sha3-256').update(label, 'utf8').digest('hex').toUpperCase();

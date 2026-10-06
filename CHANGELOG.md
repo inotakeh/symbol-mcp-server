@@ -21,6 +21,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `symbol_transaction_get` reports a transaction the node rejected as `failed`, with the node's
+  validation code and its meaning in the new output field `failure` (`{ code, codeMeaning }`, null
+  for every other status), instead of `not_found`. Before, a rejected transaction and an unknown
+  hash both came back as `not_found`, so asking this tool "did my transaction go through?" got the
+  advice to check the hash and the network. The tool still reads the confirmed, unconfirmed and
+  partial groups first and sends the same requests for a transaction it finds there; only for a
+  hash in none of them does it ask the node for the status (one more request). A failure of that
+  request is an error, not `not_found`. `status` has the new value `failed`, and the `not_found`
+  summary now says that the node has no failed status for the hash either.
+  `symbol_transaction_status` stays the tool for "did it go through, and why not": one request,
+  the deadline, up to 20 hashes.
 - The descriptions of `symbol_voting_key_status` and `symbol_finality_participation` now point to
   each other in their second sentence: the first tool says when a voting key expires, the second
   whether the key actually signs the finalization votes. The description of

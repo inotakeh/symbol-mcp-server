@@ -83,7 +83,7 @@
       "expectedArguments": {
         "transactionHash": "FAEEB0420BF639D4ACB6C2934BF22C3F5AB71DED20D4EAB986CF2C18B914C12F"
       },
-      "notes": "A 64-hex value is a transaction hash, not a public key. The tool checks confirmed, unconfirmed and partial groups and reports the status; messages are decoded when plain and flagged when encrypted. Whether a transaction went through or failed, and why, is symbol_transaction_status (transaction-status-check, transaction-failed-why)."
+      "notes": "A 64-hex value is a transaction hash, not a public key. The tool checks confirmed, unconfirmed and partial groups and reports the status; messages are decoded when plain and flagged when encrypted. For a hash in none of the groups it asks the node for the status once and reports failed (with the node's code and its meaning) or not_found. Whether a transaction went through or failed, and why, is still a question for symbol_transaction_status (transaction-status-check, transaction-failed-why)."
     },
     {
       "id": "mosaic-supply",
@@ -303,7 +303,7 @@
       "expectedArguments": {
         "transactionHashes": ["9539AD0F4441E381D08B69C63245364C385F5F09553AAF8A2E613AF476B6DBCB"]
       },
-      "notes": "\"Did it fail, and why\" is a status question. A rejected transaction is in none of the groups symbol_transaction_get reads (confirmed, unconfirmed, partial), so that tool can only answer not_found; symbol_transaction_status answers failed with the node's validation code and its meaning (for example Failure_Core_Insufficient_Balance). The status is what the configured node knows; the node the transaction was announced to knows most. The hash is the synthetic failed row of test/fixtures/mainnet/transaction-status.json."
+      "notes": "\"Did it fail, and why\" is a status question: symbol_transaction_status answers failed with the node's validation code and its meaning (for example Failure_Core_Insufficient_Balance) from one request, with the deadline, and for up to 20 hashes. A rejected transaction is in none of the groups symbol_transaction_get reads (confirmed, unconfirmed, partial); that tool then asks for the status as well and reports failed with the same code and meaning, so picking it no longer misleads, but it is the tool for a transaction's contents. The status is what the configured node knows; the node the transaction was announced to knows most. The hash is the synthetic failed row of test/fixtures/mainnet/transaction-status.json."
     },
     {
       "id": "harvest-income-this-month",

@@ -15,6 +15,7 @@ import {
   startTestServer,
   type TestServer,
   TRANSFER_HASH,
+  transactionInNoGroup,
 } from './harness.js';
 
 const cp = (...codePoints: number[]) => String.fromCodePoint(...codePoints);
@@ -163,6 +164,29 @@ describe('exact counts, each source once per call', () => {
       transactionHashes: [TRANSFER_HASH],
     });
     expect(result.structuredContent?.invisibleCharactersRemoved).toBe(1);
+  });
+
+  it('symbol_transaction_get counts the status code of a transaction the node rejected', async () => {
+    const hash = 'A'.repeat(64);
+    server = await startTestServer({
+      routes: routes({
+        ...transactionInNoGroup(hash),
+        'POST /transactionStatus': () =>
+          jsonResponse([
+            {
+              group: 'failed',
+              code: `Failure_Core_Past_Deadline${ZWSP}${ESC}`,
+              hash,
+              deadline: '1',
+            },
+          ]),
+      }),
+    });
+    const result = await server.callTool('symbol_transaction_get', { transactionHash: hash });
+    expect(result.isError, result.text).toBe(false);
+    expect(result.structuredContent?.invisibleCharactersRemoved).toBe(2);
+    expect(result.structuredContent?.failure).toMatchObject({ code: 'Failure_Core_Past_Deadline' });
+    expect(lastSummaryLine(result.structuredContent)).toBe(removedCharactersLine(2));
   });
 
   it('counts the cached currency alias in every call that shows it, once per call', async () => {
