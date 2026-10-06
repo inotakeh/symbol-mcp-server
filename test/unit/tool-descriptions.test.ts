@@ -39,6 +39,10 @@ const GROUPS: Readonly<Record<string, Readonly<Record<string, readonly string[]>
     symbol_harvesting_income: ['symbol_transaction_search', 'symbol_delegation_diagnose'],
     symbol_account_get: ['symbol_delegation_diagnose', 'symbol_harvesting_income'],
   },
+  voting: {
+    symbol_voting_key_status: ['symbol_finality_participation'],
+    symbol_finality_participation: ['symbol_voting_key_status'],
+  },
 };
 
 /** The first two sentences of a tool's description. */

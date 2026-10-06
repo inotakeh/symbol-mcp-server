@@ -185,7 +185,7 @@ export const finalityParticipationTool = defineTool({
   name: 'symbol_finality_participation',
   title: 'Symbol finality voting participation',
   description:
-    "Check whether a Symbol account's voting key actually took part in finalization voting: for the requested epoch (default: the latest finalized one) and optionally the N epochs before it, read the finalization proof from the node and report per epoch whether one of the account's registered voting keys signed both stages (prevote and precommit), only one, or none, plus the number of signatures in each stage. Use it after a voting key renewal to confirm the new key votes, and for periodic voting-node health checks. symbol_voting_key_status tells when a key expires; this tool tells whether it is used.",
+    "Check whether a Symbol account's voting key actually took part in finalization voting: for the requested epoch (default: the latest finalized one) and optionally the N epochs before it, read the finalization proof from the node and report per epoch whether one of the account's registered voting keys signed both stages (prevote and precommit), only one, or none, plus the number of signatures in each stage. For when a voting key expires and whether a successor is registered, use symbol_voting_key_status. Use this tool after a voting key renewal to confirm the new key votes, and for periodic voting-node health checks.",
   inputSchema,
   outputSchema,
   run: async (ctx, { account, epoch, epochs, format }) => {
