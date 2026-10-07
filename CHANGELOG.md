@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-07
+
+> **After upgrading, restart your MCP host (Claude Desktop, Claude Code and others).** This release
+> removes two tools and changes the arguments and output of others: `symbol_node_health` is merged
+> into `symbol_node_status`, and `symbol_harvester_watch` into `symbol_harvesting_status`, which no
+> longer takes an `account`; `symbol_transaction_get` has the new status `failed` and the output
+> field `failure`. 22 tools become 20. MCP clients offer the tools of the list they cached and
+> check results against it, so a host that keeps the old list can call a tool that no longer exists
+> and reject the new results until it restarts. The **Breaking** entries below say what to call
+> instead. The `check` command keeps its item ids.
+
 ### Added
 
 - `check --cert <path>` (repeat it for each copy) adds a `certificate` item that reads the node's
@@ -102,6 +113,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whether the key actually signs the finalization votes. The description of
   `symbol_voting_key_status` starts with what it does ("List every voting key …"). Only this
   descriptive text changes; no argument or output field is added or removed.
+- Dependencies: `@modelcontextprotocol/server` 2.1.0 (from 2.0.0) and `zod` 4.6.5 (from 4.6.1).
+  This update changes no tool or prompt definition.
 
 ### Fixed
 
@@ -780,7 +793,8 @@ Initial release candidate (0.1.0).
 - Every request has a timeout, a `User-Agent`, a 5 MB response cap and a concurrency limit of 4,
   and every response is schema-validated before use.
 
-[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.0...v0.9.1
