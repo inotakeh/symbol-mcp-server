@@ -305,7 +305,7 @@ export const ENV_VARS: readonly EnvVarDoc[] = [
     name: 'SYMBOL_STATE_DIR',
     required: false,
     description:
-      'Absolute directory where symbol_harvester_watch keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets). Created on first save. Unset: the tool reports the current list without a comparison.',
+      'Absolute directory where symbol_harvesting_status keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets) when it is asked to compare or save. Created on first save. Unset: the tool reports the current list without a comparison.',
   },
 ];
 

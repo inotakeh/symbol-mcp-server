@@ -26,7 +26,7 @@ import {
 import { formatCheckJson, formatCheckText } from '../../src/cli/format.js';
 import { type CliDeps, parseCliArgs, runCli } from '../../src/cli.js';
 import { UNAVAILABLE_NOTE } from '../../src/tools/symbol_finality_participation.js';
-import { NOT_SAVED_NOTE_PREFIX, RESTART_NOTE } from '../../src/tools/symbol_harvester_watch.js';
+import { NOT_SAVED_NOTE_PREFIX, RESTART_NOTE } from '../../src/tools/symbol_harvesting_status.js';
 import { createFakeFetch, jsonResponse, mainnetRoutes, TEST_NOW } from '../tools/harness.js';
 
 const ADDRESS = 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY';

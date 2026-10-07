@@ -46,7 +46,6 @@ describe('server registration', () => {
       'symbol_finality_participation',
       'symbol_delegation_diagnose',
       'symbol_version_drift',
-      'symbol_harvester_watch',
       'symbol_account_rank',
       'symbol_holdings_value',
     ]);
@@ -178,7 +177,7 @@ describe('outbound requests', () => {
     await server.callTool('symbol_fee_estimate', { transactionSizeBytes: 176 });
     await server.callTool('symbol_address_parse', { value: ACCOUNT });
     expect((await server.callTool('symbol_time_convert', { epoch: 4004 })).isError).toBe(false);
-    await server.callTool('symbol_harvesting_status', { account: ACCOUNT });
+    await server.callTool('symbol_harvesting_status');
     await server.callTool('symbol_harvesting_income', {
       account: ACCOUNT,
       fromHeight: 5_763_675,
@@ -187,7 +186,7 @@ describe('outbound requests', () => {
     await server.callTool('symbol_transaction_status', { transactionHashes: [TRANSFER_HASH] });
     await server.callTool('symbol_finality_participation', { account: ACCOUNT, epoch: 4010 });
     await server.callTool('symbol_delegation_diagnose', { account: ACCOUNT });
-    await server.callTool('symbol_harvester_watch', { mode: 'compare' });
+    await server.callTool('symbol_harvesting_status', { mode: 'compare' });
     // symbol_version_drift is left out on purpose: like symbol_network_compare it queries the
     // reference nodes (and only them), which test/tools/version_drift.test.ts verifies.
     expect(server.requests.length).toBeGreaterThan(5);

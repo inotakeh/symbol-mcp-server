@@ -44,7 +44,6 @@ function accountCalls(account: string): Array<[string, Record<string, unknown>]>
   return [
     ['symbol_account_get', { account }],
     ['symbol_voting_key_status', { account }],
-    ['symbol_harvesting_status', { account }],
     ['symbol_harvesting_income', { account, fromHeight: 5_763_675, toHeight: 5_763_675 }],
     ['symbol_finality_participation', { account, epoch: 4010 }],
     ['symbol_delegation_diagnose', { account }],
@@ -59,7 +58,6 @@ function accountCalls(account: string): Array<[string, Record<string, unknown>]>
 const READS_ACCOUNT = new Set([
   'symbol_account_get',
   'symbol_voting_key_status',
-  'symbol_harvesting_status',
   'symbol_harvesting_income',
   'symbol_finality_participation',
   'symbol_delegation_diagnose',

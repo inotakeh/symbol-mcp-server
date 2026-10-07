@@ -167,7 +167,6 @@ describe('tool arguments never reach a request path or query as raw text', () =>
   const CALLS: ReadonlyArray<readonly [string, (raw: string) => Record<string, unknown>]> = [
     ['symbol_account_get', (raw) => ({ account: raw })],
     ['symbol_voting_key_status', (raw) => ({ account: raw })],
-    ['symbol_harvesting_status', (raw) => ({ account: raw })],
     ['symbol_harvesting_income', (raw) => ({ account: raw, fromHeight: 1, toHeight: 2 })],
     ['symbol_finality_participation', (raw) => ({ account: raw })],
     ['symbol_delegation_diagnose', (raw) => ({ account: raw })],

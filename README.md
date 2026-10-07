@@ -101,8 +101,8 @@ for each block it harvests; `blocksHarvested` and `blocksBeneficiaryOnly` count 
 2. Double-click it, or open Claude Desktop's **Settings → Extensions** and install it there.
 3. In the settings form, enter the **Symbol node URL**, for example `https://<node-host>:3001` (your
    own node is best, see [Choosing a node](#choosing-a-node)). It is required: the extension does
-   not start without it. Optionally set the time zone and a state directory for
-   `symbol_harvester_watch`; the other fields can stay empty.
+   not start without it. Optionally set the time zone and a state directory, where
+   `symbol_harvesting_status` keeps its snapshots; the other fields can stay empty.
 4. Enable the extension.
 
 After changing these settings later, try them in a new conversation.
@@ -271,7 +271,7 @@ On Windows, a client that cannot start `npx` may need `"command": "npx.cmd"`.
 | `SYMBOL_TIMEZONE` | no | IANA zone such as `Asia/Tokyo`. Adds a local time next to every UTC timestamp. |
 | `SYMBOL_REFERENCE_NODES` | no | Comma-separated `https://` node URLs that `symbol_network_compare` and `symbol_version_drift` check against. No other host is ever contacted. |
 | `SYMBOL_REQUEST_TIMEOUT_MS` | no | Per-request timeout, 100 to 600000. Default `10000`. |
-| `SYMBOL_STATE_DIR` | no | Absolute directory where `symbol_harvester_watch` keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets). Created on first save with mode 0700. Unset: the tool reports the current list without a comparison. |
+| `SYMBOL_STATE_DIR` | no | Absolute directory where `symbol_harvesting_status` keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets) when it is asked to compare or save. Created on first save with mode 0700. Unset: the tool reports the current list without a comparison. |
 
 ## Choosing a node
 
@@ -289,7 +289,7 @@ On Windows, a client that cannot start `npx` may need `"command": "npx.cmd"`.
 
 ## Tools
 
-All 21 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
+All 20 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
 identifiers only, never URLs. Every `account` argument (and the `address` of
 `symbol_transaction_search`) takes a base32 address, a 48-character hex address, a hex public key,
 or a namespace name such as `alice` or `alice.pay` that carries an address alias; the resolution of
@@ -308,14 +308,13 @@ a name is reported in `accountResolution` and at the start of the summary.
 | `symbol_fee_estimate` | `transactionSizeBytes` (optional) | Slow/average/median/fast fee tiers in XYM computed from the node's current multipliers, for the size given or else a transfer with 1 mosaic and a 20-character ASCII message (197 bytes). A transfer counts 160 bytes, 16 per mosaic and a plain message as its UTF-8 bytes plus 1 type byte (usually 3 bytes per Japanese character; an encrypted message is larger); this count is not for aggregate transactions. Nothing is signed or sent. |
 | `symbol_address_parse` | `value` (address, public key or namespace name) | Offline validation: checksum, network byte, base32/hex/dashed forms, and the addresses derived from a public key. A namespace name is resolved through the node to its address alias. |
 | `symbol_time_convert` | one of `height`, `epoch`, `timestamp` | Height, finalization epoch, network timestamp and wall-clock time. Exact for the past, estimated (and flagged) for the future. |
-| `symbol_harvesting_status` | `account` (optional) | Unlocked delegated harvesters on the node, harvesting limits and beneficiary percentage, and for the given account whether its linked key is unlocked here and its balance is within the limits (`minHarvesterBalance` to `maxHarvesterBalance`, both inclusive; above the maximum an account cannot harvest). |
+| `symbol_harvesting_status` | `mode` (`current`, `compare`, `compare_and_save`, `save_only`), `format` | The delegated harvesters unlocked on the node: how many there are now, and the harvesting limits and beneficiary percentage. `current` (default) reads the node only; the keys themselves come with `format: detailed`. The other modes answer whether the harvesters increased or decreased since the last stored snapshot: added and removed remote keys, count delta, and min / max / average over the snapshots of the last 30 days. Snapshots are kept in one file per node under `SYMBOL_STATE_DIR`; without it the current list is reported and no comparison is possible. `compare` reads only, `compare_and_save` also stores the current list, `save_only` stores without comparing. For one account (is its linked key unlocked here, is its balance within the limits), use `symbol_delegation_diagnose`. |
 | `symbol_network_compare` | none | Height and finalization of the node versus `SYMBOL_REFERENCE_NODES`, blocks behind the best, `lagging` flags. Explains what to do when no reference nodes are configured, and says so when none of them could be compared. |
 | `symbol_harvesting_income` | `account`, `fromDate` + `toDate` or `fromHeight` + `toHeight`, `granularity`, `format`, `output` | Harvest rewards received in the period: receipt count and exact XYM total (summed on the server as integers), harvester / beneficiary / unknown split, block counts (`blocksHarvested`: blocks the account harvested; `blocksBeneficiaryOnly`: blocks others harvested that paid it only the beneficiary share), per-day buckets in `SYMBOL_TIMEZONE` or UTC, or a list of receipts. Dates are resolved to heights from block timestamps. `granularity: monthly` gives one row per calendar month (yearly questions); `output: csv` returns the rows as CSV text for a spreadsheet while the JSON stays available. A year or more in one call is fine: the range is read in chunks of about 90 days (`fetch` reports chunks, retries and pages). |
 | `symbol_transaction_status` | `transactionHashes` (array, 1 to 20) | Where each transaction stands right now: confirmed (with height), unconfirmed, partial (waiting for cosignatures), failed (with the node's code and its meaning) or not_found. One request for the whole batch. |
 | `symbol_finality_participation` | `account`, `epoch` (optional, default latest finalized), `epochs` (1 to 20, default 1), `format` | Whether the account's voting key actually signed the finalization proof of each epoch: participated (both prevote and precommit), missed (which stage was not signed), no_active_key or unavailable, with the signature count per stage (a stage that the proof splits into several message groups counts as one stage; a signature in any of its groups counts) and a warning when no key covers the current epoch or the current epoch was missed (historical epochs never warn). |
 | `symbol_delegation_diagnose` | `account`, `recentDays` (1 to 30, default 7), `format` | Is delegated harvesting active, and if not, where does it stop: account exists, balance within the harvesting limits, importance above zero (or blocks until the next recalculation), linked/VRF/node keys, node key equal to the configured node's `nodePublicKey`, remote key unlocked on that node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Verdict `active`, `not_active` or `cannot_verify` (delegation to another node cannot be checked from here). |
 | `symbol_version_drift` | `format` | Is the node's software version behind the network majority: versions of the peers the node knows plus the reference nodes, as a distribution with the majority version and the share running something newer. Verdict `ok`, `behind` (older than the majority, or newer versions hold at least half the sample), `far_behind` (75% or more newer: peers may refuse connections) or `unknown` (no usable peers, or the node reports no version of its own). Peers that report no version yet (0.0.0.0) are counted apart (`sample.unknownVersion`), not as a version. Peer hosts and keys are never reported. |
-| `symbol_harvester_watch` | `mode` (`compare`, `compare_and_save`, `save_only`), `format` | Did the delegated harvesters unlocked on the node increase or decrease since the last call: added and removed remote keys, count delta, and min / max / average over the snapshots of the last 30 days. Snapshots are kept in one file per node under `SYMBOL_STATE_DIR`; without it the current list is reported and no comparison is possible. `compare` reads only, `compare_and_save` (default) also stores the current list, `save_only` stores without comparing. |
 | `symbol_account_rank` | `account` (optional), `mosaic` (optional; hex id or alias, default XYM), `top` (1 to 100, default 20), `maxRank` (100 to 5000, default 1000), `format` | Where an account ranks among the holders of a mosaic and who the top holders are, like an explorer rich list: the account's balance, share of supply (4 decimals, integer arithmetic) and rank, the top N holders with balances and shares, and the combined top-N share. Holders are read from `GET /accounts?orderBy=balance` 100 per request, one request at a time, until the account is found or `maxRank` is reached (`rankBeyond` then says so). Omit `account` for the top list only. Ties are ordered by the node; no labels (exchange, foundation) are attached. |
 | `symbol_holdings_value` | `account`, `unitPrice` (decimal string, e.g. `"12.34"`), `currency` (3 to 6 upper-case letters), `priceSource` (optional), `priceAsOf` (optional), `mosaic` (optional, default XYM), `decimals` (optional, 0 to 12), `format` | What the account's balance of a mosaic is worth at a unit price **the caller supplies**: the balance, the normalised price, the exact product and the product rounded half up, all in integer arithmetic. The rounding keeps the digits Intl (Unicode CLDR) gives the currency (JPY 0, USD 2, KWD 3, CLF 4); CLDR differs from ISO 4217 for a few codes (HUF, IDR, IQD and IRR have 0 digits in CLDR; ISO 4217 gives IQD 3 and the others 2), and the digits come from the Node.js that runs the server, so pass `decimals` to fix them. A code Intl does not know (BTC, USDT) is not rounded, and neither is a non-zero value that would round to 0; `value.decimalsSource` says which rule applied. The server never fetches or checks prices; `priceSource` and `priceAsOf` are echoed so the answer states where the number came from. Not a tax computation: no fees, spread or taxes. |
 
@@ -383,10 +382,11 @@ failing checks, and says whether the node is synced;
 answers ok / behind / far_behind. Both are the first things to look at after a node OS migration.
 
 **"Have my delegators come back after the migration?"**
-→ `symbol_harvester_watch {}` compares the harvesters unlocked on the node right now with the last
-stored snapshot (added and removed keys, count delta, 30-day min / max / average) and stores today's
-list for the next check. Needs `SYMBOL_STATE_DIR`; without it the tool reports the current count and
-says no comparison is possible.
+→ `symbol_harvesting_status { "mode": "compare_and_save" }` compares the harvesters unlocked on the
+node right now with the last stored snapshot (added and removed keys, count delta, 30-day min / max /
+average) and stores today's list for the next check; `"mode": "compare"` looks without storing.
+Needs `SYMBOL_STATE_DIR`; without it the tool reports the current count and says no comparison is
+possible. Without a mode the tool answers "how many delegators right now?" and touches no snapshot.
 
 **"Where does NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY rank by XYM holdings? Who are the top 10?"**
 → `symbol_account_rank { "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY", "top": 10 }`
@@ -416,7 +416,7 @@ prompt text contains no addresses, hosts, keys or dates of its own.
 | Prompt | What it walks through |
 |---|---|
 | `voting_key_renewal_checklist` | `symbol_voting_key_status` (expiry, renewal window, free slots and its warnings as given), `symbol_node_status` (stop if not synced, or if the sync could not be judged; its verdict and the checks that are not ok go under open items), `symbol_network_compare` (sync reported as not confirmed when it could not compare), then, after the operator has announced the VotingKeyLink outside this server, `symbol_transaction_status` on the hash, a second `symbol_voting_key_status` to confirm the new key, and `symbol_finality_participation` once the new key's start epoch is finalized. Ends with a four-line summary. |
-| `monthly_health_check` | `symbol_node_status` (verdict, sync, version and peer count; unhealthy goes first), `symbol_version_drift` (behind or far_behind goes first), `symbol_network_compare` (sync reported as not confirmed when it could not compare), `symbol_harvester_watch` (delta against the previous snapshot; `symbol_harvesting_status` only on request), `symbol_voting_key_status` (remaining days and expiry; its warnings go first, as given), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month (the income, then the blocks the account harvested itself and the blocks of delegators or others as separate items). Reports on one screen as Action required / Attention / Normal. |
+| `monthly_health_check` | `symbol_node_status` (verdict, sync, version and peer count; unhealthy goes first), `symbol_version_drift` (behind or far_behind goes first), `symbol_network_compare` (sync reported as not confirmed when it could not compare), `symbol_harvesting_status` in mode `compare_and_save` (delta against the previous snapshot), `symbol_voting_key_status` (remaining days and expiry; its warnings go first, as given), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month (the income, then the blocks the account harvested itself and the blocks of delegators or others as separate items). Reports on one screen as Action required / Attention / Normal. |
 
 The server also sends short `instructions` at initialize time (read-only, account formats, which
 tool answers the questions that are easy to mix up: harvest income, voting keys, node health and
@@ -442,7 +442,7 @@ Node.js 22 or newer. Started without arguments the binary is still the MCP serve
 |---|---|---|
 | 1 | `node_health` | The verdict of `symbol_node_status`: healthy / degraded / unhealthy. A node whose latest block is older than 10 target block times (5 minutes on mainnet) is degraded, older than 30 unhealthy |
 | 2 | `version_drift` | `symbol_version_drift`: ok / behind or unknown / far_behind |
-| 3 | `harvester_watch` | `symbol_harvester_watch` (compare and save): warn when fewer harvesters are unlocked than at the previous run, or when the snapshot could not be saved. Skipped without `SYMBOL_STATE_DIR` |
+| 3 | `harvester_watch` | `symbol_harvesting_status` in mode `compare_and_save`: warn when fewer harvesters are unlocked than at the previous run, or when the snapshot could not be saved. Skipped without `SYMBOL_STATE_DIR` |
 | 4 | `voting_key_status` | With `--account`: warn when the active voting key expires within `--warn-days` (default 14, 1 to 120), fail within 3 days or without an active key; ok when a successor key is already registered without a gap. Fail also when the balance is below `minVoterBalance` (the account cannot vote), successor or not. Full key slots change no status, but the hint of a warn or fail then adds the tool's slot warning, unless a successor key is already registered. Skipped without `--account` |
 | 5 | `finality_participation` | With `--account`, latest finalized epoch: participated / missed or no proof on the node / no key covers the epoch. Skipped without `--account` |
 | 6 | `certificate` | With `--cert <path>`, once for each copy of the node certificate: fail when a certificate has expired or has fewer than 7 days left, warn with fewer than `--cert-warn-days` (default 30) or when the files are not copies of one certificate. A file that cannot be read, or is not a certificate, fails with the reason. Skipped without `--cert`. See [Node certificate files](#node-certificate-files---cert) |
@@ -491,7 +491,7 @@ it on one line in the crontab.
 - **The check sends no notification.** It writes to stdout and stderr and sets the exit code; mail
   is cron's job (`MAILTO`). It contacts `SYMBOL_NODE_URL` and the `SYMBOL_REFERENCE_NODES`, nothing
   else, and is as read-only as the server. With `SYMBOL_STATE_DIR` set, every run appends one
-  snapshot to the file `symbol_harvester_watch` uses (the newest 60 are kept). With `--cert` it
+  snapshot to the file `symbol_harvesting_status` uses (the newest 60 are kept). With `--cert` it
   reads the named files on the machine it runs on; nothing of them is sent anywhere.
 - The whole run is limited to 120 seconds. At the limit the remaining items are skipped, the reason
   goes to stderr, and the result is WARN at best, printed even with `--quiet`.
@@ -556,9 +556,10 @@ symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
   mnemonic or token. A 64-character hex account argument is taken as a public key and turned into
   its address on this machine, and the node is asked for the address: a private key pasted by
   mistake never reaches the node, and errors show at most its first 8 characters. Nothing is stored
-  between calls, except that `symbol_harvester_watch` keeps its per-node snapshot of unlocked
-  harvester public keys, heights and times under `SYMBOL_STATE_DIR` when that variable is set (no
-  secrets; delete the file to start over).
+  between calls, except that `symbol_harvesting_status`, in the modes that save
+  (`compare_and_save`, `save_only`), keeps its per-node snapshot of unlocked harvester public keys,
+  heights and times under `SYMBOL_STATE_DIR` when that variable is set (no secrets; delete the file
+  to start over).
 - **Certificate files only on request.** The MCP server reads no certificate or key. Only
   `check --cert <path>` does, and only the files named there, on the machine it runs on. It opens
   no key file on its own, and a PEM private key passed by mistake (a file whose content contains
@@ -669,7 +670,7 @@ https://nodewatch.symbol.tools/; see [Choosing a node](#choosing-a-node).
 - **Holder rank is a scan, not an index.** `symbol_account_rank` reads the holder list 100 accounts per
   request down to `maxRank` (at most 5,000, i.e. 50 requests); an account below that gets `rank: null`
   with `rankBeyond`. Equal balances are ordered by the node and may swap between calls.
-- **Harvester history is local.** `symbol_harvester_watch` compares against snapshots it wrote itself
+- **Harvester history is local.** `symbol_harvesting_status` compares against snapshots it wrote itself
   under `SYMBOL_STATE_DIR`; another machine, a deleted file or a changed node key (a new node.key.pem
   after a migration) starts a new baseline. Repeated calls on the same day add repeated snapshots;
   only the newest 60 are kept.

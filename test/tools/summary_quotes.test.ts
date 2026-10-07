@@ -355,26 +355,6 @@ const EDGE_CALLS: Array<
     },
   ],
   [
-    'the below-minimum warning',
-    'symbol_harvesting_status',
-    { account: ADDRESS },
-    poorAccountRoutes,
-    (sc) => {
-      const warnings = strings(field(sc, 'account', 'warnings'));
-      expect(warnings.some((w) => w.includes(`1.000000 ${ALIAS} is below`))).toBe(true);
-    },
-  ],
-  [
-    'the above-maximum warning',
-    'symbol_harvesting_status',
-    { account: ADDRESS },
-    richAccountRoutes,
-    (sc) => {
-      const warnings = strings(field(sc, 'account', 'warnings'));
-      expect(warnings.some((w) => w.includes(`60000000.000000 ${ALIAS} exceeds`))).toBe(true);
-    },
-  ],
-  [
     'the failed balance check (below)',
     'symbol_delegation_diagnose',
     { account: ADDRESS },

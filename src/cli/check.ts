@@ -32,11 +32,11 @@ import {
   UNAVAILABLE_NOTE,
 } from '../tools/symbol_finality_participation.js';
 import {
-  harvesterWatchTool,
+  harvestingStatusTool,
   NOT_SAVED_NOTE_PREFIX,
   RESTART_NOTE,
   UNSET_NOTE,
-} from '../tools/symbol_harvester_watch.js';
+} from '../tools/symbol_harvesting_status.js';
 import { nodeStatusTool } from '../tools/symbol_node_status.js';
 import { versionDriftTool } from '../tools/symbol_version_drift.js';
 import { votingKeyStatusTool } from '../tools/symbol_voting_key_status.js';
@@ -493,9 +493,11 @@ export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<
     {
       id: 'harvester_watch',
       skip: ctx.config.stateDir ? null : UNSET_NOTE,
+      // The comparing and saving mode of symbol_harvesting_status; the item keeps the id it had
+      // when that was a tool of its own, symbol_harvester_watch.
       run: async () =>
         mapHarvesterWatch(
-          await harvesterWatchTool.run(ctx, { mode: 'compare_and_save', format: 'concise' }),
+          await harvestingStatusTool.run(ctx, { mode: 'compare_and_save', format: 'concise' }),
         ),
     },
     {

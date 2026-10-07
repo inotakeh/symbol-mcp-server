@@ -2,8 +2,9 @@
  * Keeps the user-facing documents in step with the code: every registered tool and every
  * environment variable is documented in both READMEs, server.json (the MCP Registry entry)
  * declares exactly the variables the server reads, its versions and those of package-lock.json
- * follow package.json, the two READMEs have the same number of `## ` sections, and both have a
- * heading on the Claude Desktop bundle (.mcpb).
+ * follow package.json, the two READMEs have the same number of `## ` sections, both have a
+ * heading on the Claude Desktop bundle (.mcpb), and no document a user reads names a tool that was
+ * removed (test/removed-tools.ts).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -11,9 +12,17 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ENV_VARS } from '../../src/cli.js';
 import { TOOLS } from '../../src/server.js';
+import { REMOVED_TOOLS } from '../removed-tools.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const READMES = ['README.md', 'README.ja.md'] as const;
+/** The other documents that name tools: for contributors, and the three that ship as metadata. */
+const OTHER_USER_DOCUMENTS = [
+  'CONTRIBUTING.md',
+  'SECURITY.md',
+  'server.json',
+  'mcpb/manifest.json',
+] as const;
 
 function read(file: string): string {
   return readFileSync(join(ROOT, file), 'utf8');
@@ -92,6 +101,16 @@ describe('documentation stays in sync with the code', () => {
   for (const file of READMES) {
     it(`${file} has a section on the Claude Desktop bundle (.mcpb)`, () => {
       expect(headings(read(file)).some((h) => h.includes('.mcpb'))).toBe(true);
+    });
+  }
+
+  // A tool that was removed or merged must not be named where users read what the server does.
+  // The last three files are protected: a pull request that removes a tool fails here until a
+  // human has applied its patch for them, as a release pull request does for the versions above.
+  for (const file of [...READMES, ...OTHER_USER_DOCUMENTS]) {
+    it(`${file} names no removed tool`, () => {
+      const text = read(file);
+      expect(REMOVED_TOOLS.filter((name) => text.includes(name))).toEqual([]);
     });
   }
 });

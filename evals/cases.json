@@ -24,13 +24,13 @@
     {
       "id": "delegated-harvesting-unlocked",
       "audience": "node-operator",
-      "question": "Is NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY actually harvesting on my node? Which delegated harvesters are unlocked?",
-      "question_ja": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY は私のノードで実際にハーベストできていますか。解錠中の委任ハーベスターは誰ですか。",
-      "expectedTool": "symbol_harvesting_status",
+      "question": "Is NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY actually harvesting on my node?",
+      "question_ja": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY は私のノードで本当にハーベストしてる？",
+      "expectedTool": "symbol_delegation_diagnose",
       "expectedArguments": {
         "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
       },
-      "notes": "Node-operator view: the unlocked list of the configured node first, then whether this account's linked key is in it. account is optional. For \"is my delegation working and if not why\" use symbol_delegation_diagnose, which also checks keys, balance, importance, node key and recent harvests."
+      "notes": "A question about one account is a diagnosis, also when a node operator asks it: the checks unlocked_on_node (is the account's linked key among the harvesters unlocked on the configured node) and balance_in_range answer it, with the keys, the importance, the node key and the recent harvests. symbol_harvesting_status takes no account: it counts and lists what the node has unlocked (delegator-count-now) and says how that list changed (delegator-churn)."
     },
     {
       "id": "node-lagging-reference",
@@ -152,7 +152,7 @@
         "toDate": "2026-08-31",
         "granularity": "daily"
       },
-      "notes": "\"Last month\" becomes a fromDate/toDate pair (inclusive, in SYMBOL_TIMEZONE or UTC); the server resolves the dates to heights and sums the HarvestFee receipts itself, so the model must not add amounts. Use fromHeight/toHeight instead of dates only when the user names heights. Whether the account's harvesting works is symbol_delegation_diagnose; symbol_harvesting_status lists the keys the configured node has unlocked. Neither reports income."
+      "notes": "\"Last month\" becomes a fromDate/toDate pair (inclusive, in SYMBOL_TIMEZONE or UTC); the server resolves the dates to heights and sums the HarvestFee receipts itself, so the model must not add amounts. Use fromHeight/toHeight instead of dates only when the user names heights. Whether the account's harvesting works is symbol_delegation_diagnose; symbol_harvesting_status counts the harvesters the configured node has unlocked. Neither reports income."
     },
     {
       "id": "transaction-status-check",
@@ -201,7 +201,7 @@
       "expectedArguments": {
         "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
       },
-      "notes": "\"Not working\" / \"is it active\" / \"where is it stuck\" is a diagnosis: one call returns a verdict (active / not_active / cannot_verify) and every check, with a hint where one applies. Pass the main (balance-holding) account. Leave recentDays at its default unless the user names a window. symbol_harvesting_status only says whether the linked key is unlocked on the node; symbol_harvesting_income only sums rewards."
+      "notes": "\"Not working\" / \"is it active\" / \"where is it stuck\" is a diagnosis: one call returns a verdict (active / not_active / cannot_verify) and every check, with a hint where one applies. Pass the main (balance-holding) account. Leave recentDays at its default unless the user names a window. symbol_harvesting_status is about the node, not one account (how many harvesters it has unlocked, and how that changed); symbol_harvesting_income only sums rewards."
     },
     {
       "id": "account-by-namespace-name",
@@ -237,9 +237,11 @@
       "audience": "node-operator",
       "question": "Have my delegators decreased?",
       "question_ja": "うちの委任者、減ってない？",
-      "expectedTool": "symbol_harvester_watch",
-      "expectedArguments": {},
-      "notes": "\"Decreased / increased / came back since last time\" is a comparison against the previous snapshot, which only symbol_harvester_watch keeps (one file per node under SYMBOL_STATE_DIR). The default mode compare_and_save also records today's list for the next check; pass mode \"compare\" to look without recording. symbol_harvesting_status lists the current unlocked keys but remembers nothing. Without SYMBOL_STATE_DIR the tool reports the current count and says no comparison is possible."
+      "expectedTool": "symbol_harvesting_status",
+      "expectedArguments": {
+        "mode": "compare"
+      },
+      "notes": "\"Decreased / increased / came back since last time\" is a comparison against the previous snapshot (one file per node under SYMBOL_STATE_DIR), which symbol_harvesting_status makes when asked: mode \"compare\" reads the snapshot and writes nothing; \"compare_and_save\" also records today's list for the next check. The default mode \"current\" compares nothing and answers only \"how many right now\" (delegator-count-now). Without SYMBOL_STATE_DIR the tool reports the current count and says no comparison is possible."
     },
     {
       "id": "holder-rank",
@@ -327,7 +329,7 @@
       "expectedArguments": {
         "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY"
       },
-      "notes": "\"Enabled\", \"on\" or \"active\" is the diagnosis verdict (active, not_active or cannot_verify). symbol_account_get only reports delegatedHarvesting.configured, meaning the linked and VRF keys are registered, which does not show that a node has unlocked the key; symbol_harvesting_status only says whether the linked key is unlocked on the configured node, with the balance and importance limits."
+      "notes": "\"Enabled\", \"on\" or \"active\" is the diagnosis verdict (active, not_active or cannot_verify). symbol_account_get only reports delegatedHarvesting.configured, meaning the linked and VRF keys are registered, which does not show that a node has unlocked the key; symbol_harvesting_status counts the harvesters the configured node has unlocked and gives the harvesting limits, without looking at any one account."
     },
     {
       "id": "delegator-count-now",
@@ -336,7 +338,7 @@
       "question_ja": "うちのノードの委任者は今何人？",
       "expectedTool": "symbol_harvesting_status",
       "expectedArguments": {},
-      "notes": "The current count is the unlocked list of the configured node (/node/unlockedaccount, one remote key per delegator), which symbol_harvesting_status reports with the harvesting limits; no account is needed. symbol_harvester_watch is for the change since the previous snapshot and by default also stores a new one; use it for \"decreased\" or \"came back\" (delegator-churn)."
+      "notes": "The current count is the unlocked list of the configured node (/node/unlockedaccount, one remote key per delegator), which symbol_harvesting_status counts in its default mode, with the harvesting limits; no argument is needed, and no snapshot is read or written. The keys themselves come with format \"detailed\". For \"decreased\" or \"came back\" pass mode \"compare\" (delegator-churn)."
     }
   ]
 }

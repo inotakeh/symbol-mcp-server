@@ -1,5 +1,6 @@
 /**
- * Pure rules behind symbol_harvester_watch: the snapshot file format, key-set differences,
+ * Pure rules behind the comparing and saving modes of symbol_harvesting_status (a tool of their
+ * own, symbol_harvester_watch, until 0.10.0): the snapshot file format, key-set differences,
  * history statistics and the path containment rule for the state file. No I/O here
  * (src/state/snapshotfile.ts does the reading and writing).
  */

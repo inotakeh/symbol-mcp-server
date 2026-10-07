@@ -1,5 +1,5 @@
 /**
- * The only file in src/ that touches the file system. symbol_harvester_watch keeps one snapshot
+ * The only file in src/ that writes to the file system. symbol_harvesting_status keeps one snapshot
  * file per node under SYMBOL_STATE_DIR (DESIGN-BRIEF §2-9): public keys, heights and timestamps
  * only, never secrets. Reads never throw (a bad file is reported as corrupt and treated as a
  * baseline); writes go to a temporary file in the same directory and are renamed into place,

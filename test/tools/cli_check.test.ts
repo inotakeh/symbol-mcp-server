@@ -25,7 +25,7 @@ import {
   NOT_SAVED_NOTE_PREFIX,
   RESTART_NOTE,
   UNSET_NOTE,
-} from '../../src/tools/symbol_harvester_watch.js';
+} from '../../src/tools/symbol_harvesting_status.js';
 import {
   ALIAS_NAMESPACE_NAME,
   createFakeFetch,

@@ -325,7 +325,7 @@ export const delegationDiagnoseTool = defineTool({
   name: 'symbol_delegation_diagnose',
   title: 'Symbol delegated harvesting diagnosis',
   description:
-    "Diagnose whether an account's delegated harvesting is active and, if not, where it stops. For the list of harvesters unlocked on the configured node, use symbol_harvesting_status; for how that list changed, symbol_harvester_watch; for the rewards the account earned, symbol_harvesting_income. The checks: account exists, balance within minHarvesterBalance/maxHarvesterBalance, importance above zero (or blocks until the next recalculation), linked/VRF/node keys registered, node key equal to the configured node's nodePublicKey, remote key unlocked on the configured node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Each check is ok/warn/fail/unknown, with a hint when there is something to do or explain; the verdict is active, not_active or cannot_verify. Node-side checks are possible only when the account delegates to the configured node; no other node is contacted. Read-only.",
+    "Diagnose whether an account's delegated harvesting is active and, if not, where it stops. For the harvesters unlocked on the configured node and how that list changed, use symbol_harvesting_status; for the rewards the account earned, symbol_harvesting_income. The checks: account exists, balance within minHarvesterBalance/maxHarvesterBalance, importance above zero (or blocks until the next recalculation), linked/VRF/node keys registered, node key equal to the configured node's nodePublicKey, remote key unlocked on the configured node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Each check is ok/warn/fail/unknown, with a hint when there is something to do or explain; the verdict is active, not_active or cannot_verify. Node-side checks are possible only when the account delegates to the configured node; no other node is contacted. Read-only.",
   inputSchema,
   outputSchema,
   untrustedText: true,
@@ -435,7 +435,7 @@ export const delegationDiagnoseTool = defineTool({
       }),
     );
 
-    // 2. balance_in_range (the rule shared with symbol_harvesting_status: both bounds inclusive)
+    // 2. balance_in_range (classifyHarvesterBalance: both bounds inclusive)
     const balanceState = classifyHarvesterBalance(
       rawBalance,
       properties.minHarvesterBalance,

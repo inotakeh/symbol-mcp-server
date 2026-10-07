@@ -303,7 +303,7 @@ export const SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown
   ['symbol_fee_estimate', {}],
   ['symbol_address_parse', { value: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
   ['symbol_time_convert', { height: 5_763_675 }],
-  ['symbol_harvesting_status', { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
+  ['symbol_harvesting_status', {}],
   ['symbol_network_compare', {}],
   [
     'symbol_harvesting_income',
@@ -320,8 +320,6 @@ export const SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown
   ],
   ['symbol_delegation_diagnose', { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
   ['symbol_version_drift', {}],
-  // No SYMBOL_STATE_DIR in the default harness, so the smoke call never touches the disk.
-  ['symbol_harvester_watch', { mode: 'compare' }],
   ['symbol_account_rank', { top: 5 }],
   [
     'symbol_holdings_value',
@@ -331,11 +329,14 @@ export const SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown
 
 /**
  * Extra smoke calls that do not map 1:1 to a tool (SMOKE_CALLS must): the same tools with the
- * account given as a namespace name, resolved through the fixture namespace.
+ * account given as a namespace name, resolved through the fixture namespace, and a comparing mode
+ * of symbol_harvesting_status.
  */
 export const EXTRA_SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
   ['symbol_account_get', { account: ALIAS_NAMESPACE_NAME }],
   ['symbol_address_parse', { value: ALIAS_NAMESPACE_NAME }],
+  // No SYMBOL_STATE_DIR in the default harness, so this call never touches the disk.
+  ['symbol_harvesting_status', { mode: 'compare' }],
 ];
 
 /** One HTTP response of the MCP handler, as the client received it (body read lazily). */

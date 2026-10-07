@@ -10,7 +10,7 @@
 
 [English README](README.md)
 
-[Symbol](https://docs.symbol.dev/) の REST API を 21 個の目的別ツールとして公開する、読み取り専用の
+[Symbol](https://docs.symbol.dev/) の REST API を 20 個の目的別ツールとして公開する、読み取り専用の
 [MCP](https://modelcontextprotocol.io/) サーバーです。REST エンドポイントを 1 対 1 で写すのではなく、
 各ツールが「人が実際に尋ねる質問」に答えます。
 
@@ -97,7 +97,7 @@ Blocks: 9 harvested by this account, 2 harvested by others that paid it only the
 2. ダブルクリックするか、Claude Desktop の **Settings → Extensions** からインストールします。
 3. 設定画面で **Symbol node URL**（例 `https://<node-host>:3001`）を入力します。自分のノードが最適です
    （[ノードの選び方](#ノードの選び方)を参照）。必須の項目で、未入力だと拡張機能は起動しません。必要なら
-   タイムゾーンと、`symbol_harvester_watch` の状態ディレクトリも設定します。ほかの項目は空のままで構いません。
+   タイムゾーンと、`symbol_harvesting_status` がスナップショットを置く状態ディレクトリも設定します。ほかの項目は空のままで構いません。
 4. 拡張機能を有効にします。
 
 あとで設定を変えたときは、新しい会話で試してください。
@@ -264,7 +264,7 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 | `SYMBOL_TIMEZONE` | 任意 | `Asia/Tokyo` などの IANA 名。UTC の日時の隣にローカル時刻を併記します。 |
 | `SYMBOL_REFERENCE_NODES` | 任意 | `symbol_network_compare` と `symbol_version_drift` の比較対象となる `https://` ノード URL のカンマ区切り。ここに無いホストへは一切通信しません。 |
 | `SYMBOL_REQUEST_TIMEOUT_MS` | 任意 | リクエストごとのタイムアウト（100〜600000）。既定 `10000`。 |
-| `SYMBOL_STATE_DIR` | 任意 | `symbol_harvester_watch` がノードごとのスナップショット（解錠中ハーベスターの公開鍵・高さ・時刻のみ。秘密情報なし）を置く絶対パスのディレクトリ。初回保存時に 0700 で作成。未設定なら比較なしで現在の一覧だけ返します。 |
+| `SYMBOL_STATE_DIR` | 任意 | `symbol_harvesting_status` が、比較や保存を頼まれたときにノードごとのスナップショット（解錠中ハーベスターの公開鍵・高さ・時刻のみ。秘密情報なし）を置く絶対パスのディレクトリ。初回保存時に 0700 で作成。未設定なら比較なしで現在の一覧だけ返します。 |
 
 ## ノードの選び方
 
@@ -280,7 +280,7 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 
 ## ツール
 
-21 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
+20 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
 `account` 引数（と `symbol_transaction_search` の `address`）は、base32 アドレス・48 桁の hex アドレス・hex 公開鍵のほかに、
 アドレスエイリアスを持つネームスペース名（`alice`、`alice.pay`）も受け付けます。名前の解決結果は `accountResolution` と summary の先頭に出ます。
 
@@ -297,14 +297,13 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 | `symbol_fee_estimate` | `transactionSizeBytes`（任意） | ノードの現在の乗数から算出した slow / average / median / fast の手数料目安（XYM）。サイズを渡さなければ、モザイク 1 個と ASCII 20 文字のメッセージの転送（197 バイト）として計算します。転送のサイズは 160 バイト + モザイク 1 個につき 16 バイト + 平文メッセージ（種別の 1 バイト + 本文の UTF-8 バイト数。日本語はたいてい 1 文字 3 バイト）です。暗号化メッセージは本文より大きくなります。この数え方はアグリゲートには使えません。署名も送信もしません。 |
 | `symbol_address_parse` | `value`（アドレス、公開鍵、またはネームスペース名） | オフライン検証: チェックサム、ネットワークバイト、base32 / hex / ハイフン区切り形式、公開鍵から導出したアドレス。ネームスペース名はノードでアドレスエイリアスに解決します。 |
 | `symbol_time_convert` | `height` / `epoch` / `timestamp` のいずれか 1 つ | 高さ、確定エポック、ネットワークタイムスタンプ、実時刻の相互変換。過去は実測、将来は推定（その旨を明記）。 |
-| `symbol_harvesting_status` | `account`（任意） | ノードで解錠中の委任ハーベスター、ハーベスティングの残高制限と受益者割合。アカウントを指定すると、その linked キーがこのノードで解錠されているかと、残高が制限の範囲内か（`minHarvesterBalance` 以上 `maxHarvesterBalance` 以下。上限を超えるとハーベストできない）。 |
+| `symbol_harvesting_status` | `mode`（`current` / `compare` / `compare_and_save` / `save_only`）, `format` | 設定ノードで解錠中の委任ハーベスター: いま何件か、ハーベスティングの残高制限と受益者割合。`current`（既定）はノードを読むだけで、鍵の一覧は `format: detailed` で出ます。ほかの mode は、前回保存したスナップショットより増えたか減ったかを答えます: 追加・削除されたリモート鍵、件数の差分、直近 30 日のスナップショットの最小・最大・平均。スナップショットは `SYMBOL_STATE_DIR` 配下にノードごと 1 ファイル。未設定なら現在の一覧だけを返し「比較不可」と明記。`compare` は読むだけ、`compare_and_save` は今回分も保存、`save_only` は比較せず保存。1 つのアカウントについて（linked キーがこのノードで解錠されているか、残高が制限の範囲内か）は `symbol_delegation_diagnose` を使います。 |
 | `symbol_network_compare` | なし | 自ノードと `SYMBOL_REFERENCE_NODES` の高さ・確定高さ、最良ノードとの差、`lagging` フラグ。参照ノード未設定時はその旨と対処を案内し、どの参照ノードとも比較できなかったときはそう伝える。 |
 | `symbol_harvesting_income` | `account`, `fromDate` + `toDate` または `fromHeight` + `toHeight`, `granularity`, `format`, `output` | 期間内に受け取ったハーベスト報酬: 件数と XYM 合計（サーバー側で整数のまま合算）、harvester / beneficiary / unknown の内訳、ブロックの数（`blocksHarvested`: 自分でハーベストしたブロック、`blocksBeneficiaryOnly`: 他のアカウントがハーベストし beneficiary の取り分だけを受け取ったブロック）、`SYMBOL_TIMEZONE`（未指定なら UTC）の日付ごとの集計、またはレシート一覧。日付はブロックのタイムスタンプから高さに解決。`granularity: monthly` で暦月ごと（年次の質問向け）、`output: csv` で表計算向けの CSV テキスト（JSON も併せて返す）。1 年以上を 1 回で指定してよい（約 90 日分ずつに分割して取得。`fetch` にチャンク数・再試行数・ページ数）。 |
 | `symbol_transaction_status` | `transactionHashes`（配列、1〜20 件） | 各トランザクションの現在の状態: confirmed（高さ付き）/ unconfirmed / partial（署名待ち）/ failed（ノードのコードとその意味付き）/ not_found。バッチ全体を 1 リクエストで照会。 |
 | `symbol_finality_participation` | `account`, `epoch`（任意、既定は最新の確定エポック）, `epochs`（1〜20、既定 1）, `format` | アカウントの Voting キーが各エポックのファイナリティ proof に実際に署名したか: participated（prevote と precommit の両方）/ missed（署名しなかったステージ付き）/ no_active_key / unavailable。ステージごとの署名数（proof が 1 つのステージを複数のメッセージグループに分けていても 1 ステージとして扱い、どのグループの署名でも署名済みと数える）と、現在のエポックをカバーする鍵が無い／現在のエポックが missed のときの警告（過去のエポックでは警告しない）。 |
 | `symbol_delegation_diagnose` | `account`, `recentDays`（1〜30、既定 7）, `format` | 委任ハーベストが有効か、無効ならどこで止まっているか: アカウントの存在、ハーベスト残高制限、importance（0 なら次の再計算までのブロック数）、linked / VRF / node の各鍵、node 鍵と設定ノードの `nodePublicKey` の一致、そのノードでの解錠、accountType、直近 N 日のハーベスト実績、ノード宛の委任要求トランザクション。判定は `active` / `not_active` / `cannot_verify`（別ノードへの委任はここからは確認できない）。 |
 | `symbol_version_drift` | `format` | 設定ノードのバージョンがネットワークの多数派から取り残されていないか: ノードが知るピアと参照ノードのバージョン分布、多数派の版、自ノードより新しい版の割合。判定は `ok` / `behind`（多数派より古い、または新しい版が半数以上）/ `far_behind`（75% 以上が新しい。接続を拒否され始める可能性）/ `unknown`（使えるピアが無い、または自ノードが自分の版を報告しない）。まだ版を報告していないピア（0.0.0.0）は版として数えず、`sample.unknownVersion` に別に数えます。ピアの host や鍵は出力しません。 |
-| `symbol_harvester_watch` | `mode`（`compare` / `compare_and_save` / `save_only`）, `format` | 設定ノードで解錠中の委任ハーベスターが前回より増えたか減ったか: 追加・削除されたリモート鍵、件数の差分、直近 30 日のスナップショットの最小・最大・平均。スナップショットは `SYMBOL_STATE_DIR` 配下にノードごと 1 ファイル。未設定なら現在の一覧だけを返し「比較不可」と明記。`compare` は読むだけ、`compare_and_save`（既定）は今回分も保存、`save_only` は比較せず保存。 |
 | `symbol_account_rank` | `account`（任意）, `mosaic`（任意。hex id かエイリアス名、既定は XYM）, `top`（1〜100、既定 20）, `maxRank`（100〜5000、既定 1000）, `format` | あるアカウントがモザイクの保有量で何番目か、上位は誰か（エクスプローラのリッチリスト相当）: アカウントの残高・供給量に対する割合（小数 4 桁、整数演算）・順位、上位 N 件の残高と割合、上位 N 件の合計割合。保有者は `GET /accounts?orderBy=balance` から 100 件ずつ逐次読み、見つかるか `maxRank` に達するまで続けます（達したら `rankBeyond` に出ます）。`account` を省略すると上位一覧だけ。同額の順序はノード依存で、取引所・財団などのラベルは付けません。 |
 | `symbol_holdings_value` | `account`, `unitPrice`（10 進文字列。例 `"12.34"`）, `currency`（大文字 3〜6 文字）, `priceSource`（任意）, `priceAsOf`（任意）, `mosaic`（任意。既定は XYM）, `decimals`（任意。0〜12）, `format` | **呼び出し側が与えた単価**で、アカウントのモザイク残高がいくらになるか: 残高、正規化した単価、丸め前の積、四捨五入（half up）した積。すべて整数演算。丸める桁は Intl（Unicode CLDR）がその通貨に与える桁（JPY 0、USD 2、KWD 3、CLF 4）です。CLDR は一部の通貨で ISO 4217 と異なり（HUF・IDR・IQD・IRR は CLDR では 0 桁。ISO 4217 では IQD が 3 桁、ほかは 2 桁）、桁はサーバーを動かす Node.js に依存するので、固定したいときは `decimals` を渡してください。Intl が知らないコード（BTC、USDT）は丸めず、0 でない値が丸めで 0 になる場合も丸めません。どの規則を使ったかは `value.decimalsSource` に出ます。サーバーは価格を取得も検証もしません。`priceSource` / `priceAsOf` は、チェーン上の文字列と同じく制御文字などを除去してから出力に echo され（`priceAsOf` は日付かどうかだけを確かめます）、答えに出所が残ります。税務計算ではなく、手数料・スプレッド・税は含みません。 |
 
@@ -365,9 +364,10 @@ accountType、直近のハーベスト実績、委任要求トランザクショ
 どちらもノードの OS 移行後に最初に見る項目です。
 
 **「移行後、委任者は戻ってきた？」**
-→ `symbol_harvester_watch {}` が、いま解錠されているハーベスターを前回保存したスナップショットと比較し（追加・削除された鍵、
-件数差分、30 日の最小・最大・平均）、次回のために今日の一覧を保存します。`SYMBOL_STATE_DIR` が必要で、未設定なら現在の件数と
-「比較不可」を返します。
+→ `symbol_harvesting_status { "mode": "compare_and_save" }` が、いま解錠されているハーベスターを前回保存したスナップショットと
+比較し（追加・削除された鍵、件数差分、30 日の最小・最大・平均）、次回のために今日の一覧を保存します。`"mode": "compare"` なら
+保存せずに見るだけです。`SYMBOL_STATE_DIR` が必要で、未設定なら現在の件数と「比較不可」を返します。mode を付けなければ
+「いま委任者は何人？」に答えるだけで、スナップショットには触れません。
 
 **「うちは XYM 保有量で何位？（NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY）上位 10 件は誰？」**
 → `symbol_account_rank { "account": "NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY", "top": 10 }`
@@ -393,7 +393,7 @@ Claude Desktop で「今いくら？」と聞いたときの流れは、まず�
 | Prompt | 手順 |
 |---|---|
 | `voting_key_renewal_checklist` | `symbol_voting_key_status`（失効予定・推奨ウィンドウ・空き枠と、その警告をそのまま）→ `symbol_node_status`（未同期なら中止。同期を判定できなかったときも中止。判定と ok でないチェックは要約の Open items に）→ `symbol_network_compare`（比較できなかったときは同期を未確認として報告）→ 運用者がこのサーバーの外で VotingKeyLink を送信 → そのハッシュを `symbol_transaction_status` で確認 → `symbol_voting_key_status` を再度呼んで新キーを確認 → 新キーの startEpoch が確定した後に `symbol_finality_participation` で参加を確認 → 4 行で要約。 |
-| `monthly_health_check` | `symbol_node_status`（判定・同期・バージョン・ピア数。unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare`（比較できなかったときは同期を未確認として報告）→ `symbol_harvester_watch`（前回スナップショットとの差分。`symbol_harvesting_status` は求められたときだけ） → `symbol_voting_key_status`（残り日数・失効予定。警告はそのまま先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income`（収益と、自分でハーベストしたブロック・委任者などのブロックを分けて）→ 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
+| `monthly_health_check` | `symbol_node_status`（判定・同期・バージョン・ピア数。unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare`（比較できなかったときは同期を未確認として報告）→ `symbol_harvesting_status` の mode `compare_and_save`（前回スナップショットとの差分）→ `symbol_voting_key_status`（残り日数・失効予定。警告はそのまま先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income`（収益と、自分でハーベストしたブロック・委任者などのブロックを分けて）→ 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
 
 サーバーは initialize 時に短い `instructions`（読み取り専用であること、アカウントの指定形式、取り違えやすい質問（ハーベスト報酬、Voting キー、
 ノードの健全性と同期・バージョン、トランザクションが通ったか）に使うツール、返された数値をそのまま使うこと）も送ります。
@@ -417,7 +417,7 @@ symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <
 |---|---|---|
 | 1 | `node_health` | `symbol_node_status` の判定: healthy / degraded / unhealthy。最新ブロックが目標ブロック時間の 10 倍（mainnet では 5 分）より古いノードは degraded、30 倍より古ければ unhealthy |
 | 2 | `version_drift` | `symbol_version_drift`: ok / behind または unknown / far_behind |
-| 3 | `harvester_watch` | `symbol_harvester_watch`（比較して保存）: 解錠中のハーベスターが前回より減った、またはスナップショットを保存できなかったら warn。`SYMBOL_STATE_DIR` 未設定なら skip |
+| 3 | `harvester_watch` | `symbol_harvesting_status` の mode `compare_and_save`: 解錠中のハーベスターが前回より減った、またはスナップショットを保存できなかったら warn。`SYMBOL_STATE_DIR` 未設定なら skip |
 | 4 | `voting_key_status` | `--account` 指定時: アクティブな Voting キーの失効まで `--warn-days`（既定 14、1〜120）日以内なら warn、3 日以内またはアクティブなキーが無ければ fail。後継キーが切れ目なく登録済みなら ok。残高が `minVoterBalance` 未満（投票できない）なら、後継キーの有無にかかわらず fail。キーの登録枠に空きが無いことは判定を変えませんが、warn / fail のヒントにツールの枠の警告を足します（後継キーが登録済みなら足しません）。`--account` 無しなら skip |
 | 5 | `finality_participation` | `--account` 指定時、最新の確定エポック: participated / missed またはノードに proof が無い / そのエポックをカバーする鍵が無い。`--account` 無しなら skip |
 | 6 | `certificate` | `--cert <path>` 指定時（ノード証明書のコピーごとに 1 回ずつ指定）: 期限切れ、または残り 7 日未満なら fail。残りが `--cert-warn-days`（既定 30）日未満、またはファイルどうしが同じ証明書のコピーでなければ warn。読めないファイル・証明書でないファイルは理由付きで fail。`--cert` 無しなら skip。下の「ノード証明書ファイル」を参照 |
@@ -463,7 +463,7 @@ MAILTO=you@example.com
 
 - **check は通知を行いません。** stdout / stderr への出力と exit code だけで、メールは cron（`MAILTO`）に任せます。
   通信先は `SYMBOL_NODE_URL` と `SYMBOL_REFERENCE_NODES` だけで、サーバーと同じく読み取り専用です。`SYMBOL_STATE_DIR` を
-  設定している場合、実行のたびに `symbol_harvester_watch` と同じファイルへスナップショットを 1 件追記します（新しい 60 件を保持）。
+  設定している場合、実行のたびに `symbol_harvesting_status` と同じファイルへスナップショットを 1 件追記します（新しい 60 件を保持）。
   `--cert` を指定した場合は、実行しているマシン上の指定ファイルを読みます。その内容をどこかへ送ることはありません。
 - 全体の実行時間は 120 秒が上限です。上限に達すると残りの項目は skip になり、理由を stderr に出し、総合判定は最良でも WARN で、
   `--quiet` でも出力します。
@@ -519,8 +519,9 @@ symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
 - **読み取り専用。** トランザクションの作成・署名・アナウンスは行いません。秘密鍵・ニーモニック・トークンを
   受け取る引数はありません。アカウント引数に渡された 64 文字の hex は公開鍵として扱い、このマシンでアドレスに変換して、
   ノードにはそのアドレスを問い合わせます。秘密鍵を誤って貼り付けてもノードには届かず、エラー文にも先頭 8 文字までしか出ません。
-  呼び出し間で何も保存しません。例外は `symbol_harvester_watch` で、`SYMBOL_STATE_DIR` を設定した
-  ときだけ、解錠中ハーベスターの公開鍵・高さ・時刻のスナップショットをノードごとに保存します（秘密情報なし。ファイルを消せば初期化）。
+  呼び出し間で何も保存しません。例外は `symbol_harvesting_status` の保存する mode（`compare_and_save` / `save_only`）で、
+  `SYMBOL_STATE_DIR` を設定したときだけ、解錠中ハーベスターの公開鍵・高さ・時刻のスナップショットをノードごとに保存します
+  （秘密情報なし。ファイルを消せば初期化）。
 - **証明書ファイルは指定されたときだけ。** MCP サーバーは証明書も鍵も読みません。読むのは `check --cert <path>` だけで、
   対象は指定されたファイルだけ、場所は実行しているマシン上です。鍵ファイルを自分から開くことはなく、PEM 形式の秘密鍵
   （内容に `PRIVATE KEY` を含むファイル）を誤って渡された場合は解析せずに拒否します。ファイルの内容で出力するのは証明書の
@@ -619,7 +620,7 @@ symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
 - **保有量の順位は走査で求めます。** `symbol_account_rank` は保有者一覧を 100 件ずつ `maxRank`（最大 5,000 = 50 リクエスト）まで
   読みます。それより下のアカウントは `rank: null` と `rankBeyond` になります。同額のアカウントの順序はノード依存で、
   呼び出しごとに入れ替わることがあります。
-- **ハーベスターの履歴はローカルです。** `symbol_harvester_watch` は自分が `SYMBOL_STATE_DIR` に書いたスナップショットとだけ比較します。
+- **ハーベスターの履歴はローカルです。** `symbol_harvesting_status` は自分が `SYMBOL_STATE_DIR` に書いたスナップショットとだけ比較します。
   別のマシン、ファイルの削除、ノード鍵の変更（移行で node.key.pem が変わった場合）は新しい baseline になります。同じ日に何度呼んでも
   その回数だけ積まれ、新しい 60 件だけが残ります。
 - **ハーベスト報酬の集計は 1 回あたり最大 20,000 ステートメント**（100 件 × 200 ページ）。超える期間は
