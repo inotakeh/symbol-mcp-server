@@ -52,7 +52,7 @@ const LITERAL = /"(?:[^"\\]|\\.)*"/g;
  * put before text written by others (domain/quote.ts and the tools).
  */
 const LABEL_BEFORE =
-  /(?:untrusted message: |friendlyName |host |apiNode=|db=|status |code |source |as of |alias |Namespace )$/;
+  /(?:untrusted message: |friendlyName |host |status |code |source |as of |alias |Namespace )$/;
 
 /**
  * Problems with the planted text in one summary: a MARK outside every string literal, a literal
@@ -146,7 +146,9 @@ describe('the check itself', () => {
     expect(impostorProblems(`untrusted message: ${JSON.stringify(impostor('a'))}; fee 1`)).toEqual(
       [],
     );
-    expect(impostorProblems(`apiNode=${JSON.stringify(impostor('up'))}`)).toEqual([]);
+    expect(
+      impostorProblems(`API node service reports status ${JSON.stringify(impostor('up'))}.`),
+    ).toEqual([]);
     expect(impostorProblems(`untrusted message: "${impostor('a')}"`)).toHaveLength(1);
     expect(impostorProblems(`${JSON.stringify(impostor('a'))} runs`)).toEqual([
       `line 1: no label before ${JSON.stringify(impostor('a'))}`,
@@ -242,7 +244,16 @@ describe("a node's friendlyName", () => {
     const summary = String(result.structuredContent?.summary);
     const first = summary.split('\n')[0] ?? '';
     expect(first.startsWith(impostor('fixture-node'))).toBe(false);
+    expect(first.startsWith('node.test:3001 (friendlyName ')).toBe(true);
     expect(first).toContain(`friendlyName ${JSON.stringify(impostor('fixture-node'))}`);
+    expect(first).toContain(`host ${JSON.stringify(impostor('mainnet-node.example'))}`);
+    // The statuses the node sent are in the lines of the checks they fail, quoted after a label.
+    expect(summary).toContain(
+      `- api_node fail: API node service reports status ${JSON.stringify(impostor('up'))}.`,
+    );
+    expect(summary).toContain(
+      `- db fail: Database service reports status ${JSON.stringify(impostor('up'))}.`,
+    );
     expect(impostorProblems(summary)).toEqual([]);
     // Only the summary is written this way: the field keeps the plain cleaned value.
     const node = result.structuredContent?.node as { friendlyName: string } | undefined;
@@ -267,7 +278,6 @@ const SUMMARY_SHOWS_PLANTED = new Set([
   'symbol_fee_estimate',
   'symbol_harvesting_status',
   'symbol_harvesting_income',
-  'symbol_node_health',
   'symbol_account_rank',
   'symbol_holdings_value',
 ]);
@@ -436,15 +446,13 @@ describe('the other output fields of the smoke calls', () => {
   it('keep the plain cleaned text', async () => {
     server = await startTestServer({ routes: impostorRoutes() });
     const status = (await server.callTool('symbol_node_status')).structuredContent;
-    expect(field(status, 'health', 'apiNode')).toBe(impostor('up'));
     expect(field(status, 'node', 'host')).toBe(impostor('mainnet-node.example'));
-    expect(strings(field(status, 'warnings'))).toContain(
-      `Node health: apiNode=${impostor('up')}, db=${impostor('up')}.`,
-    );
-    const health = (await server.callTool('symbol_node_health')).structuredContent;
-    const checks = field(health, 'checks') as Array<{ id: string; detail: string }>;
+    const checks = field(status, 'checks') as Array<{ id: string; detail: string }>;
     expect(checks.find((c) => c.id === 'api_node')?.detail).toBe(
       `API node service is ${impostor('up')}.`,
+    );
+    expect(checks.find((c) => c.id === 'db')?.detail).toBe(
+      `Database service is ${impostor('up')}.`,
     );
     const fee = (await server.callTool('symbol_fee_estimate')).structuredContent;
     expect(field(fee, 'currency')).toBe(ALIAS);

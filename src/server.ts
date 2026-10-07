@@ -19,7 +19,6 @@ import { mosaicGetTool } from './tools/symbol_mosaic_get.js';
 import { namespaceGetTool } from './tools/symbol_namespace_get.js';
 import { networkCompareTool } from './tools/symbol_network_compare.js';
 import { networkInfoTool } from './tools/symbol_network_info.js';
-import { nodeHealthTool } from './tools/symbol_node_health.js';
 import { nodeStatusTool } from './tools/symbol_node_status.js';
 import { timeConvertTool } from './tools/symbol_time_convert.js';
 import { transactionGetTool } from './tools/symbol_transaction_get.js';
@@ -70,7 +69,6 @@ export const TOOLS: readonly AnyToolDefinition[] = [
   finalityParticipationTool,
   delegationDiagnoseTool,
   // 0.3.0
-  nodeHealthTool,
   versionDriftTool,
   harvesterWatchTool,
   // 0.6.0

@@ -319,7 +319,6 @@ export const SMOKE_CALLS: ReadonlyArray<readonly [string, Record<string, unknown
     { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY', epoch: 4010, epochs: 2 },
   ],
   ['symbol_delegation_diagnose', { account: 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY' }],
-  ['symbol_node_health', {}],
   ['symbol_version_drift', {}],
   // No SYMBOL_STATE_DIR in the default harness, so the smoke call never touches the disk.
   ['symbol_harvester_watch', { mode: 'compare' }],

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { SERVER_INSTRUCTIONS } from '../../src/instructions.js';
 import { TOOLS } from '../../src/server.js';
 import { TOOL_ANNOTATIONS } from '../../src/tools/_shared.js';
+import { uncallableToolNamesIn } from '../removed-tools.js';
 import {
   EXTRA_SMOKE_CALLS,
   fixture,
@@ -44,7 +45,6 @@ describe('server registration', () => {
       'symbol_transaction_status',
       'symbol_finality_participation',
       'symbol_delegation_diagnose',
-      'symbol_node_health',
       'symbol_version_drift',
       'symbol_harvester_watch',
       'symbol_account_rank',
@@ -71,6 +71,20 @@ describe('server registration', () => {
       server.client.getInstructions(),
     ]);
     expect(text.match(/[0-9A-Fa-f]{64}/g) ?? []).toEqual([]);
+  });
+
+  it('names only tools that exist in what every client receives at start-up', async () => {
+    server = await startTestServer();
+    // Descriptions route to neighbouring tools by name; one that names a tool that was removed
+    // or merged sends the model to a tool that does not exist. The whole list results are
+    // checked, as above: titles, descriptions and both schemas.
+    const text = JSON.stringify([
+      await server.client.listTools(),
+      await server.client.listPrompts(),
+      server.client.getInstructions(),
+    ]);
+    for (const tool of TOOLS) expect(text).toContain(tool.name);
+    expect(uncallableToolNamesIn(text)).toEqual([]);
   });
 
   it('sends the server instructions in the initialize result', async () => {
@@ -173,7 +187,6 @@ describe('outbound requests', () => {
     await server.callTool('symbol_transaction_status', { transactionHashes: [TRANSFER_HASH] });
     await server.callTool('symbol_finality_participation', { account: ACCOUNT, epoch: 4010 });
     await server.callTool('symbol_delegation_diagnose', { account: ACCOUNT });
-    await server.callTool('symbol_node_health');
     await server.callTool('symbol_harvester_watch', { mode: 'compare' });
     // symbol_version_drift is left out on purpose: like symbol_network_compare it queries the
     // reference nodes (and only them), which test/tools/version_drift.test.ts verifies.

@@ -39,7 +39,6 @@ const TOOLS_WITH_UNTRUSTED_TEXT = [
   'symbol_harvesting_income',
   'symbol_transaction_status',
   'symbol_delegation_diagnose',
-  'symbol_node_health',
   'symbol_version_drift',
   'symbol_account_rank',
   'symbol_holdings_value',

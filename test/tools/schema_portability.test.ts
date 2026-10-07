@@ -130,8 +130,11 @@ describe('schema portability (tools/list)', () => {
     expectAnyOfNull('symbol_account_get', '#/properties/supplementalPublicKeys/properties/vrf');
     expectAnyOfNull('symbol_account_get', '#/properties/multisig');
     expectAnyOfNull('symbol_network_info', '#/properties/currency/properties/alias');
-    expectAnyOfNull('symbol_node_status', '#/properties/node/properties/port');
-    expectAnyOfNull('symbol_node_status', '#/properties/node/properties/nodePublicKey');
+    // node itself is null when /node/info failed, so its fields sit under the object branch.
+    expectAnyOfNull('symbol_node_status', '#/properties/node');
+    expectAnyOfNull('symbol_node_status', '#/properties/node/anyOf/0/properties/port');
+    expectAnyOfNull('symbol_node_status', '#/properties/node/anyOf/0/properties/nodePublicKey');
+    expectAnyOfNull('symbol_node_status', '#/properties/sync/properties/synced');
     expectAnyOfNull('symbol_voting_key_status', '#/properties/account/properties/publicKey');
   });
 });

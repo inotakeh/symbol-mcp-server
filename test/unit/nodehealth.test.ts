@@ -11,6 +11,7 @@ import {
   skewThresholds,
   storageToleranceBlocks,
 } from '../../src/domain/nodehealth.js';
+import { InvalidNetworkTimestampError } from '../../src/domain/time.js';
 
 /** Mainnet values from the fixture /network/properties. */
 const BLOCK_TIME_MS = 30_000;
@@ -56,6 +57,15 @@ describe('clock skew', () => {
     const now = new Date('2026-09-10T03:05:00.000Z');
     expect(computeClockSkewMs('173156314000', EPOCH_ADJUSTMENT, now)).toBe(-1000);
     expect(computeClockSkewMs(173_156_316_500, EPOCH_ADJUSTMENT, now)).toBe(1500);
+  });
+  it('refuses a node timestamp that gives no valid time instead of answering NaN', () => {
+    const now = new Date('2026-09-10T03:05:00.000Z');
+    // Beyond the last date JavaScript knows, and too long to be a finite number.
+    for (const timestamp of ['9000000000000000', '99999999999999999999', '9'.repeat(400)]) {
+      expect(() => computeClockSkewMs(timestamp, EPOCH_ADJUSTMENT, now)).toThrow(
+        InvalidNetworkTimestampError,
+      );
+    }
   });
   it('derives the thresholds from the block time and grades the magnitude', () => {
     expect(skewThresholds(BLOCK_TIME_MS)).toEqual({ warnMs: 15_000, failMs: 30_000 });
@@ -148,8 +158,8 @@ describe('chain tip age', () => {
     const judge = (timestamp: string) => () =>
       assessChainTipAge(timestamp, EPOCH_ADJUSTMENT, BLOCK_DATE, chainTipThresholds(BLOCK_TIME_MS));
     // Beyond the last date JavaScript knows, and too long to be a finite number.
-    expect(judge('9000000000000000')).toThrow(/is not a valid time/);
-    expect(judge('9'.repeat(400))).toThrow(/invalid network timestamp/);
+    expect(judge('9000000000000000')).toThrow(InvalidNetworkTimestampError);
+    expect(judge('9'.repeat(400))).toThrow(InvalidNetworkTimestampError);
   });
 
   it('follows the thresholds it is given', () => {

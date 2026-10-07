@@ -21,6 +21,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking: `symbol_node_health` is merged into `symbol_node_status`.** Models mixed the two up
+  ("is my node healthy?" and "is it in sync?"), and each gave half an answer. One call now gives
+  both: `symbol_node_status` returns the verdict (`healthy` / `degraded` / `unhealthy`) and the
+  seven checks of `symbol_node_health`, with the same ids, order, thresholds and wording, next to
+  the node's identity, heights, peer count and `sync.synced`. Call `symbol_node_status` wherever
+  you called `symbol_node_health`; it takes the same optional `format`.
+  - Coming from `symbol_node_health`: `verdict`, `checks`, `storage` and `time` are unchanged, and
+    `notes` starts with the same three notes. `node` and `chain` have more fields (`friendlyName`,
+    `host`, `port`, `rolesRaw`, `versionRaw`, `nodePublicKey`; `finalizationPoint`). `network` is
+    no longer the network name as a string but `{ name, identifier, matchesConfiguredNetwork }`,
+    what the node reports now (null when `/node/info` failed). The summary no longer starts with
+    `node health: …`.
+  - Coming from `symbol_node_status`: it has the new argument `format` and still works without
+    arguments. `health { apiNode, db, healthy }` and `warnings` are removed: the `api_node` and
+    `db` checks say what `health` said, the `chain_tip_age` check what the sync warning said, and
+    what no check says (the node reports another network than at start-up; `/node/peers` did not
+    answer) is an entry of `notes` and a line of the summary. A request that fails no longer fails
+    the whole call: its check is `unknown`, and `node`, `network`, `chain` or `peers` is null.
+    `sync.synced`, `sync.latestBlockTime` and `sync.ageSeconds` are null when the latest block
+    could not be judged; `synced` used to be true or false only. The summary still starts with
+    the configured host, and its first line now gives the verdict and the sync state.
+  - `check` is unchanged: the item id stays `node_health`, with the same text and the same JSON.
+    It now reads the verdict of `symbol_node_status`, which also asks the node for `/node/peers`
+    (the peer count is reported, never judged).
+  - The descriptions of `symbol_version_drift` and `symbol_network_compare`, and the server
+    instructions (`node healthy or in sync, symbol_node_status`), route both questions to
+    `symbol_node_status`. The advice of `symbol_version_drift` for a node without usable peers
+    names that tool only.
+  - The `monthly_health_check` prompt makes one call where it made two. The
+    `voting_key_renewal_checklist` prompt stops when `synced` is null as well (the sync could not
+    be judged, which it reports as such and not as a node that is behind), and lists the verdict
+    and the checks that are not ok under its open items.
 - `symbol_transaction_get` reports a transaction the node rejected as `failed`, with the node's
   validation code and its meaning in the new output field `failure` (`{ code, codeMeaning }`, null
   for every other status), instead of `not_found`. Before, a rejected transaction and an unknown
@@ -37,6 +69,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whether the key actually signs the finalization votes. The description of
   `symbol_voting_key_status` starts with what it does ("List every voting key …"). Only this
   descriptive text changes; no argument or output field is added or removed.
+
+### Fixed
+
+- A node time or a latest block timestamp that is no valid time, or a chain height that is no
+  valid number, failed `symbol_node_health` and `symbol_node_status` with "Unexpected internal
+  error". The REST client accepts any digits for these fields, so a node can send a value beyond
+  the last date or the last safe integer JavaScript knows. `symbol_node_status` now answers: the
+  check that needs the value is `unknown` (`clock_skew` for the node time, `chain_tip_age` for
+  the block timestamp, and `storage_consistent`, `finalization_lag` and `chain_tip_age` for a
+  height, with `chain` null), the fields concerned are null, and `sync.synced` is null when the
+  latest block cannot be judged. `check` reports such a node as a warning of its `node_health`
+  item (exit 1) where it reported "could not run: internal error" (exit 2). The other tools that
+  convert such a timestamp still fail on it, as before.
 
 ## [0.9.3] - 2026-09-29
 

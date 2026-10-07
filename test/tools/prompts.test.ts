@@ -6,6 +6,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { PROMPTS } from '../../src/server.js';
+import { uncallableToolNamesIn } from '../removed-tools.js';
 import { startTestServer, type TestServer } from './harness.js';
 
 let server: TestServer | undefined;
@@ -97,6 +98,15 @@ describe('prompts', () => {
     );
     expect(text).not.toMatch(/should be gone|was unlinked so its slot is free/);
     expect(text).toMatch(/not synced, stop/);
+    // synced null is "not judged", not "behind": stop too, and say what the tool says.
+    expect(text).toMatch(
+      /If synced is null, the tool could not judge it: stop here as well, and report the detail of the chain_tip_age check instead of saying that the node is behind/,
+    );
+    // The same call returns the verdict: it is reported, and adds no stop rule of its own.
+    expect(text).toMatch(
+      /Report the verdict and every check that is not ok, with its detail as worded, under Open items/,
+    );
+    expect(text).not.toMatch(/unhealthy, stop|degraded, stop/);
     expect(text).toMatch(/startEpoch has been finalized/);
     expect(text).toMatch(/"participated"/);
     expectCouldNotCompareHandling(text);
@@ -108,7 +118,6 @@ describe('prompts', () => {
     expect(text).toContain(`account "${ADDRESS}"`);
     const order = [
       'symbol_node_status',
-      'symbol_node_health',
       'symbol_version_drift',
       'symbol_network_compare',
       'symbol_harvester_watch',
@@ -120,6 +129,19 @@ describe('prompts', () => {
     const positions = order.map((needle) => text.indexOf(needle));
     expect(positions.every((p) => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    // One call answers health and sync: the verdict, the checks that are not ok, and synced.
+    expect(text).toMatch(
+      /1\. symbol_node_status: record the verdict, whether synced is true, the node version and the peer count, and every check whose status is warn, fail or unknown, with its detail/,
+    );
+    expect(text).toMatch(
+      /If synced is null, the tool could not judge it: say so instead of calling the node not synced/,
+    );
+    expect(text).toMatch(/If the verdict is unhealthy, put it at the very top of the report/);
+    // Eight numbered steps, and the one that refers to another names the right one.
+    const steps = text.match(/^\d+(?=\. )/gm) ?? [];
+    expect(steps.map(Number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(text).toMatch(/^5\. symbol_voting_key_status /m);
+    expect(text).toMatch(/the eligibility section of the step 5 result/);
     expect(text).toMatch(/behind or far_behind/);
     expect(text).toMatch(/mode "compare_and_save"/);
     expect(text).toMatch(/negative deltaCount/);
@@ -160,6 +182,17 @@ describe('prompts', () => {
       }),
     ).rejects.toThrow(/39-character base32 address/);
     await expect(server.client.getPrompt({ name: 'no_such_prompt' })).rejects.toThrow();
+  });
+
+  it('names only tools that exist', () => {
+    // A prompt that still names a tool after it was removed or merged sends the model nowhere.
+    for (const prompt of PROMPTS) {
+      expect(prompt.template, prompt.name).toMatch(/symbol_[a-z]+_[a-z_]+/);
+      expect(
+        uncallableToolNamesIn(`${prompt.template}\n${prompt.description}`),
+        prompt.name,
+      ).toEqual([]);
+    }
   });
 
   it('contains no real address, host, key, hash or date', async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SERVER_INSTRUCTIONS } from '../../src/instructions.js';
+import { uncallableToolNamesIn } from '../removed-tools.js';
 
 describe('server instructions', () => {
   it('stays under 150 words', () => {
@@ -22,8 +23,8 @@ describe('server instructions', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_voting_key_status/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_finality_participation/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_delegation_diagnose/);
-    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_node_health/);
-    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_node_status/);
+    // One tool answers both node questions (symbol_node_health was merged into it).
+    expect(SERVER_INSTRUCTIONS).toMatch(/node healthy or in sync, symbol_node_status;/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_version_drift/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_network_compare/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_transaction_status/);
@@ -31,6 +32,11 @@ describe('server instructions', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_holdings_value/);
     expect(SERVER_INSTRUCTIONS).toMatch(/never multiply balance by price/);
     expect(SERVER_INSTRUCTIONS).toMatch(/never recompute/);
+  });
+
+  it('names only tools that exist', () => {
+    // A route to a tool that was removed or merged sends the model to a tool that does not exist.
+    expect(uncallableToolNamesIn(SERVER_INSTRUCTIONS)).toEqual([]);
   });
 
   it('is a single line of plain text', () => {

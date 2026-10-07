@@ -1,6 +1,6 @@
 /**
  * Shared shape of the `checks[]` that the diagnosis-style tools return
- * (symbol_delegation_diagnose, symbol_node_health): a fixed-order list of
+ * (symbol_delegation_diagnose, symbol_node_status): a fixed-order list of
  * `{ id, status, detail, hint }` rows whose statuses a domain verdict function folds into one word.
  * The status vocabulary lives in domain/delegation.ts; this module only adds the zod schema and
  * the small constructors the tools share.

@@ -103,11 +103,18 @@ describe.skipIf(!enabled)('live node', () => {
     await handler?.close();
   });
 
+  /** What symbol_node_status read from /node/info; the tool gives null when that request failed. */
+  async function nodeIdentity(): Promise<{ publicKey: string; version: string }> {
+    const status = await call('symbol_node_status');
+    const node = status.node as { publicKey: string; version: string } | null;
+    if (node === null) throw new Error('the node did not answer /node/info');
+    return node;
+  }
+
   /** SYMBOL_INTEGRATION_ACCOUNT when set, otherwise the node's own main account. */
   async function nodeAccount(): Promise<string> {
     if (INTEGRATION_ACCOUNT) return INTEGRATION_ACCOUNT;
-    const info = await call('symbol_node_status');
-    return (info.node as { publicKey: string }).publicKey;
+    return (await nodeIdentity()).publicKey;
   }
 
   it('epoch formula matches /chain/info', async () => {
@@ -284,10 +291,11 @@ describe.skipIf(!enabled)('live node', () => {
     expect(statuses[1]?.group).toBe('not_found');
   });
 
-  it('symbol_node_health gives a verdict from its seven checks, on the version node_status reports', async () => {
-    const health = await call('symbol_node_health');
-    expect(['healthy', 'degraded', 'unhealthy']).toContain(health.verdict);
-    expect((health.checks as Array<{ id: string }>).map((c) => c.id)).toEqual([
+  it('symbol_node_status gives a verdict from its seven checks, and a sync judgment that follows the chain tip check', async () => {
+    const status = await call('symbol_node_status', { format: 'detailed' });
+    expect(['healthy', 'degraded', 'unhealthy']).toContain(status.verdict);
+    const checks = status.checks as Array<{ id: string; status: string; hint: string | null }>;
+    expect(checks.map((c) => c.id)).toEqual([
       'api_node',
       'db',
       'storage_consistent',
@@ -296,18 +304,20 @@ describe.skipIf(!enabled)('live node', () => {
       'roles',
       'chain_tip_age',
     ]);
-    const status = await call('symbol_node_status');
-    const node = health.node as { version: string } | null;
-    if (node) expect(node.version).toBe((status.node as { version: string }).version);
+    // detailed: every check that was made carries a hint.
+    expect(checks.every((c) => typeof c.hint === 'string')).toBe(true);
+    // synced is the chain tip check read as yes / no / not judged.
+    const tip = checks[6]?.status;
+    const sync = status.sync as { synced: boolean | null; thresholdSeconds: number };
+    expect(sync.synced).toBe(tip === 'unknown' ? null : tip === 'ok');
+    expect(sync.thresholdSeconds).toBeGreaterThan(0);
+    expect(String(status.summary).startsWith(`${ctx.rest.host} `)).toBe(true);
   });
 
   it('symbol_version_drift compares the node version with a sample that adds up', async () => {
     const drift = await call('symbol_version_drift');
     expect(['ok', 'behind', 'far_behind', 'unknown']).toContain(drift.verdict);
-    const status = await call('symbol_node_status');
-    expect((drift.node as { version: string }).version).toBe(
-      (status.node as { version: string }).version,
-    );
+    expect((drift.node as { version: string }).version).toBe((await nodeIdentity()).version);
     const sample = drift.sample as { size: number };
     const distribution = drift.distribution as Array<{ count: number }>;
     expect(distribution.reduce((sum, d) => sum + d.count, 0)).toBe(sample.size);
