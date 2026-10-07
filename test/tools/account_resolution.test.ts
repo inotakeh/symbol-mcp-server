@@ -82,7 +82,6 @@ describe('account arguments given as a namespace name', () => {
     server = await startTestServer();
     const calls: Array<[string, Record<string, unknown>]> = [
       ['symbol_voting_key_status', { account: ALIAS_NAMESPACE_NAME }],
-      ['symbol_harvesting_status', { account: ALIAS_NAMESPACE_NAME }],
       [
         'symbol_harvesting_income',
         { account: ALIAS_NAMESPACE_NAME, fromHeight: 5_763_675, toHeight: 5_763_675 },
@@ -101,8 +100,6 @@ describe('account arguments given as a namespace name', () => {
         new RegExp(`^${ALIAS_NAMESPACE_NAME} → ${ADDRESS}\\. `),
       );
     }
-    const noAccount = await server.callTool('symbol_harvesting_status');
-    expect(noAccount.structuredContent?.accountResolution).toBeNull();
   });
 
   it('parses a namespace name with symbol_address_parse (the only branch that uses the node)', async () => {
@@ -211,7 +208,6 @@ describe('account arguments given as a 48-character hex address', () => {
     const calls: Array<[string, (account: string) => Record<string, unknown>]> = [
       ['symbol_account_get', (account) => ({ account })],
       ['symbol_voting_key_status', (account) => ({ account })],
-      ['symbol_harvesting_status', (account) => ({ account })],
       [
         'symbol_harvesting_income',
         (account) => ({ account, fromHeight: 5_763_675, toHeight: 5_763_675 }),

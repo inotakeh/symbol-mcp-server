@@ -81,7 +81,7 @@
     "state_dir": {
       "type": "directory",
       "title": "State directory (optional)",
-      "description": "Absolute directory where symbol_harvester_watch keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets). Leave empty and the tool reports the current list without a comparison.",
+      "description": "Absolute directory where symbol_harvesting_status keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets) when it is asked to compare or save. Leave empty and the tool reports the current list without a comparison.",
       "required": false,
       "default": ""
     }

@@ -53,6 +53,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `voting_key_renewal_checklist` prompt stops when `synced` is null as well (the sync could not
     be judged, which it reports as such and not as a node that is behind), and lists the verdict
     and the checks that are not ok under its open items.
+- **Breaking: `symbol_harvester_watch` is merged into `symbol_harvesting_status`, which no longer
+  takes an `account`.** Models mixed up the tool that lists the harvesters unlocked on the node,
+  the tool that compares that list with the last snapshot, and the diagnosis of one account. Now
+  `symbol_harvesting_status` is about the node only, with the arguments `mode` and `format`:
+  `current` (the default) counts the unlocked harvesters and gives the harvesting limits, and
+  `compare`, `compare_and_save` and `save_only` do what they did in `symbol_harvester_watch`. The
+  output has the same fields in every mode. 21 tools become 20.
+  - Coming from `symbol_harvester_watch`: call `symbol_harvesting_status` with the same `mode` and
+    `format`. **Pass the mode**: `symbol_harvester_watch` compared and saved by default, and
+    `symbol_harvesting_status` without a mode compares nothing and stores nothing. The output
+    keeps `mode`, `current`, `comparison`, `history`, `saved`, `stateFile` and `notes`, and the
+    one-line summary; `node.publicKey` is now `node.nodePublicKey` (it is the node's
+    `nodePublicKey`, not the key that `symbol_node_status` calls `node.publicKey`), and `limits`
+    is new. The snapshot files are the same: their name, shape and directory do not change, so
+    snapshots saved before the upgrade are compared as before.
+  - Coming from `symbol_harvesting_status`: `account` is removed. For one account (is its linked
+    key unlocked on the node, is its balance within the limits), call
+    `symbol_delegation_diagnose`: its checks `unlocked_on_node` and `balance_in_range` answer
+    that. It judges `unlocked_on_node` only when the account's node key is the `nodePublicKey` of
+    the configured node; where it cannot, compare the linked key from `symbol_account_get` with
+    `current.keys`. `node.unlockedCount` is now `current.count`, and `node.unlockedPublicKeys` is
+    `current.keys`, listed only with `format: "detailed"` (upper case, each key once, ascending);
+    `accountResolution` and `account` are gone. New are `mode`, `node.nodePublicKey`,
+    `current.takenAt`, `current.height` and the snapshot fields, which are null or false in the
+    default mode. The default call now also reads `/node/info` and `/chain/info`, and its summary
+    has two lines: the count, then the limits.
+  - `check` is unchanged: the item id stays `harvester_watch`, with the same text and the same
+    JSON, and a run still appends one snapshot under `SYMBOL_STATE_DIR`.
+  - The description of `symbol_delegation_diagnose` and the server instructions
+    (`delegators gained or lost, symbol_harvesting_status with mode "compare"`) route to the
+    merged tool, and the `monthly_health_check` prompt calls it with mode `compare_and_save`.
+    `--help` and the READMEs describe `SYMBOL_STATE_DIR` as the directory of
+    `symbol_harvesting_status`.
 - `symbol_transaction_get` reports a transaction the node rejected as `failed`, with the node's
   validation code and its meaning in the new output field `failure` (`{ code, codeMeaning }`, null
   for every other status), instead of `not_found`. Before, a rejected transaction and an unknown

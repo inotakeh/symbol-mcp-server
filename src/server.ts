@@ -11,7 +11,6 @@ import { addressParseTool } from './tools/symbol_address_parse.js';
 import { delegationDiagnoseTool } from './tools/symbol_delegation_diagnose.js';
 import { feeEstimateTool } from './tools/symbol_fee_estimate.js';
 import { finalityParticipationTool } from './tools/symbol_finality_participation.js';
-import { harvesterWatchTool } from './tools/symbol_harvester_watch.js';
 import { harvestingIncomeTool } from './tools/symbol_harvesting_income.js';
 import { harvestingStatusTool } from './tools/symbol_harvesting_status.js';
 import { holdingsValueTool } from './tools/symbol_holdings_value.js';
@@ -70,7 +69,6 @@ export const TOOLS: readonly AnyToolDefinition[] = [
   delegationDiagnoseTool,
   // 0.3.0
   versionDriftTool,
-  harvesterWatchTool,
   // 0.6.0
   accountRankTool,
   // 0.7.0

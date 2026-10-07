@@ -108,7 +108,8 @@ Tools answer a question a person asks; they do not mirror one REST endpoint each
 The full design is in [`docs/DESIGN-BRIEF.md`](docs/DESIGN-BRIEF.md). In short:
 
 - **Read-only.** No argument accepts a private key, mnemonic or token; nothing is signed or
-  announced. The only disk write is `symbol_harvester_watch`'s snapshot under `SYMBOL_STATE_DIR`.
+  announced. The only disk write is the snapshot of `symbol_harvesting_status` (its saving modes)
+  under `SYMBOL_STATE_DIR`.
 - **Fixed destinations.** Requests go to `SYMBOL_NODE_URL` and, for the comparison tools,
   `SYMBOL_REFERENCE_NODES` only. Tools never take a URL as an argument. No telemetry.
 - **The server does the arithmetic.** Amounts, totals, shares and dates are computed on the server

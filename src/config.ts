@@ -31,9 +31,10 @@ export interface Config {
   readonly referenceNodes: readonly string[];
   readonly requestTimeoutMs: number;
   /**
-   * Resolved absolute directory for the per-node snapshot files of symbol_harvester_watch, or
-   * undefined when SYMBOL_STATE_DIR is unset (the tool then reports without comparing). Neither
-   * created nor checked for writability at startup; the first save creates it.
+   * Resolved absolute directory for the per-node snapshot files of symbol_harvesting_status (its
+   * comparing and saving modes), or undefined when SYMBOL_STATE_DIR is unset (the tool then
+   * reports without comparing). Neither created nor checked for writability at startup; the first
+   * save creates it.
    */
   readonly stateDir: string | undefined;
 }

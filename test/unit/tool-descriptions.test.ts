@@ -24,17 +24,8 @@ const GROUPS: Readonly<Record<string, Readonly<Record<string, readonly string[]>
     symbol_transaction_status: ['symbol_transaction_get'],
   },
   harvesting: {
-    symbol_harvesting_status: [
-      'symbol_delegation_diagnose',
-      'symbol_harvester_watch',
-      'symbol_harvesting_income',
-    ],
-    symbol_harvester_watch: ['symbol_harvesting_status', 'symbol_delegation_diagnose'],
-    symbol_delegation_diagnose: [
-      'symbol_harvesting_status',
-      'symbol_harvester_watch',
-      'symbol_harvesting_income',
-    ],
+    symbol_harvesting_status: ['symbol_delegation_diagnose', 'symbol_harvesting_income'],
+    symbol_delegation_diagnose: ['symbol_harvesting_status', 'symbol_harvesting_income'],
     symbol_harvesting_income: ['symbol_transaction_search', 'symbol_delegation_diagnose'],
     symbol_account_get: ['symbol_delegation_diagnose', 'symbol_harvesting_income'],
   },

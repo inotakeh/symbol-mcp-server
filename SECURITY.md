@@ -6,10 +6,12 @@ symbol-mcp-server is a **read-only** MCP server. It never handles private keys, 
 tokens, never signs or announces transactions, and only makes network requests to the node URL(s)
 the user configures via environment variables.
 
-The only thing it writes to disk is the snapshot file of `symbol_harvester_watch`, and only when
-`SYMBOL_STATE_DIR` is set: one file per node in that directory, holding unlocked harvester public
-keys, heights and times (no secrets). The directory is created with mode 0700 if it does not exist,
-and each write goes to a temporary file with mode 0600 that is renamed into place.
+The only thing it writes to disk is the snapshot file of `symbol_harvesting_status`, and only when
+`SYMBOL_STATE_DIR` is set and the tool is asked to save (mode `compare_and_save` or `save_only`;
+the `check` command saves on every run): one file per node in that directory, holding unlocked
+harvester public keys, heights and times (no secrets). The directory is created with mode 0700 if
+it does not exist, and each write goes to a temporary file with mode 0600 that is renamed into
+place.
 
 A way to break any of these properties is in scope: making the server accept or reveal a secret,
 contact a host other than `SYMBOL_NODE_URL` and `SYMBOL_REFERENCE_NODES`, or write outside

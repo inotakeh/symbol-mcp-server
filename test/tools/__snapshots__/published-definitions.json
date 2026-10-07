@@ -1,5 +1,5 @@
 {
-  "instructions": "symbol-mcp-server is read-only: no tool accepts a private key or mnemonic; nothing is signed or announced. Accounts: a 39-character base32 address, a 64-character hex public key, or a namespace name (alice) with an address alias. Harvest rewards are receipts: for harvesting income use symbol_harvesting_income, never symbol_transaction_search; for monthly totals or a spreadsheet, pass granularity \"monthly\" or output \"csv\". To value holdings, pass a unit price obtained elsewhere (web search, another MCP, the user) to symbol_holdings_value; never multiply balance by price yourself. Route by question: rank or rich list, symbol_account_rank; voting key expiry, symbol_voting_key_status; finalization votes signed, symbol_finality_participation; delegated harvesting not working, symbol_delegation_diagnose; delegators gained or lost, symbol_harvester_watch; node healthy or in sync, symbol_node_status; version behind the network, symbol_version_drift; blocks behind other nodes, symbol_network_compare; transaction went through or failed, symbol_transaction_status. Every amount, date and count is server-computed; report values as returned, never recompute, round or sum them.",
+  "instructions": "symbol-mcp-server is read-only: no tool accepts a private key or mnemonic; nothing is signed or announced. Accounts: a 39-character base32 address, a 64-character hex public key, or a namespace name (alice) with an address alias. Harvest rewards are receipts: for harvesting income use symbol_harvesting_income, never symbol_transaction_search; for monthly totals or a spreadsheet, pass granularity \"monthly\" or output \"csv\". To value holdings, pass a unit price obtained elsewhere (web search, another MCP, the user) to symbol_holdings_value; never multiply balance by price yourself. Route by question: rank or rich list, symbol_account_rank; voting key expiry, symbol_voting_key_status; finalization votes signed, symbol_finality_participation; delegated harvesting not working, symbol_delegation_diagnose; delegators gained or lost, symbol_harvesting_status with mode \"compare\"; node healthy or in sync, symbol_node_status; version behind the network, symbol_version_drift; blocks behind other nodes, symbol_network_compare; transaction went through or failed, symbol_transaction_status. Every amount, date and count is server-computed; report values as returned, never recompute, round or sum them.",
   "prompts": [
     {
       "arguments": [
@@ -6762,13 +6762,28 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List the delegated harvester keys unlocked on the configured node right now (/node/unlockedaccount) and the network's harvesting limits; with an account, also tell whether its linked key is among them. For whether an account's delegated harvesting works and where it stops, use symbol_delegation_diagnose; for how the unlocked list changed since the last check, symbol_harvester_watch; for harvesting rewards, symbol_harvesting_income. The limits are minHarvesterBalance, maxHarvesterBalance and harvestBeneficiaryPercentage. With an account, the tool also checks that the balance is within minHarvesterBalance and maxHarvesterBalance (both inclusive; an account outside that range cannot harvest) and the importance above zero, and lists warnings.",
+      "description": "List the delegated harvesters unlocked on the configured node right now (/node/unlockedaccount): how many there are, how the list changed since the last stored snapshot, and the network's harvesting limits. For whether one account's delegated harvesting works and where it stops, use symbol_delegation_diagnose; for harvesting rewards, symbol_harvesting_income. Mode current (default) reads the node only and gives the count and the limits (minHarvesterBalance, maxHarvesterBalance, harvestBeneficiaryPercentage); the keys themselves come with format detailed. The other modes use one snapshot file per node under SYMBOL_STATE_DIR (public keys, heights and times only): compare reports which remote keys were added or removed, the count delta and min / max / average over the snapshots of the last 30 days, and writes nothing; compare_and_save also stores the current list; save_only stores without comparing. Without SYMBOL_STATE_DIR they report the current list and say no comparison is possible. Use mode compare after a node migration (\"did the delegators come back?\") and compare_and_save for monthly churn.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "account": {
-            "description": "Optional harvester account to check: base32 address (39 chars), hex public key (64 chars), or a namespace name with an address alias (e.g. alice, alice.pay; resolved through the node). Hex addresses (48 chars) are also accepted. When given, reports whether its linked (remote) key is unlocked on this node and whether its balance is within the harvesting limits.",
-            "minLength": 1,
+          "format": {
+            "default": "concise",
+            "description": "concise (default): the count and the limits, and in a comparison the added and removed keys. detailed: also the full current key list and one row per stored snapshot in the window.",
+            "enum": [
+              "concise",
+              "detailed"
+            ],
+            "type": "string"
+          },
+          "mode": {
+            "default": "current",
+            "description": "current (default): the list as it is now; no snapshot is read or written. compare: read the previous snapshot and report the difference, write nothing. compare_and_save: compare, then store the current list as the newest snapshot. save_only: store without comparing. Snapshots live under SYMBOL_STATE_DIR; without it these three modes report the current list only.",
+            "enum": [
+              "current",
+              "compare",
+              "compare_and_save",
+              "save_only"
+            ],
             "type": "string"
           }
         },
@@ -6779,106 +6794,60 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "account": {
+          "comparison": {
             "anyOf": [
               {
                 "additionalProperties": false,
-                "description": "Per-account report; null when no account was given.",
+                "description": "Difference against the newest stored snapshot; null when there is none, SYMBOL_STATE_DIR is unset, or mode is current or save_only.",
                 "properties": {
-                  "address": {
-                    "type": "string"
-                  },
-                  "balance": {
-                    "type": "string"
-                  },
-                  "balanceWithinLimits": {
-                    "description": "True when minHarvesterBalance <= balance <= maxHarvesterBalance (harvesting mosaic); outside that range the account cannot harvest.",
-                    "type": "boolean"
-                  },
-                  "canHarvestHere": {
-                    "type": "boolean"
-                  },
-                  "delegatedHarvestingConfigured": {
-                    "type": "boolean"
-                  },
-                  "importance": {
-                    "type": "string"
-                  },
-                  "importanceNonZero": {
-                    "type": "boolean"
-                  },
-                  "linkedPublicKey": {
-                    "anyOf": [
-                      {
-                        "description": "Remote (linked) harvesting key; null when not linked.",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "nodePublicKey": {
-                    "anyOf": [
-                      {
-                        "description": "Node key the account delegated to; null when not set.",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "publicKey": {
-                    "anyOf": [
-                      {
-                        "description": "Main public key; null until the account has transacted.",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "rawBalance": {
-                    "type": "string"
-                  },
-                  "unlockedOnThisNode": {
-                    "type": "boolean"
-                  },
-                  "vrfPublicKey": {
-                    "anyOf": [
-                      {
-                        "description": "VRF key; null when not set.",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "warnings": {
+                  "added": {
                     "items": {
                       "type": "string"
                     },
                     "type": "array"
+                  },
+                  "deltaCount": {
+                    "type": "number"
+                  },
+                  "previousCount": {
+                    "type": "number"
+                  },
+                  "previousHeight": {
+                    "type": "number"
+                  },
+                  "previousTakenAt": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "local": {
+                        "type": "string"
+                      },
+                      "utc": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "utc"
+                    ],
+                    "type": "object"
+                  },
+                  "removed": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "unchangedCount": {
+                    "type": "number"
                   }
                 },
                 "required": [
-                  "address",
-                  "publicKey",
-                  "linkedPublicKey",
-                  "vrfPublicKey",
-                  "nodePublicKey",
-                  "delegatedHarvestingConfigured",
-                  "unlockedOnThisNode",
-                  "balance",
-                  "rawBalance",
-                  "importance",
-                  "importanceNonZero",
-                  "balanceWithinLimits",
-                  "canHarvestHere",
-                  "warnings"
+                  "previousTakenAt",
+                  "previousHeight",
+                  "previousCount",
+                  "added",
+                  "removed",
+                  "unchangedCount",
+                  "deltaCount"
                 ],
                 "type": "object"
               },
@@ -6887,32 +6856,137 @@
               }
             ]
           },
-          "accountResolution": {
-            "anyOf": [
-              {
+          "current": {
+            "additionalProperties": false,
+            "properties": {
+              "count": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              },
+              "keys": {
+                "anyOf": [
+                  {
+                    "description": "Unlocked remote (linked) public keys, ascending; null in concise format.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "takenAt": {
                 "additionalProperties": false,
-                "description": "How a namespace-name argument was resolved to an address; null when the account was given as an address or public key.",
                 "properties": {
-                  "address": {
-                    "description": "Base32 address the namespace aliases.",
+                  "local": {
                     "type": "string"
                   },
-                  "input": {
-                    "type": "string"
-                  },
-                  "namespace": {
-                    "description": "Namespace name that was resolved (untrusted, sanitized).",
-                    "type": "string"
-                  },
-                  "namespaceId": {
+                  "utc": {
                     "type": "string"
                   }
                 },
                 "required": [
-                  "input",
-                  "namespace",
-                  "namespaceId",
-                  "address"
+                  "utc"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "count",
+              "takenAt",
+              "height",
+              "keys"
+            ],
+            "type": "object"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "description": "Unlocked counts over the snapshots stored in the last 30 days (before this call); null when there are none, SYMBOL_STATE_DIR is unset, or mode is current or save_only.",
+                "properties": {
+                  "average": {
+                    "type": "number"
+                  },
+                  "entries": {
+                    "anyOf": [
+                      {
+                        "description": "One row per stored snapshot in the window, newest first; null in concise format.",
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "height": {
+                              "type": "number"
+                            },
+                            "takenAt": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "local": {
+                                  "type": "string"
+                                },
+                                "utc": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "utc"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "takenAt",
+                            "height",
+                            "count"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "max": {
+                    "type": "number"
+                  },
+                  "min": {
+                    "type": "number"
+                  },
+                  "oldestTakenAt": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "local": {
+                        "type": "string"
+                      },
+                      "utc": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "utc"
+                    ],
+                    "type": "object"
+                  },
+                  "snapshots": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "snapshots",
+                  "oldestTakenAt",
+                  "min",
+                  "max",
+                  "average",
+                  "entries"
                 ],
                 "type": "object"
               },
@@ -6984,6 +7058,15 @@
             ],
             "type": "object"
           },
+          "mode": {
+            "enum": [
+              "current",
+              "compare",
+              "compare_and_save",
+              "save_only"
+            ],
+            "type": "string"
+          },
           "network": {
             "type": "string"
           },
@@ -6993,22 +7076,43 @@
               "host": {
                 "type": "string"
               },
-              "unlockedCount": {
-                "type": "number"
-              },
-              "unlockedPublicKeys": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
+              "nodePublicKey": {
+                "anyOf": [
+                  {
+                    "description": "nodePublicKey of the node (/node/info), which names its snapshot file; null when the node reports none (only mode current answers then).",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "host",
-              "unlockedCount",
-              "unlockedPublicKeys"
+              "nodePublicKey"
             ],
             "type": "object"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "saved": {
+            "type": "boolean"
+          },
+          "stateFile": {
+            "anyOf": [
+              {
+                "description": "Absolute path of the snapshot file this call read or wrote; null in mode current and when SYMBOL_STATE_DIR is unset.",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "summary": {
             "type": "string"
@@ -7017,10 +7121,15 @@
         "required": [
           "summary",
           "network",
-          "accountResolution",
+          "mode",
           "node",
+          "current",
           "limits",
-          "account",
+          "comparison",
+          "history",
+          "saved",
+          "stateFile",
+          "notes",
           "invisibleCharactersRemoved"
         ],
         "type": "object"
@@ -8441,7 +8550,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Diagnose whether an account's delegated harvesting is active and, if not, where it stops. For the list of harvesters unlocked on the configured node, use symbol_harvesting_status; for how that list changed, symbol_harvester_watch; for the rewards the account earned, symbol_harvesting_income. The checks: account exists, balance within minHarvesterBalance/maxHarvesterBalance, importance above zero (or blocks until the next recalculation), linked/VRF/node keys registered, node key equal to the configured node's nodePublicKey, remote key unlocked on the configured node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Each check is ok/warn/fail/unknown, with a hint when there is something to do or explain; the verdict is active, not_active or cannot_verify. Node-side checks are possible only when the account delegates to the configured node; no other node is contacted. Read-only.",
+      "description": "Diagnose whether an account's delegated harvesting is active and, if not, where it stops. For the harvesters unlocked on the configured node and how that list changed, use symbol_harvesting_status; for the rewards the account earned, symbol_harvesting_income. The checks: account exists, balance within minHarvesterBalance/maxHarvesterBalance, importance above zero (or blocks until the next recalculation), linked/VRF/node keys registered, node key equal to the configured node's nodePublicKey, remote key unlocked on the configured node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Each check is ok/warn/fail/unknown, with a hint when there is something to do or explain; the verdict is active, not_active or cannot_verify. Node-side checks are possible only when the account delegates to the configured node; no other node is contacted. Read-only.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -8967,312 +9076,6 @@
         "type": "object"
       },
       "title": "Symbol node version drift"
-    },
-    {
-      "annotations": {
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Compare the delegated harvesters unlocked on the configured node (/node/unlockedaccount) with the previous snapshot: which remote keys were added or removed, the count delta, and min / max / average over the snapshots of the last 30 days. For the current list and the harvesting limits only, use symbol_harvesting_status; for whether one account's delegation works, symbol_delegation_diagnose. Snapshots (public keys, heights and times only) are kept in one file per node under SYMBOL_STATE_DIR; without that variable the tool reports the current list and says no comparison is possible. Mode compare reads only, compare_and_save (default) also stores the current list, save_only stores without comparing. Use it after a node migration (\"did the delegators come back?\") and for monthly churn.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "format": {
-            "default": "concise",
-            "description": "concise (default): counts plus the added and removed keys. detailed: also the full current key list and one row per stored snapshot in the window.",
-            "enum": [
-              "concise",
-              "detailed"
-            ],
-            "type": "string"
-          },
-          "mode": {
-            "default": "compare_and_save",
-            "description": "compare: read the previous snapshot and report the difference, write nothing. compare_and_save (default): compare, then store the current list as the newest snapshot. save_only: store without comparing. Snapshots live under SYMBOL_STATE_DIR; without it every mode reports the current list only.",
-            "enum": [
-              "compare",
-              "compare_and_save",
-              "save_only"
-            ],
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "name": "symbol_harvester_watch",
-      "outputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
-        "properties": {
-          "comparison": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "description": "Difference against the newest stored snapshot; null when there is none, SYMBOL_STATE_DIR is unset, or mode is save_only.",
-                "properties": {
-                  "added": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "deltaCount": {
-                    "type": "number"
-                  },
-                  "previousCount": {
-                    "type": "number"
-                  },
-                  "previousHeight": {
-                    "type": "number"
-                  },
-                  "previousTakenAt": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "local": {
-                        "type": "string"
-                      },
-                      "utc": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "utc"
-                    ],
-                    "type": "object"
-                  },
-                  "removed": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "unchangedCount": {
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "previousTakenAt",
-                  "previousHeight",
-                  "previousCount",
-                  "added",
-                  "removed",
-                  "unchangedCount",
-                  "deltaCount"
-                ],
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "current": {
-            "additionalProperties": false,
-            "properties": {
-              "count": {
-                "type": "number"
-              },
-              "height": {
-                "type": "number"
-              },
-              "keys": {
-                "anyOf": [
-                  {
-                    "description": "Unlocked remote (linked) public keys, ascending; null in concise format.",
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "takenAt": {
-                "additionalProperties": false,
-                "properties": {
-                  "local": {
-                    "type": "string"
-                  },
-                  "utc": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "utc"
-                ],
-                "type": "object"
-              }
-            },
-            "required": [
-              "count",
-              "takenAt",
-              "height",
-              "keys"
-            ],
-            "type": "object"
-          },
-          "history": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "description": "Unlocked counts over the snapshots stored in the last 30 days (before this call); null when there are none, SYMBOL_STATE_DIR is unset, or mode is save_only.",
-                "properties": {
-                  "average": {
-                    "type": "number"
-                  },
-                  "entries": {
-                    "anyOf": [
-                      {
-                        "description": "One row per stored snapshot in the window, newest first; null in concise format.",
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "count": {
-                              "type": "number"
-                            },
-                            "height": {
-                              "type": "number"
-                            },
-                            "takenAt": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "local": {
-                                  "type": "string"
-                                },
-                                "utc": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "utc"
-                              ],
-                              "type": "object"
-                            }
-                          },
-                          "required": [
-                            "takenAt",
-                            "height",
-                            "count"
-                          ],
-                          "type": "object"
-                        },
-                        "type": "array"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "max": {
-                    "type": "number"
-                  },
-                  "min": {
-                    "type": "number"
-                  },
-                  "oldestTakenAt": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "local": {
-                        "type": "string"
-                      },
-                      "utc": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "utc"
-                    ],
-                    "type": "object"
-                  },
-                  "snapshots": {
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "snapshots",
-                  "oldestTakenAt",
-                  "min",
-                  "max",
-                  "average",
-                  "entries"
-                ],
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "mode": {
-            "enum": [
-              "compare",
-              "compare_and_save",
-              "save_only"
-            ],
-            "type": "string"
-          },
-          "network": {
-            "type": "string"
-          },
-          "node": {
-            "additionalProperties": false,
-            "properties": {
-              "host": {
-                "type": "string"
-              },
-              "publicKey": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "host",
-              "publicKey"
-            ],
-            "type": "object"
-          },
-          "notes": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "saved": {
-            "type": "boolean"
-          },
-          "stateFile": {
-            "anyOf": [
-              {
-                "description": "Absolute path of the snapshot file; null when SYMBOL_STATE_DIR is unset.",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "summary": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "summary",
-          "network",
-          "mode",
-          "node",
-          "current",
-          "comparison",
-          "history",
-          "saved",
-          "stateFile",
-          "notes"
-        ],
-        "type": "object"
-      },
-      "title": "Symbol unlocked harvester watch"
     },
     {
       "annotations": {

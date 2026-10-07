@@ -120,7 +120,6 @@ describe('prompts', () => {
       'symbol_node_status',
       'symbol_version_drift',
       'symbol_network_compare',
-      'symbol_harvester_watch',
       'symbol_harvesting_status',
       'symbol_voting_key_status',
       'symbol_account_get',
@@ -143,7 +142,11 @@ describe('prompts', () => {
     expect(text).toMatch(/^5\. symbol_voting_key_status /m);
     expect(text).toMatch(/the eligibility section of the step 5 result/);
     expect(text).toMatch(/behind or far_behind/);
-    expect(text).toMatch(/mode "compare_and_save"/);
+    // One tool lists the unlocked harvesters and compares them; the mode says which.
+    expect(text).toMatch(/^4\. symbol_harvesting_status with mode "compare_and_save": /m);
+    expect(text).toMatch(
+      /The harvesting limits are in the same answer; call the tool again with format "detailed" only if the operator wants the full key list/,
+    );
     expect(text).toMatch(/negative deltaCount/);
     expect(text).toMatch(/previous calendar month/);
     expect(text).toMatch(/granularity "daily"/);

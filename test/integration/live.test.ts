@@ -15,7 +15,7 @@
  * Every registered tool is called (the last test checks it; run the whole file for it to pass).
  * Inputs come from the environment or from the node itself (the node's account, a hash found by
  * a search), never from literals; tools that read many pages get small arguments.
- * symbol_harvester_watch runs in mode "compare", so no snapshot is written.
+ * symbol_harvesting_status runs in its modes "current" and "compare", so no snapshot is written.
  * Never runs in CI (vitest.config.ts excludes this directory unless SYMBOL_INTEGRATION=1).
  */
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
@@ -247,11 +247,25 @@ describe.skipIf(!enabled)('live node', () => {
     expect(future.isEstimate).toBe(true);
   });
 
-  it('symbol_harvesting_status answers, with and without an account', async () => {
-    const plain = await call('symbol_harvesting_status');
-    expect(typeof (plain.node as { unlockedCount: number }).unlockedCount).toBe('number');
-    const withAccount = await call('symbol_harvesting_status', { account: await nodeAccount() });
-    expect(withAccount.account).not.toBeNull();
+  it('symbol_harvesting_status counts the unlocked harvesters and compares without saving', async () => {
+    // The default mode: the count and the limits, and no snapshot file is looked at.
+    const now = await call('symbol_harvesting_status');
+    expect(now.mode).toBe('current');
+    const count = (now.current as { count: number; keys: string[] | null }).count;
+    expect(count).toBeGreaterThanOrEqual(0);
+    expect((now.current as { keys: string[] | null }).keys).toBeNull();
+    expect(now).toMatchObject({ comparison: null, history: null, saved: false, stateFile: null });
+    expect(typeof (now.limits as { minHarvesterBalance: string }).minHarvesterBalance).toBe(
+      'string',
+    );
+    // detailed lists the keys the count counts.
+    const listed = await call('symbol_harvesting_status', { format: 'detailed' });
+    const keys = (listed.current as { keys: string[] | null }).keys;
+    expect(keys).toHaveLength((listed.current as { count: number }).count);
+    // compare reads the snapshot file when SYMBOL_STATE_DIR is set, and never writes.
+    const compared = await call('symbol_harvesting_status', { mode: 'compare' });
+    expect(compared.saved).toBe(false);
+    if (!ctx.config.stateDir) expect(compared.comparison).toBeNull();
   });
 
   it.skipIf(!INTEGRATION_ACCOUNT)(
@@ -321,13 +335,6 @@ describe.skipIf(!enabled)('live node', () => {
     const sample = drift.sample as { size: number };
     const distribution = drift.distribution as Array<{ count: number }>;
     expect(distribution.reduce((sum, d) => sum + d.count, 0)).toBe(sample.size);
-  });
-
-  it('symbol_harvester_watch reads the unlocked list without saving (mode compare)', async () => {
-    const watch = await call('symbol_harvester_watch', { mode: 'compare' });
-    expect(watch.saved).toBe(false);
-    expect((watch.current as { count: number }).count).toBeGreaterThanOrEqual(0);
-    if (!ctx.config.stateDir) expect(watch.comparison).toBeNull();
   });
 
   it('symbol_delegation_diagnose runs its eleven checks for a real account (one day of blocks)', async () => {

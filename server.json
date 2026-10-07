@@ -53,7 +53,7 @@
         },
         {
           "name": "SYMBOL_STATE_DIR",
-          "description": "Absolute directory where symbol_harvester_watch keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets), created on first save with mode 0700; when unset, the tool reports the current list without a comparison.",
+          "description": "Absolute directory where symbol_harvesting_status keeps one snapshot file per node (unlocked harvester public keys, heights and times; no secrets) when it is asked to compare or save, created on first save with mode 0700; when unset, the tool reports the current list without a comparison.",
           "isRequired": false,
           "isSecret": false,
           "format": "string"

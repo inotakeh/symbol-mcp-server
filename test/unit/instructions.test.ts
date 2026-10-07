@@ -28,7 +28,10 @@ describe('server instructions', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_version_drift/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_network_compare/);
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_transaction_status/);
-    expect(SERVER_INSTRUCTIONS).toMatch(/symbol_harvester_watch/);
+    // Gained or lost is a comparison: the mode is part of the route.
+    expect(SERVER_INSTRUCTIONS).toMatch(
+      /delegators gained or lost, symbol_harvesting_status with mode "compare";/,
+    );
     expect(SERVER_INSTRUCTIONS).toMatch(/symbol_holdings_value/);
     expect(SERVER_INSTRUCTIONS).toMatch(/never multiply balance by price/);
     expect(SERVER_INSTRUCTIONS).toMatch(/never recompute/);
