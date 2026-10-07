@@ -15,10 +15,9 @@ import { TOOLS } from '../../src/server.js';
  */
 const GROUPS: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
   node: {
-    symbol_node_status: ['symbol_node_health', 'symbol_version_drift', 'symbol_network_compare'],
-    symbol_node_health: ['symbol_node_status', 'symbol_version_drift', 'symbol_network_compare'],
-    symbol_version_drift: ['symbol_node_status', 'symbol_node_health', 'symbol_network_compare'],
-    symbol_network_compare: ['symbol_node_status', 'symbol_node_health', 'symbol_version_drift'],
+    symbol_node_status: ['symbol_version_drift', 'symbol_network_compare'],
+    symbol_version_drift: ['symbol_node_status', 'symbol_network_compare'],
+    symbol_network_compare: ['symbol_node_status', 'symbol_version_drift'],
   },
   transaction: {
     symbol_transaction_get: ['symbol_transaction_status'],

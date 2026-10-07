@@ -5,6 +5,7 @@ import {
   formatInstant,
   formatInstantText,
   formatLocal,
+  InvalidNetworkTimestampError,
   isValidTimeZone,
   networkTimestampToDate,
 } from '../../src/domain/time.js';
@@ -26,8 +27,34 @@ describe('network timestamps', () => {
     expect(dateToNetworkTimestamp(d, EPOCH_ADJUSTMENT)).toBe(173_156_113_808);
   });
   it('rejects negative or non-numeric timestamps', () => {
-    expect(() => networkTimestampToDate('x', EPOCH_ADJUSTMENT)).toThrow();
-    expect(() => networkTimestampToDate(-1, EPOCH_ADJUSTMENT)).toThrow();
+    expect(() => networkTimestampToDate('x', EPOCH_ADJUSTMENT)).toThrow(
+      InvalidNetworkTimestampError,
+    );
+    expect(() => networkTimestampToDate(-1, EPOCH_ADJUSTMENT)).toThrow(
+      InvalidNetworkTimestampError,
+    );
+  });
+  it('rejects a timestamp that gives no valid time instead of returning an invalid date', () => {
+    // Every digit string passes the uint64 schema of the REST client: beyond the last date
+    // JavaScript knows (twice), and too long to be a finite number.
+    for (const timestamp of ['9000000000000000', '99999999999999999999', '9'.repeat(400)]) {
+      expect(() => networkTimestampToDate(timestamp, EPOCH_ADJUSTMENT)).toThrow(
+        InvalidNetworkTimestampError,
+      );
+    }
+    expect(() => networkTimestampToDate(10n ** 20n, EPOCH_ADJUSTMENT)).toThrow(
+      'invalid network timestamp: 100000000000000000000',
+    );
+  });
+  it('accepts the last timestamp that still gives a date, and not the next one', () => {
+    // The last instant of a Date is 8.64e15 ms after 1970.
+    const last = 8_640_000_000_000_000 - EPOCH_ADJUSTMENT * 1000;
+    expect(networkTimestampToDate(last, EPOCH_ADJUSTMENT).toISOString()).toBe(
+      '+275760-09-13T00:00:00.000Z',
+    );
+    expect(() => networkTimestampToDate(last + 1, EPOCH_ADJUSTMENT)).toThrow(
+      InvalidNetworkTimestampError,
+    );
   });
 });
 

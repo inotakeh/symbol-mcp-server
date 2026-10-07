@@ -37,7 +37,7 @@ import {
   RESTART_NOTE,
   UNSET_NOTE,
 } from '../tools/symbol_harvester_watch.js';
-import { nodeHealthTool } from '../tools/symbol_node_health.js';
+import { nodeStatusTool } from '../tools/symbol_node_status.js';
 import { versionDriftTool } from '../tools/symbol_version_drift.js';
 import { votingKeyStatusTool } from '../tools/symbol_voting_key_status.js';
 import {
@@ -481,7 +481,9 @@ export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<
     {
       id: 'node_health',
       skip: null,
-      run: async () => mapNodeHealth(await nodeHealthTool.run(ctx, { format: 'concise' })),
+      // The verdict and the checks of symbol_node_status; the item keeps the id it had when they
+      // came from symbol_node_health.
+      run: async () => mapNodeHealth(await nodeStatusTool.run(ctx, { format: 'concise' })),
     },
     {
       id: 'version_drift',

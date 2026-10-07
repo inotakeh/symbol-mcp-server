@@ -19,7 +19,7 @@
       "question_ja": "私のノードは今、同期していますか。",
       "expectedTool": "symbol_node_status",
       "expectedArguments": {},
-      "notes": "\"My node\" is the node fixed by SYMBOL_NODE_URL; no argument is needed. \"In sync\" is the synced flag (false when the latest block is older than 10 target block times, 5 minutes on mainnet) with the current and finalized heights, which symbol_node_status reports. Whether the node is healthy (database, clock, storage, finalization lag, with a verdict) is symbol_node_health (node-health-now); how many blocks it trails other nodes is symbol_network_compare (node-lagging-reference)."
+      "notes": "\"My node\" is the node fixed by SYMBOL_NODE_URL; no argument is needed. \"In sync\" is the synced flag (false when the latest block is older than 10 target block times, 5 minutes on mainnet; null when it could not be judged) with the current and finalized heights, which symbol_node_status reports together with the health verdict (node-health-now). How many blocks it trails other nodes is symbol_network_compare (node-lagging-reference)."
     },
     {
       "id": "delegated-harvesting-unlocked",
@@ -219,9 +219,9 @@
       "audience": "node-operator",
       "question": "Is the node healthy?",
       "question_ja": "ノードは健全？",
-      "expectedTool": "symbol_node_health",
+      "expectedTool": "symbol_node_status",
       "expectedArguments": {},
-      "notes": "\"Healthy\" / \"is everything running\" / \"is the database up\" / \"is the clock right\" is symbol_node_health: seven checks (API node, database, storage versus chain height, clock skew, finalization lag, roles, age of the latest block) with one verdict. symbol_node_status answers whether the node is synced and how many peers it has; symbol_network_compare answers whether it lags the reference nodes. No argument is needed: the node is fixed by SYMBOL_NODE_URL."
+      "notes": "\"Healthy\" / \"is everything running\" / \"is the database up\" / \"is the clock right\" is the verdict of symbol_node_status: seven checks (API node, database, storage versus chain height, clock skew, finalization lag, roles, age of the latest block) folded into healthy, degraded or unhealthy. The same call says whether the node is synced and how many peers it has (node-in-sync); symbol_network_compare answers whether it lags the reference nodes. No argument is needed: the node is fixed by SYMBOL_NODE_URL."
     },
     {
       "id": "node-version-outdated",
@@ -281,9 +281,9 @@
       "audience": "node-operator",
       "question": "How is my node doing?",
       "question_ja": "ノードの調子はどう？",
-      "expectedTool": "symbol_node_health",
+      "expectedTool": "symbol_node_status",
       "expectedArguments": {},
-      "notes": "A vague \"how is it doing\" asks for the node's condition, which symbol_node_health answers in one call: seven checks (API node, database, storage versus chain height, clock skew, finalization lag, roles, age of the latest block) and one verdict. symbol_node_status answers \"is it in sync\" and \"which version, how many peers\" (node-in-sync, node-own-version); call it, or symbol_version_drift for an outdated version, when the user asks about those."
+      "notes": "A vague \"how is it doing\" asks for the node's condition, which symbol_node_status answers in one call: one verdict from seven checks (API node, database, storage versus chain height, clock skew, finalization lag, roles, age of the latest block), whether the node is synced, its version and its peer count (node-health-now, node-in-sync, node-own-version). Call symbol_version_drift when the user asks whether the version is outdated (node-version-outdated), and symbol_network_compare for the blocks it trails other nodes (node-lagging-reference)."
     },
     {
       "id": "node-own-version",
@@ -292,7 +292,7 @@
       "question_ja": "うちのノードのバージョンは？",
       "expectedTool": "symbol_node_status",
       "expectedArguments": {},
-      "notes": "The node's own software version (decoded from a 4-byte integer, e.g. 1.0.3.9) is part of symbol_node_status, with the roles, heights and sync state. symbol_version_drift reads the same version but exists to compare it with the peers' versions; use it when the user asks whether the version is outdated or behind (node-version-outdated)."
+      "notes": "The node's own software version (decoded from a 4-byte integer, e.g. 1.0.3.9) is part of symbol_node_status, with the roles, heights, sync state and health verdict. symbol_version_drift reads the same version but exists to compare it with the peers' versions; use it when the user asks whether the version is outdated or behind (node-version-outdated)."
     },
     {
       "id": "transaction-failed-why",

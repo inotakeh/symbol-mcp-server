@@ -159,7 +159,9 @@ describe('symbol_version_drift', () => {
       distribution: [],
     });
     expect(result.structuredContent?.summary).toMatch(/SYMBOL_REFERENCE_NODES/);
-    expect(result.structuredContent?.summary).toMatch(/symbol_node_health/);
+    expect(result.structuredContent?.summary).toMatch(
+      /knows no peers: check peer connectivity with symbol_node_status, or set/,
+    );
     expect(versionDriftTool.outputSchema.safeParse(result.structuredContent).success).toBe(true);
     await server.close();
 
@@ -319,7 +321,7 @@ describe('symbol_version_drift', () => {
     expect(result.structuredContent?.summary).toBe(
       [
         'version drift: unknown. node.test:3001 runs 1.0.3.9 but the sample is empty (no usable peers; 6 nodes reported no version (0.0.0.0)).',
-        '- The peers node.test:3001 knows have not reported their versions yet: check again later, check peer connectivity with symbol_node_health and symbol_node_status, or set SYMBOL_REFERENCE_NODES to compare against known nodes.',
+        '- The peers node.test:3001 knows have not reported their versions yet: check again later, check peer connectivity with symbol_node_status, or set SYMBOL_REFERENCE_NODES to compare against known nodes.',
       ].join('\n'),
     );
   });
@@ -363,7 +365,7 @@ describe('symbol_version_drift', () => {
     expect(result.structuredContent?.summary).toBe(
       [
         'version drift: unknown. node.test:3001 runs 1.0.3.9 but the sample is empty (no usable peers or reference nodes; 7 nodes reported no version (0.0.0.0)).',
-        '- The peers node.test:3001 knows have not reported their versions yet: check again later, check peer connectivity with symbol_node_health and symbol_node_status; none of the nodes in SYMBOL_REFERENCE_NODES gave a usable version (see the notes).',
+        '- The peers node.test:3001 knows have not reported their versions yet: check again later, check peer connectivity with symbol_node_status; none of the nodes in SYMBOL_REFERENCE_NODES gave a usable version (see the notes).',
       ].join('\n'),
     );
     expect(result.structuredContent?.notes).toEqual(

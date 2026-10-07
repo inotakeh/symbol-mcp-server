@@ -14,13 +14,34 @@ export interface Instant {
   readonly local?: string;
 }
 
+/**
+ * A network timestamp that gives no valid time. A node may send any uint64: one too long for a
+ * number, or one beyond the last date JavaScript knows. A caller that can answer without the time
+ * catches this error (symbol_node_status makes the check concerned unknown); for any other caller
+ * it is a failure.
+ */
+export class InvalidNetworkTimestampError extends Error {
+  constructor(timestampMs: string | number | bigint) {
+    super(`invalid network timestamp: ${timestampMs}`);
+    this.name = 'InvalidNetworkTimestampError';
+  }
+}
+
+/**
+ * Wall-clock time of a network timestamp. Throws InvalidNetworkTimestampError for a timestamp that
+ * is not a finite, non-negative number or that lies beyond the range of Date, so that no such value
+ * ever becomes a Date (formatting one would throw later, far from the value that caused it).
+ */
 export function networkTimestampToDate(
   timestampMs: string | number | bigint,
   epochAdjustmentSeconds: number,
 ): Date {
-  const ts = typeof timestampMs === 'bigint' ? Number(timestampMs) : Number(timestampMs);
-  if (!Number.isFinite(ts) || ts < 0) throw new Error(`invalid network timestamp: ${timestampMs}`);
-  return new Date(epochAdjustmentSeconds * 1000 + ts);
+  const ts = Number(timestampMs);
+  const date = new Date(epochAdjustmentSeconds * 1000 + ts);
+  if (!Number.isFinite(ts) || ts < 0 || Number.isNaN(date.getTime())) {
+    throw new InvalidNetworkTimestampError(timestampMs);
+  }
+  return date;
 }
 
 export function dateToNetworkTimestamp(date: Date, epochAdjustmentSeconds: number): number {

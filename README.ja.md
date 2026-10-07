@@ -10,7 +10,7 @@
 
 [English README](README.md)
 
-[Symbol](https://docs.symbol.dev/) の REST API を 22 個の目的別ツールとして公開する、読み取り専用の
+[Symbol](https://docs.symbol.dev/) の REST API を 21 個の目的別ツールとして公開する、読み取り専用の
 [MCP](https://modelcontextprotocol.io/) サーバーです。REST エンドポイントを 1 対 1 で写すのではなく、
 各ツールが「人が実際に尋ねる質問」に答えます。
 
@@ -30,13 +30,19 @@ divisibility 適用後の値と生の整数の両方、日時は ISO 8601（UTC�
 代表的な 2 つの呼び出しと、返る内容の抜粋です。値はテスト用フィクスチャ（合成したノードホストとアカウント）
 から取ったもので、実ノードの値ではありません。
 
-**「ノードは健全？」** → `symbol_node_health {}`
+**「ノードは健全？ 同期している？」** → `symbol_node_status {}`
 
 ```jsonc
 {
-  "summary": "node health: healthy (node.test:3001, mainnet).",
-  "network": "mainnet",
+  "summary": "node.test:3001 (friendlyName \"fixture-node\", host \"mainnet-node.example\") on mainnet is healthy and synced.\nSymbol 1.0.3.9, roles Peer/API/Voting; height 5,763,675, finalized 5,763,656 (epoch 4004); 6 peers; latest block 201 s old (not synced above 300 s).",
   "verdict": "healthy",
+  "sync": {
+    "synced": true,
+    "latestBlockTime": { "utc": "2026-09-10T03:01:38.808Z" },
+    "ageSeconds": 201,
+    "thresholdSeconds": 300,
+    "checkedAt": { "utc": "2026-09-10T03:05:00.000Z" }
+  },
   "checks": [
     { "id": "api_node", "status": "ok", "detail": "API node service is up.", "hint": null },
     { "id": "db", "status": "ok", "detail": "Database service is up.", "hint": null },
@@ -47,17 +53,20 @@ divisibility 適用後の値と生の整数の両方、日時は ISO 8601（UTC�
       "hint": null
     },
     {
-      "id": "finalization_lag",
+      "id": "chain_tip_age",
       "status": "ok",
-      "detail": "Finalized height 5,763,656 is 19 blocks (about 9.5 min) behind height 5,763,675 (warn at 720, fail at 1,440 blocks).",
+      "detail": "Latest block (height 5,763,675) is 201 s old (about 3.4 min; warn above 300 s, fail above 900 s).",
       "hint": null
     }
-    // … storage_consistent、roles、chain_tip_age、続いて node / storage / chain / time / notes
+    // … ほかに storage_consistent、finalization_lag、roles
   ]
+  // … 続いて node / network / chain / storage / peers / time / notes
 }
 ```
 
-`ok` 以外のチェックには次の手順を書いた `hint` が付き、summary にも 1 行ずつ出ます。
+`verdict` は 7 つのチェックを 1 語にまとめたもので、`sync.synced` はノードがチェーンを追えているかを示します
+（判定できなかったときは `null`）。`ok` 以外のチェックには次の手順を書いた `hint` が付き、summary にも 1 行ずつ出ます。
+リクエストが失敗しても呼び出しは答えを返し、該当するチェックが `unknown`、フィールドが `null` になります。
 
 **「ハーベスト報酬を月ごとに知りたい」**
 → `symbol_harvesting_income { "account": "NCV5HR…", "fromDate": "2026-09-01", "toDate": "2026-09-11", "granularity": "monthly" }`
@@ -271,14 +280,14 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 
 ## ツール
 
-22 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
+21 ツールすべてが読み取り専用（`readOnlyHint: true`）で、常に固定の順序で一覧されます。引数は識別子のみで、URL は受け取りません。
 `account` 引数（と `symbol_transaction_search` の `address`）は、base32 アドレス・48 桁の hex アドレス・hex 公開鍵のほかに、
 アドレスエイリアスを持つネームスペース名（`alice`、`alice.pay`）も受け付けます。名前の解決結果は `accountResolution` と summary の先頭に出ます。
 
 | ツール | 引数 | 答えること |
 |---|---|---|
 | `symbol_network_info` | なし | ネットワーク名・identifier・generationHashSeed、現在高さと確定高さ、確定エポック、ブロック生成目標時間、votingSetGrouping、epochAdjustment、XYM の mosaicId / エイリアス / divisibility、現在の手数料乗数。 |
-| `symbol_node_status` | なし | friendlyName、host、ロール（Peer / API / Voting）、復号したバージョン、API ノードと DB の health、高さ、ピア数、同期判定（最新ブロックが目標ブロック時間の 10 倍（mainnet では 5 分）より古ければ `synced: false`）。 |
+| `symbol_node_status` | `format` | 設定ノードが今、同期していてサービスが健全か、そしてどんなノードか。固定順の 7 チェック（それぞれ ok / warn / fail / unknown とヒント）から 1 つの判定 `healthy` / `degraded`（warn、または確認できなかった項目あり）/ `unhealthy` を出します: API ノードと DB の状態（`/node/health` の 503 応答も本文を読んで判定）、DB のブロック数とチェーン高さの差、ノード時計とこの端末の時計のずれ、ファイナリティ遅延（ブロック数と分）、ロール、最新ブロックの経過時間（この端末の時計と比べ、チェーンを追えなくなったノードを見つける。目標ブロック時間の 10 倍を超えたら warn、30 倍を超えたら fail）。`sync.synced` は、最新ブロックが目標ブロック時間の 10 倍（mainnet では 5 分）以内なら true、それより古ければ false、判定できなかったときは null。ほかに friendlyName、host、ロール（Peer / API / Voting）、復号したバージョン、ネットワーク、高さ、ピア数、DB の件数、ノード時計。リクエストが失敗しても呼び出し全体は失敗せず、該当するチェックが unknown、フィールドが null になります。閾値は `/network/properties` から導出。 |
 | `symbol_account_get` | `account`（アドレス、公開鍵、またはネームスペース名）, `format` | base32 / hex アドレス、公開鍵、全モザイク残高（エイリアスと桁反映）、importance、linked / VRF / node / voting キー、委任ハーベスティング設定の有無、マルチシグ設定（マルチシグ本体か連署者か）。 |
 | `symbol_voting_key_status` | `account` | 全 Voting キーと状態（expired / active / future）、残りエポック・ブロック・日数、失効予定日時、推奨更新ウィンドウ（失効 7 日前〜3 日前）、失効済みキーを含む枠の使用状況、`minVoterBalance` に対する資格、警告。 |
 | `symbol_transaction_get` | `transactionHash` | confirmed / unconfirmed / partial を順に探して状態を返す。種別名、署名者と宛先、エイリアス付きモザイク、平文メッセージの復号（暗号化なら明記）、手数料、高さと日時、アグリゲートの内包トランザクション。ノードが拒否したトランザクションは failed（ノードのコードとその意味付き）、ノードが知らないハッシュは not_found として返す。 |
@@ -294,7 +303,6 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 | `symbol_transaction_status` | `transactionHashes`（配列、1〜20 件） | 各トランザクションの現在の状態: confirmed（高さ付き）/ unconfirmed / partial（署名待ち）/ failed（ノードのコードとその意味付き）/ not_found。バッチ全体を 1 リクエストで照会。 |
 | `symbol_finality_participation` | `account`, `epoch`（任意、既定は最新の確定エポック）, `epochs`（1〜20、既定 1）, `format` | アカウントの Voting キーが各エポックのファイナリティ proof に実際に署名したか: participated（prevote と precommit の両方）/ missed（署名しなかったステージ付き）/ no_active_key / unavailable。ステージごとの署名数（proof が 1 つのステージを複数のメッセージグループに分けていても 1 ステージとして扱い、どのグループの署名でも署名済みと数える）と、現在のエポックをカバーする鍵が無い／現在のエポックが missed のときの警告（過去のエポックでは警告しない）。 |
 | `symbol_delegation_diagnose` | `account`, `recentDays`（1〜30、既定 7）, `format` | 委任ハーベストが有効か、無効ならどこで止まっているか: アカウントの存在、ハーベスト残高制限、importance（0 なら次の再計算までのブロック数）、linked / VRF / node の各鍵、node 鍵と設定ノードの `nodePublicKey` の一致、そのノードでの解錠、accountType、直近 N 日のハーベスト実績、ノード宛の委任要求トランザクション。判定は `active` / `not_active` / `cannot_verify`（別ノードへの委任はここからは確認できない）。 |
-| `symbol_node_health` | `format` | 設定ノードが今、健全に動いているか: API ノードと DB の状態（`/node/health` の 503 応答も本文を読んで判定）、DB のブロック数とチェーン高さの差、ノード時計とこの端末の時計のずれ、ファイナリティ遅延（ブロック数と分）、ロール、最新ブロックの経過時間（この端末の時計と比べ、チェーンを追えなくなったノードを見つける。目標ブロック時間の 10 倍を超えたら warn、30 倍を超えたら fail）。固定順の 7 チェックが ok / warn / fail / unknown とヒントを持ち、判定は `healthy` / `degraded`（warn、または確認できなかった項目あり）/ `unhealthy`。閾値は `/network/properties` から導出。`symbol_node_status` を補完。 |
 | `symbol_version_drift` | `format` | 設定ノードのバージョンがネットワークの多数派から取り残されていないか: ノードが知るピアと参照ノードのバージョン分布、多数派の版、自ノードより新しい版の割合。判定は `ok` / `behind`（多数派より古い、または新しい版が半数以上）/ `far_behind`（75% 以上が新しい。接続を拒否され始める可能性）/ `unknown`（使えるピアが無い、または自ノードが自分の版を報告しない）。まだ版を報告していないピア（0.0.0.0）は版として数えず、`sample.unknownVersion` に別に数えます。ピアの host や鍵は出力しません。 |
 | `symbol_harvester_watch` | `mode`（`compare` / `compare_and_save` / `save_only`）, `format` | 設定ノードで解錠中の委任ハーベスターが前回より増えたか減ったか: 追加・削除されたリモート鍵、件数の差分、直近 30 日のスナップショットの最小・最大・平均。スナップショットは `SYMBOL_STATE_DIR` 配下にノードごと 1 ファイル。未設定なら現在の一覧だけを返し「比較不可」と明記。`compare` は読むだけ、`compare_and_save`（既定）は今回分も保存、`save_only` は比較せず保存。 |
 | `symbol_account_rank` | `account`（任意）, `mosaic`（任意。hex id かエイリアス名、既定は XYM）, `top`（1〜100、既定 20）, `maxRank`（100〜5000、既定 1000）, `format` | あるアカウントがモザイクの保有量で何番目か、上位は誰か（エクスプローラのリッチリスト相当）: アカウントの残高・供給量に対する割合（小数 4 桁、整数演算）・順位、上位 N 件の残高と割合、上位 N 件の合計割合。保有者は `GET /accounts?orderBy=balance` から 100 件ずつ逐次読み、見つかるか `maxRank` に達するまで続けます（達したら `rankBeyond` に出ます）。`account` を省略すると上位一覧だけ。同額の順序はノード依存で、取引所・財団などのラベルは付けません。 |
@@ -351,8 +359,8 @@ accountType、直近のハーベスト実績、委任要求トランザクショ
 ノード側を確認できない）を返します。
 
 **「ノードは健全？ バージョンは古くない？」**
-→ `symbol_node_health {}` が設定ノードの API ノード・DB・ストレージ・時計・ファイナリティ遅延・最新ブロックの
-経過時間を確認し、healthy / degraded / unhealthy と問題のあるチェックを返します。
+→ `symbol_node_status {}` が設定ノードの API ノード・DB・ストレージ・時計・ファイナリティ遅延・最新ブロックの
+経過時間を確認し、healthy / degraded / unhealthy と問題のあるチェック、同期しているかどうかを返します。
 → `symbol_version_drift {}` がノードのバージョンをピアと参照ノードと比べ、ok / behind / far_behind を返します。
 どちらもノードの OS 移行後に最初に見る項目です。
 
@@ -384,11 +392,11 @@ Claude Desktop で「今いくら？」と聞いたときの流れは、まず�
 
 | Prompt | 手順 |
 |---|---|
-| `voting_key_renewal_checklist` | `symbol_voting_key_status`（失効予定・推奨ウィンドウ・空き枠と、その警告をそのまま）→ `symbol_node_status`（未同期なら中止）→ `symbol_network_compare`（比較できなかったときは同期を未確認として報告）→ 運用者がこのサーバーの外で VotingKeyLink を送信 → そのハッシュを `symbol_transaction_status` で確認 → `symbol_voting_key_status` を再度呼んで新キーを確認 → 新キーの startEpoch が確定した後に `symbol_finality_participation` で参加を確認 → 4 行で要約。 |
-| `monthly_health_check` | `symbol_node_status` → `symbol_node_health`（unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare`（比較できなかったときは同期を未確認として報告）→ `symbol_harvester_watch`（前回スナップショットとの差分。`symbol_harvesting_status` は求められたときだけ） → `symbol_voting_key_status`（残り日数・失効予定。警告はそのまま先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income`（収益と、自分でハーベストしたブロック・委任者などのブロックを分けて）→ 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
+| `voting_key_renewal_checklist` | `symbol_voting_key_status`（失効予定・推奨ウィンドウ・空き枠と、その警告をそのまま）→ `symbol_node_status`（未同期なら中止。同期を判定できなかったときも中止。判定と ok でないチェックは要約の Open items に）→ `symbol_network_compare`（比較できなかったときは同期を未確認として報告）→ 運用者がこのサーバーの外で VotingKeyLink を送信 → そのハッシュを `symbol_transaction_status` で確認 → `symbol_voting_key_status` を再度呼んで新キーを確認 → 新キーの startEpoch が確定した後に `symbol_finality_participation` で参加を確認 → 4 行で要約。 |
+| `monthly_health_check` | `symbol_node_status`（判定・同期・バージョン・ピア数。unhealthy なら先頭に）→ `symbol_version_drift`（behind 以上なら先頭に）→ `symbol_network_compare`（比較できなかったときは同期を未確認として報告）→ `symbol_harvester_watch`（前回スナップショットとの差分。`symbol_harvesting_status` は求められたときだけ） → `symbol_voting_key_status`（残り日数・失効予定。警告はそのまま先頭に）→ `symbol_account_get`（残高 vs `minVoterBalance`）→ 先月 1 日〜末日の `symbol_harvesting_income`（収益と、自分でハーベストしたブロック・委任者などのブロックを分けて）→ 要対応 / 注意 / 正常の 3 段階で 1 画面に。 |
 
 サーバーは initialize 時に短い `instructions`（読み取り専用であること、アカウントの指定形式、取り違えやすい質問（ハーベスト報酬、Voting キー、
-ノードの同期・健全性・バージョン、トランザクションが通ったか）に使うツール、返された数値をそのまま使うこと）も送ります。
+ノードの健全性と同期・バージョン、トランザクションが通ったか）に使うツール、返された数値をそのまま使うこと）も送ります。
 隣り合う質問に答えるツールは、説明文で互いを案内します。
 
 ## CLI: cron からの監視
@@ -407,7 +415,7 @@ symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <
 
 | # | 項目 | ok / warn / fail |
 |---|---|---|
-| 1 | `node_health` | `symbol_node_health`: healthy / degraded / unhealthy。最新ブロックが目標ブロック時間の 10 倍（mainnet では 5 分）より古いノードは degraded、30 倍より古ければ unhealthy |
+| 1 | `node_health` | `symbol_node_status` の判定: healthy / degraded / unhealthy。最新ブロックが目標ブロック時間の 10 倍（mainnet では 5 分）より古いノードは degraded、30 倍より古ければ unhealthy |
 | 2 | `version_drift` | `symbol_version_drift`: ok / behind または unknown / far_behind |
 | 3 | `harvester_watch` | `symbol_harvester_watch`（比較して保存）: 解錠中のハーベスターが前回より減った、またはスナップショットを保存できなかったら warn。`SYMBOL_STATE_DIR` 未設定なら skip |
 | 4 | `voting_key_status` | `--account` 指定時: アクティブな Voting キーの失効まで `--warn-days`（既定 14、1〜120）日以内なら warn、3 日以内またはアクティブなキーが無ければ fail。後継キーが切れ目なく登録済みなら ok。残高が `minVoterBalance` 未満（投票できない）なら、後継キーの有無にかかわらず fail。キーの登録枠に空きが無いことは判定を変えませんが、warn / fail のヒントにツールの枠の警告を足します（後継キーが登録済みなら足しません）。`--account` 無しなら skip |
@@ -526,7 +534,7 @@ symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
   そのほかの制御文字と見えない書式文字（ゼロ幅文字、双方向制御文字、ソフトハイフン、人には見えずモデルには読める
   タグ文字 U+E0000〜U+E007F）はすべて除去し、文字を割らずに長さを制限します。異体字セレクタは残すので絵文字や
   漢字の異体字はそのままですが、ゼロ幅接合子でつないだ絵文字は個々の絵文字に分かれます。こうした文字列を出す
-  17 のツールは、除去した文字の数を `invisibleCharactersRemoved` で返し、1 文字以上除去したときは summary の
+  16 のツールは、除去した文字の数を `invisibleCharactersRemoved` で返し、1 文字以上除去したときは summary の
   最後の行でもそう伝えます。`summary` では、こうした文字列にラベルを付け、二重引用符で囲み、中の引用符と
   バックスラッシュを JSON と同じ規則でエスケープして出します（`untrusted message: "…"`、`friendlyName "…"`）。
   引用を閉じてサーバー自身の文に見せかけることはできません。名前空間の文法に合うエイリアス名と名前空間名は
@@ -625,7 +633,7 @@ symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
   持っていない」（未確定、または保持期間外）ことを意味し、投票しなかったことを意味しません。登録されている投票者の
   総数はサーバーには分からないので、`signatureCount` は nodewatch のような外部の一覧と比べてください。
 - **バージョンの比較はサンプルです。** `symbol_version_drift` が見るのは設定ノードが今知っているピアと参照ノードで、
-  ネットワーク全体ではありません（全体像は nodewatch）。`symbol_node_health` の時計ずれと最新ブロックの経過時間は、
+  ネットワーク全体ではありません（全体像は nodewatch）。`symbol_node_status` の時計ずれと最新ブロックの経過時間は、
   このサーバーを動かしている端末の時計との比較で、端末側がずれている可能性もあります。
 - **mainnet と testnet のみ。** トランザクションの作成・署名・送信は設計上行いません。
 - **URL は指定どおりに使います。** ポートやスキームを勝手に変えません。http の 3000 番しか開いていないノードは

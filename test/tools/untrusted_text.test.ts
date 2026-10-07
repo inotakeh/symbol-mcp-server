@@ -15,7 +15,6 @@ import { MAX_REST_VERSION_LENGTH } from '../../src/tools/symbol_version_drift.js
 import {
   accountSearchRoute,
   createTestContext,
-  FIXTURE_BLOCK_TIME,
   fixture,
   jsonResponse,
   mainnetRoutes,
@@ -70,65 +69,56 @@ function routes(extra: Routes = {}): Routes {
 }
 
 describe('node status strings from /node/health', () => {
-  it('symbol_node_status cleans apiNode and db in the output, the warnings and the summary', async () => {
+  type StatusCheck = { id: string; status: string; detail: string };
+  const checkOf = (
+    result: { structuredContent?: Record<string, unknown> | undefined },
+    id: string,
+  ) => {
+    const checks = result.structuredContent?.checks as StatusCheck[];
+    return checks.find((c) => c.id === id);
+  };
+
+  it('symbol_node_status cleans apiNode and db in the check details and the summary', async () => {
     server = await startTestServer({
-      now: new Date(FIXTURE_BLOCK_TIME.getTime() + 60_000),
       routes: routes({ 'GET /node/health': () => jsonResponse(HOSTILE_HEALTH, 503) }),
     });
     const result = await server.callTool('symbol_node_status');
     expect(result.isError).toBe(false);
+    expect(result.structuredContent?.verdict).toBe('unhealthy');
     // The CR inside db becomes a space; the escape introducers, CSI and tag text are removed.
-    expect(result.structuredContent?.health).toEqual({
-      apiNode: 'up[2J',
-      db: 'down 31m',
-      healthy: false,
-    });
-    expect(result.structuredContent?.summary).toMatch(/Health apiNode="up\[2J", db="down 31m";/);
+    expect(checkOf(result, 'api_node')?.detail).toBe('API node service is up[2J.');
+    expect(checkOf(result, 'db')?.detail).toBe('Database service is down 31m.');
+    // In the summary the same statuses are quoted after a label.
+    const summary = String(result.structuredContent?.summary);
+    expect(summary).toContain('- api_node fail: API node service reports status "up[2J".');
+    expect(summary).toContain('- db fail: Database service reports status "down 31m".');
     expectClean(result.structuredContent);
     expectClean(result.text);
   });
 
   it('judges the cleaned value, so the verdict matches the text shown next to it', async () => {
     server = await startTestServer({
-      now: new Date(FIXTURE_BLOCK_TIME.getTime() + 60_000),
       routes: routes({ 'GET /node/health': { status: { apiNode: `u${ZWSP}p`, db: 'up' } } }),
     });
-    const status = await server.callTool('symbol_node_status');
-    expect(status.structuredContent?.health).toEqual({ apiNode: 'up', db: 'up', healthy: true });
-    const health = await server.callTool('symbol_node_health');
-    const checks = health.structuredContent?.checks as Array<{ id: string; status: string }>;
-    expect(checks.find((c) => c.id === 'api_node')?.status).toBe('ok');
+    const result = await server.callTool('symbol_node_status');
+    expect(checkOf(result, 'api_node')).toMatchObject({
+      status: 'ok',
+      detail: 'API node service is up.',
+    });
+    expect(result.structuredContent?.verdict).toBe('healthy');
   });
 
   it('shows a status with nothing left after cleaning as (empty), and not as up', async () => {
     server = await startTestServer({
-      now: new Date(FIXTURE_BLOCK_TIME.getTime() + 60_000),
       routes: routes({ 'GET /node/health': { status: { apiNode: ZWSP, db: 'up' } } }),
     });
-    const status = await server.callTool('symbol_node_status');
-    expect(status.structuredContent?.health).toEqual({
-      apiNode: EMPTY_SERVICE_STATUS,
-      db: 'up',
-      healthy: false,
+    const result = await server.callTool('symbol_node_status');
+    expect(checkOf(result, 'api_node')).toMatchObject({
+      status: 'fail',
+      detail: `API node service is ${EMPTY_SERVICE_STATUS}.`,
     });
-    const health = await server.callTool('symbol_node_health');
-    const checks = health.structuredContent?.checks as Array<{ id: string; detail: string }>;
-    expect(checks.find((c) => c.id === 'api_node')?.detail).toBe(
-      `API node service is ${EMPTY_SERVICE_STATUS}.`,
-    );
-  });
-
-  it('symbol_node_health cleans the statuses in the check details and the summary', async () => {
-    server = await startTestServer({
-      routes: routes({ 'GET /node/health': () => jsonResponse(HOSTILE_HEALTH, 503) }),
-    });
-    const result = await server.callTool('symbol_node_health');
-    expect(result.isError).toBe(false);
+    expect(checkOf(result, 'db')?.status).toBe('ok');
     expect(result.structuredContent?.verdict).toBe('unhealthy');
-    const checks = result.structuredContent?.checks as Array<{ id: string; detail: string }>;
-    expect(checks.find((c) => c.id === 'api_node')?.detail).toBe('API node service is up[2J.');
-    expect(checks.find((c) => c.id === 'db')?.detail).toBe('Database service is down 31m.');
-    expectClean(result.structuredContent);
   });
 
   it('keeps them out of the check CLI output, text and JSON', async () => {

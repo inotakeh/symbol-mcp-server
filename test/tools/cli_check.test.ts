@@ -224,7 +224,7 @@ describe('runCheck against the fixture node', () => {
 
   it('is WARN (exit 1) and then FAIL (exit 2) as the latest block of a stalled node ages', async () => {
     // The chain tip stops moving while the node clock and every service keep answering, so only
-    // the chain_tip_age check of symbol_node_health can tell (10 and 30 block times: 300 / 900 s).
+    // the chain_tip_age check of symbol_node_status can tell (10 and 30 block times: 300 / 900 s).
     const block = fixture<{ block: { timestamp: string } }>('mainnet/block-5763675.json');
     const aged = (ageMs: number) => ({
       ...block,
@@ -255,6 +255,38 @@ describe('runCheck against the fixture node', () => {
       expect(item(report, 'version_drift').status).toBe('ok');
       vi.unstubAllGlobals();
     }
+  });
+
+  it('is WARN (exit 1), not a failed item, when the node time is no valid time', async () => {
+    // Any digits pass the uint64 schema; this value lies beyond the last date JavaScript knows.
+    const { ctx } = await createTestContext({
+      routes: routes({
+        'GET /node/time': { communicationTimestamps: { sendTimestamp: '99999999999999999999' } },
+      }),
+    });
+    const report = await runCheck(ctx, { account: null, warnDays: 14 });
+    expect(item(report, 'node_health')).toEqual({
+      id: 'node_health',
+      status: 'warn',
+      detail: `degraded (clock_skew unknown). ${TEST_NODE_HOST} answered /node/time with a timestamp that is not a valid time.`,
+      hint: 'Retry later; the other checks do not depend on it.',
+    });
+    expect(report.exitCode).toBe(1);
+  });
+
+  it('keeps node_health ok when /node/peers fails: the item reads the peer count but never judges it', async () => {
+    const { ctx } = await createTestContext({
+      routes: routes({ 'GET /node/peers': () => jsonResponse({ message: 'down' }, 503) }),
+    });
+    const report = await runCheck(ctx, { account: null, warnDays: 14 });
+    expect(item(report, 'node_health')).toEqual({
+      id: 'node_health',
+      status: 'ok',
+      detail: 'healthy (finalization lag 19 blocks)',
+      hint: null,
+    });
+    // version_drift has no peers to sample, which is that item's own warning.
+    expect(item(report, 'version_drift').status).toBe('warn');
   });
 
   it('fails one item on a RestError and still runs the others', async () => {
@@ -591,8 +623,9 @@ describe('runCheck against the fixture node', () => {
   });
 
   it('skips what is left at the time limit and is then at best WARN', async () => {
+    // /node/server is read by version_drift only: node_health finishes, the second item hangs.
     const { ctx } = await createTestContext({
-      routes: routes({ 'GET /node/peers': () => new Promise<Response>(() => {}) }),
+      routes: routes({ 'GET /node/server': () => new Promise<Response>(() => {}) }),
       env: { SYMBOL_STATE_DIR: dir },
     });
     const diagnostics: string[] = [];
@@ -865,7 +898,7 @@ describe('runCheck: the certificate item (--cert)', () => {
 
   it('is skipped like any other item once the time limit is reached', async () => {
     const { ctx } = await createTestContext({
-      routes: routes({ 'GET /node/peers': () => new Promise<Response>(() => {}) }),
+      routes: routes({ 'GET /node/server': () => new Promise<Response>(() => {}) }),
     });
     const report = await runCheck(ctx, {
       account: null,

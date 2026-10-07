@@ -33,13 +33,19 @@ applied and as the raw integer; timestamps are ISO 8601 UTC, with a local time a
 Two calls and excerpts of what they return. The values come from the test fixtures (a synthetic
 node host and account), not from a live node.
 
-**"Is my node healthy?"** → `symbol_node_health {}`
+**"Is my node healthy, and is it in sync?"** → `symbol_node_status {}`
 
 ```jsonc
 {
-  "summary": "node health: healthy (node.test:3001, mainnet).",
-  "network": "mainnet",
+  "summary": "node.test:3001 (friendlyName \"fixture-node\", host \"mainnet-node.example\") on mainnet is healthy and synced.\nSymbol 1.0.3.9, roles Peer/API/Voting; height 5,763,675, finalized 5,763,656 (epoch 4004); 6 peers; latest block 201 s old (not synced above 300 s).",
   "verdict": "healthy",
+  "sync": {
+    "synced": true,
+    "latestBlockTime": { "utc": "2026-09-10T03:01:38.808Z" },
+    "ageSeconds": 201,
+    "thresholdSeconds": 300,
+    "checkedAt": { "utc": "2026-09-10T03:05:00.000Z" }
+  },
   "checks": [
     { "id": "api_node", "status": "ok", "detail": "API node service is up.", "hint": null },
     { "id": "db", "status": "ok", "detail": "Database service is up.", "hint": null },
@@ -50,18 +56,21 @@ node host and account), not from a live node.
       "hint": null
     },
     {
-      "id": "finalization_lag",
+      "id": "chain_tip_age",
       "status": "ok",
-      "detail": "Finalized height 5,763,656 is 19 blocks (about 9.5 min) behind height 5,763,675 (warn at 720, fail at 1,440 blocks).",
+      "detail": "Latest block (height 5,763,675) is 201 s old (about 3.4 min; warn above 300 s, fail above 900 s).",
       "hint": null
     }
-    // … storage_consistent, roles and chain_tip_age, then node, storage, chain, time and notes
+    // … and storage_consistent, finalization_lag and roles
   ]
+  // … then node, network, chain, storage, peers, time and notes
 }
 ```
 
-A check that is not `ok` carries a `hint` with the next step, and the summary lists it on its own
-line.
+`verdict` folds the seven checks into one word, and `sync.synced` says whether the node follows the
+chain (`null` when that could not be judged). A check that is not `ok` carries a `hint` with the
+next step, and the summary lists it on its own line. A request that fails makes its check `unknown`
+and its fields `null`; the call still answers.
 
 **"How much did I earn from harvesting, month by month?"**
 → `symbol_harvesting_income { "account": "NCV5HR…", "fromDate": "2026-09-01", "toDate": "2026-09-11", "granularity": "monthly" }`
@@ -280,7 +289,7 @@ On Windows, a client that cannot start `npx` may need `"command": "npx.cmd"`.
 
 ## Tools
 
-All 22 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
+All 21 tools are read-only (`readOnlyHint: true`) and are listed in a fixed order. Arguments are
 identifiers only, never URLs. Every `account` argument (and the `address` of
 `symbol_transaction_search`) takes a base32 address, a 48-character hex address, a hex public key,
 or a namespace name such as `alice` or `alice.pay` that carries an address alias; the resolution of
@@ -289,7 +298,7 @@ a name is reported in `accountResolution` and at the start of the summary.
 | Tool | Arguments | Answers |
 |---|---|---|
 | `symbol_network_info` | none | Network name/identifier and generation hash seed, current and finalized height, finalization epoch, block target time, voting set grouping, epoch adjustment, XYM mosaic id/alias/divisibility, current fee multipliers. |
-| `symbol_node_status` | none | Friendly name, host, roles (Peer/API/Voting), decoded version, health of API node and database, heights, peer count, and a sync check (latest block older than 10 target block times, 5 minutes on mainnet, means `synced: false`). |
+| `symbol_node_status` | `format` | Is the configured node in sync and are its services healthy right now, and what is it. One verdict, `healthy`, `degraded` (a warning or a check that could not be made) or `unhealthy`, from seven checks in a fixed order, each ok/warn/fail/unknown with a hint: API node and database status (a 503 `/node/health` answer is read, not treated as a failure), database block count versus chain height, node clock versus this machine's clock, finalization lag in blocks and minutes, roles, and the age of the latest block versus this machine's clock, which catches a node that has stopped following the chain (warn beyond 10 target block times, fail beyond 30). `sync.synced` is true while the latest block is at most 10 target block times old (5 minutes on mainnet), false beyond that, and null when it could not be judged. Also friendly name, host, roles (Peer/API/Voting), decoded version, network, heights, peer count, database counts and the node clock. A request that fails makes its check unknown and its fields null instead of failing the call. Thresholds derive from the network properties. |
 | `symbol_account_get` | `account` (address, public key or namespace name), `format` | Address in base32 and hex, public key, every mosaic balance with alias and decimals, importance, linked/VRF/node/voting keys, whether delegated harvesting is set up, multisig settings (as a multisig account or as a cosignatory). |
 | `symbol_voting_key_status` | `account` | Every voting key with status (expired/active/future), remaining epochs/blocks/days, estimated expiry date, recommended renewal window (7 to 3 days before), slot usage including expired keys, voter eligibility versus `minVoterBalance`, warnings. |
 | `symbol_transaction_get` | `transactionHash` | Looks in confirmed, unconfirmed and partial groups and reports the status; type name, signer and recipient, mosaics with aliases, decoded plain message or "encrypted" marker, fee, height and time, inner transactions of aggregates. A transaction the node rejected is reported as failed, with the node's code and its meaning; a hash the node does not know as not_found. |
@@ -305,7 +314,6 @@ a name is reported in `accountResolution` and at the start of the summary.
 | `symbol_transaction_status` | `transactionHashes` (array, 1 to 20) | Where each transaction stands right now: confirmed (with height), unconfirmed, partial (waiting for cosignatures), failed (with the node's code and its meaning) or not_found. One request for the whole batch. |
 | `symbol_finality_participation` | `account`, `epoch` (optional, default latest finalized), `epochs` (1 to 20, default 1), `format` | Whether the account's voting key actually signed the finalization proof of each epoch: participated (both prevote and precommit), missed (which stage was not signed), no_active_key or unavailable, with the signature count per stage (a stage that the proof splits into several message groups counts as one stage; a signature in any of its groups counts) and a warning when no key covers the current epoch or the current epoch was missed (historical epochs never warn). |
 | `symbol_delegation_diagnose` | `account`, `recentDays` (1 to 30, default 7), `format` | Is delegated harvesting active, and if not, where does it stop: account exists, balance within the harvesting limits, importance above zero (or blocks until the next recalculation), linked/VRF/node keys, node key equal to the configured node's `nodePublicKey`, remote key unlocked on that node, account type, harvested blocks in the last N days, and the persistent delegation request transfer to the node. Verdict `active`, `not_active` or `cannot_verify` (delegation to another node cannot be checked from here). |
-| `symbol_node_health` | `format` | Is the configured node running healthily right now: API node and database status (a 503 `/node/health` answer is read, not treated as a failure), database block count versus chain height, node clock versus this machine's clock, finalization lag in blocks and minutes, roles, and the age of the latest block versus this machine's clock, which catches a node that has stopped following the chain (warn beyond 10 target block times, fail beyond 30). Seven checks in a fixed order, each ok/warn/fail/unknown with a hint; verdict `healthy`, `degraded` (a warning or a check that could not be made) or `unhealthy`. Thresholds derive from the network properties. Complements `symbol_node_status`. |
 | `symbol_version_drift` | `format` | Is the node's software version behind the network majority: versions of the peers the node knows plus the reference nodes, as a distribution with the majority version and the share running something newer. Verdict `ok`, `behind` (older than the majority, or newer versions hold at least half the sample), `far_behind` (75% or more newer: peers may refuse connections) or `unknown` (no usable peers, or the node reports no version of its own). Peers that report no version yet (0.0.0.0) are counted apart (`sample.unknownVersion`), not as a version. Peer hosts and keys are never reported. |
 | `symbol_harvester_watch` | `mode` (`compare`, `compare_and_save`, `save_only`), `format` | Did the delegated harvesters unlocked on the node increase or decrease since the last call: added and removed remote keys, count delta, and min / max / average over the snapshots of the last 30 days. Snapshots are kept in one file per node under `SYMBOL_STATE_DIR`; without it the current list is reported and no comparison is possible. `compare` reads only, `compare_and_save` (default) also stores the current list, `save_only` stores without comparing. |
 | `symbol_account_rank` | `account` (optional), `mosaic` (optional; hex id or alias, default XYM), `top` (1 to 100, default 20), `maxRank` (100 to 5000, default 1000), `format` | Where an account ranks among the holders of a mosaic and who the top holders are, like an explorer rich list: the account's balance, share of supply (4 decimals, integer arithmetic) and rank, the top N holders with balances and shares, and the combined top-N share. Holders are read from `GET /accounts?orderBy=balance` 100 per request, one request at a time, until the account is found or `maxRank` is reached (`rankBeyond` then says so). Omit `account` for the top list only. Ties are ordered by the node; no labels (exchange, foundation) are attached. |
@@ -368,9 +376,9 @@ delegation request transfer) and answers `active`, `not_active` (with the failin
 be checked).
 
 **"Is my node healthy, and is its version behind?"**
-→ `symbol_node_health {}` checks the API node, database, storage, clock, finalization lag and the age
-of the latest block of the configured node and answers healthy / degraded / unhealthy with the
-failing checks;
+→ `symbol_node_status {}` checks the API node, database, storage, clock, finalization lag and the age
+of the latest block of the configured node, answers healthy / degraded / unhealthy with the
+failing checks, and says whether the node is synced;
 → `symbol_version_drift {}` compares the node version with its peers and the reference nodes and
 answers ok / behind / far_behind. Both are the first things to look at after a node OS migration.
 
@@ -407,12 +415,12 @@ prompt text contains no addresses, hosts, keys or dates of its own.
 
 | Prompt | What it walks through |
 |---|---|
-| `voting_key_renewal_checklist` | `symbol_voting_key_status` (expiry, renewal window, free slots and its warnings as given), `symbol_node_status` (stop if not synced), `symbol_network_compare` (sync reported as not confirmed when it could not compare), then, after the operator has announced the VotingKeyLink outside this server, `symbol_transaction_status` on the hash, a second `symbol_voting_key_status` to confirm the new key, and `symbol_finality_participation` once the new key's start epoch is finalized. Ends with a four-line summary. |
-| `monthly_health_check` | `symbol_node_status`, `symbol_node_health` (unhealthy goes first), `symbol_version_drift` (behind or far_behind goes first), `symbol_network_compare` (sync reported as not confirmed when it could not compare), `symbol_harvester_watch` (delta against the previous snapshot; `symbol_harvesting_status` only on request), `symbol_voting_key_status` (remaining days and expiry; its warnings go first, as given), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month (the income, then the blocks the account harvested itself and the blocks of delegators or others as separate items). Reports on one screen as Action required / Attention / Normal. |
+| `voting_key_renewal_checklist` | `symbol_voting_key_status` (expiry, renewal window, free slots and its warnings as given), `symbol_node_status` (stop if not synced, or if the sync could not be judged; its verdict and the checks that are not ok go under open items), `symbol_network_compare` (sync reported as not confirmed when it could not compare), then, after the operator has announced the VotingKeyLink outside this server, `symbol_transaction_status` on the hash, a second `symbol_voting_key_status` to confirm the new key, and `symbol_finality_participation` once the new key's start epoch is finalized. Ends with a four-line summary. |
+| `monthly_health_check` | `symbol_node_status` (verdict, sync, version and peer count; unhealthy goes first), `symbol_version_drift` (behind or far_behind goes first), `symbol_network_compare` (sync reported as not confirmed when it could not compare), `symbol_harvester_watch` (delta against the previous snapshot; `symbol_harvesting_status` only on request), `symbol_voting_key_status` (remaining days and expiry; its warnings go first, as given), `symbol_account_get` (balance versus `minVoterBalance`) and `symbol_harvesting_income` for the previous calendar month (the income, then the blocks the account harvested itself and the blocks of delegators or others as separate items). Reports on one screen as Action required / Attention / Normal. |
 
 The server also sends short `instructions` at initialize time (read-only, account formats, which
-tool answers the questions that are easy to mix up: harvest income, voting keys, node sync versus
-health versus version, whether a transaction went through; use the returned numbers as they are).
+tool answers the questions that are easy to mix up: harvest income, voting keys, node health and
+sync versus version, whether a transaction went through; use the returned numbers as they are).
 Tools that answer neighbouring questions point to each other in their descriptions.
 
 ## CLI: monitoring from cron
@@ -432,7 +440,7 @@ Node.js 22 or newer. Started without arguments the binary is still the MCP serve
 
 | # | Item | ok / warn / fail |
 |---|---|---|
-| 1 | `node_health` | `symbol_node_health`: healthy / degraded / unhealthy. A node whose latest block is older than 10 target block times (5 minutes on mainnet) is degraded, older than 30 unhealthy |
+| 1 | `node_health` | The verdict of `symbol_node_status`: healthy / degraded / unhealthy. A node whose latest block is older than 10 target block times (5 minutes on mainnet) is degraded, older than 30 unhealthy |
 | 2 | `version_drift` | `symbol_version_drift`: ok / behind or unknown / far_behind |
 | 3 | `harvester_watch` | `symbol_harvester_watch` (compare and save): warn when fewer harvesters are unlocked than at the previous run, or when the snapshot could not be saved. Skipped without `SYMBOL_STATE_DIR` |
 | 4 | `voting_key_status` | With `--account`: warn when the active voting key expires within `--warn-days` (default 14, 1 to 120), fail within 3 days or without an active key; ok when a successor key is already registered without a gap. Fail also when the balance is below `minVoterBalance` (the account cannot vote), successor or not. Full key slots change no status, but the hint of a warn or fail then adds the tool's slot warning, unless a successor key is already registered. Skipped without `--account` |
@@ -566,7 +574,7 @@ symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
   control and invisible format character is stripped (zero-width and bidi characters, soft hyphens,
   and the tag characters U+E0000 to U+E007F that people cannot see but models can read), and length
   is capped without splitting a character. Variation selectors are kept, so emoji and ideograph variants
-  survive; emoji joined by a zero-width joiner come out as separate emoji. The 17 tools that show such
+  survive; emoji joined by a zero-width joiner come out as separate emoji. The 16 tools that show such
   text report in `invisibleCharactersRemoved` how many characters were removed from it, and when any
   were, the summary ends with a line saying so. In the `summary`, such text also appears after a
   label and in double quotes, with quotes and backslashes escaped as in JSON (`untrusted message:
@@ -679,7 +687,7 @@ https://nodewatch.symbol.tools/; see [Choosing a node](#choosing-a-node).
   only be compared with an external list such as nodewatch.
 - **Version drift is sampled, not surveyed.** `symbol_version_drift` sees the peers the configured
   node currently knows plus the reference nodes, not the whole network; the full picture is on
-  nodewatch. Clock skew and the age of the latest block in `symbol_node_health` are measured against
+  nodewatch. Clock skew and the age of the latest block in `symbol_node_status` are measured against
   the clock of the machine running this server, which may itself be off.
 - **Mainnet and testnet only.** No transaction building, signing or announcing, by design.
 - **The URL is used as given.** The server does not switch ports or schemes on its own; if a node
