@@ -3,6 +3,7 @@
  * status, how the exit code is decided, the --warn-days boundaries, argument parsing, and the text
  * rendering. test/tools/cli_check.test.ts runs the whole check against the fixture node.
  */
+import { X509Certificate } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   type CheckItemStatus,
   type CheckReport,
+  CheckReportSchema,
   DEFAULT_WARN_DAYS,
   decideExit,
   type FinalityView,
@@ -21,13 +23,22 @@ import {
   mapVotingKeys,
   type NodeHealthView,
   printableItem,
+  runCheckWithoutNode,
   type VotingKeysView,
 } from '../../src/cli/check.js';
 import { formatCheckJson, formatCheckText } from '../../src/cli/format.js';
 import { type CliDeps, parseCliArgs, runCli } from '../../src/cli.js';
+import { RestError } from '../../src/client/rest.js';
+import { REDIRECT_ADVICE } from '../../src/config.js';
 import { UNAVAILABLE_NOTE } from '../../src/tools/symbol_finality_participation.js';
 import { NOT_SAVED_NOTE_PREFIX, RESTART_NOTE } from '../../src/tools/symbol_harvesting_status.js';
-import { createFakeFetch, jsonResponse, mainnetRoutes, TEST_NOW } from '../tools/harness.js';
+import {
+  createFakeFetch,
+  jsonResponse,
+  mainnetRoutes,
+  type RouteHandler,
+  TEST_NOW,
+} from '../tools/harness.js';
 
 const ADDRESS = 'NCV5HRBSFEGTPNBIUPBVAGWXWXZ43C4TNOQUYUY';
 
@@ -704,6 +715,356 @@ describe('runCli check', () => {
     const { cliDeps, out } = deps();
     expect(await runCli(['check', '--quiet'], cliDeps)).toBe(1);
     expect(out.join('')).toMatch(/^symbol check: WARN /);
+  });
+
+  describe('when /node/info cannot be read at start-up', () => {
+    // A synthetic certificate (test/fixtures/cert/README.md) that expires at the end of 2099.
+    const here = dirname(fileURLToPath(import.meta.url));
+    const nodeA = join(here, '..', 'fixtures', 'cert', 'node-a.crt');
+    const missing = join(here, 'no-such-certificate.crt');
+    const NOT_AFTER = '2099-12-31T23:59:59.000Z';
+    const A_DAYS = Math.floor((new Date(NOT_AFTER).getTime() - TEST_NOW.getTime()) / 86_400_000);
+    const fingerprint = () => new X509Certificate(readFileSync(nodeA)).fingerprint256;
+
+    const HEAD = 'symbol check: ERROR (node.test:3001, unknown, 2026-09-10T03:05:00.000Z)';
+    const SKIP = '/node/info could not be read at start-up, so this check did not run';
+    // The five items that ask the node, in the order of the report.
+    const NODE_ITEMS = [
+      'node_health',
+      'version_drift',
+      'harvester_watch',
+      'voting_key_status',
+      'finality_participation',
+    ] as const;
+    const skippedItems = NODE_ITEMS.map((id) => ({ id, status: 'skip', detail: SKIP, hint: null }));
+    const skippedLines = NODE_ITEMS.map((id) => `[skip] ${id}: ${SKIP}`);
+    const NO_CERT =
+      'no --cert given; pass --cert <path> for each copy of the node certificate to check its expiry';
+    const ADVICE =
+      'Verify SYMBOL_NODE_URL (scheme, host, and port: 3000 for http, 3001 for https) and that the node is up and reachable from this machine.';
+
+    const noAnswer: RouteHandler = () => {
+      throw new TypeError('fetch failed');
+    };
+    /** How the one request of start-up fails: the answer, its cause on stderr, the advice. */
+    const FAILURES: Array<[string, RouteHandler, string, string]> = [
+      ['no answer', noAnswer, 'unreachable', ADVICE],
+      [
+        'a timeout',
+        () => {
+          throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+        },
+        'timeout',
+        ADVICE,
+      ],
+      [
+        'HTTP 503',
+        () => jsonResponse({ code: 'ServiceUnavailable', message: 'down' }, 503),
+        'http 503',
+        ADVICE,
+      ],
+      [
+        'a redirect',
+        () =>
+          new Response(null, {
+            status: 308,
+            headers: { location: 'https://elsewhere.example/node/info' },
+          }),
+        'redirect 308',
+        `Redirects are never followed. ${REDIRECT_ADVICE}`,
+      ],
+      ['an unexpected body', () => jsonResponse({ unexpected: true }), 'invalid_response', ADVICE],
+      ['HTTP 404', () => new Response('not here', { status: 404 }), 'not_found 404', ADVICE],
+    ];
+
+    function startFailing(route: RouteHandler) {
+      const fake = createFakeFetch({ ...mainnetRoutes(), 'GET /node/info': route });
+      vi.stubGlobal('fetch', fake.fetch);
+      return fake;
+    }
+
+    it.each(FAILURES)(
+      'judges the --cert files and exits 3 when /node/info gets %s',
+      async (_answer, route, cause, advice) => {
+        const fake = startFailing(route);
+        const { cliDeps, out, err } = deps();
+        expect(await runCli(['check', '--cert', nodeA], cliDeps)).toBe(3);
+        expect(out).toEqual([
+          [
+            HEAD,
+            ...skippedLines,
+            `[ok] certificate: ok (1 file, expires 2099-12-31, ${A_DAYS} days left)`,
+            `  ${nodeA}: ok, expires ${NOT_AFTER}, ${A_DAYS} days left, sha256 ${fingerprint()}`,
+            '',
+          ].join('\n'),
+        ]);
+        expect(err).toEqual([
+          `symbol-mcp-server check: could not read /node/info from node.test:3001 (${cause}), so no check of the node could be made.\n${advice}`,
+        ]);
+        // Where a redirect points is the node's text: it is in neither stream.
+        expect(`${out.join('')}${err.join('\n')}`).not.toMatch(/elsewhere/);
+        // The one request of start-up, and no other.
+        expect(fake.requests.map((u) => `${u.host}${u.pathname}`)).toEqual([
+          'node.test:3001/node/info',
+        ]);
+      },
+    );
+
+    it('prints the report as JSON of the usual shape, with the time zone and the account cut short', async () => {
+      const fake = startFailing(noAnswer);
+      // The network is what the node says, not what SYMBOL_NETWORK expects; and the host is the
+      // one of SYMBOL_NODE_URL, the only one asked.
+      const { cliDeps, out } = deps({
+        env: {
+          SYMBOL_NODE_URL: 'https://node.test:3001',
+          SYMBOL_NETWORK: 'mainnet',
+          SYMBOL_TIMEZONE: 'Asia/Tokyo',
+          SYMBOL_REFERENCE_NODES: 'https://reference.test:3001',
+        },
+      });
+      const argv = ['check', '--format', 'json', '--account', ADDRESS, '--warn-days', '21'];
+      expect(await runCli([...argv, '--cert', nodeA, '--cert', missing], cliDeps)).toBe(3);
+      expect(fake.requests.map((u) => u.host)).toEqual(['node.test:3001']);
+      const parsed = JSON.parse(out.join(''));
+      expect(CheckReportSchema.parse(parsed)).toEqual(parsed);
+      expect(Object.keys(parsed)).toEqual([
+        'verdict',
+        'exitCode',
+        'node',
+        'checkedAt',
+        'checks',
+        'warnDays',
+        'account',
+      ]);
+      const itemKeys = ['id', 'status', 'detail', 'hint'];
+      expect(parsed.checks.map((item: object) => Object.keys(item))).toEqual([
+        ...NODE_ITEMS.map(() => itemKeys),
+        [...itemKeys, 'files'],
+      ]);
+      expect(parsed).toEqual({
+        verdict: 'error',
+        exitCode: 3,
+        node: { host: 'node.test:3001', network: 'unknown' },
+        checkedAt: { utc: '2026-09-10T03:05:00.000Z', local: '2026-09-10T12:05:00+09:00' },
+        checks: [
+          ...skippedItems,
+          {
+            id: 'certificate',
+            status: 'fail',
+            detail: `fail (${missing}: cannot be read (ENOENT))`,
+            hint: null,
+            files: [
+              {
+                path: nodeA,
+                status: 'ok',
+                notAfter: NOT_AFTER,
+                daysLeft: A_DAYS,
+                fingerprint256: fingerprint(),
+                commonName: 'test-node-a',
+                reason: null,
+              },
+              {
+                path: missing,
+                status: 'fail',
+                notAfter: null,
+                daysLeft: null,
+                fingerprint256: null,
+                commonName: null,
+                reason: 'cannot be read (ENOENT)',
+              },
+            ],
+          },
+        ],
+        warnDays: 21,
+        account: 'NCV5HRBS…',
+      });
+    });
+
+    it('prints the report with --quiet too, and a missing file fails the item at exit code 3', async () => {
+      startFailing(noAnswer);
+      const { cliDeps, out } = deps();
+      expect(await runCli(['check', '--quiet', '--cert', missing], cliDeps)).toBe(3);
+      expect(out.join('').split('\n')).toEqual([
+        HEAD,
+        ...skippedLines,
+        `[fail] certificate: fail (${missing}: cannot be read (ENOENT))`,
+        `  ${missing}: fail, cannot be read (ENOENT)`,
+        '',
+      ]);
+    });
+
+    it('never prints a 64-character hex --account', async () => {
+      startFailing(noAnswer);
+      const pasted = 'DEADBEEF'.repeat(8);
+      const { cliDeps, out, err } = deps();
+      const argv = ['check', '--format', 'json', '--account', pasted, '--cert', nodeA];
+      expect(await runCli(argv, cliDeps)).toBe(3);
+      expect(JSON.parse(out.join('')).account).toBe('DEADBEEF…');
+      expect(`${out.join('')}${err.join('\n')}`).not.toContain(pasted);
+    });
+
+    it('counts the days left and checkedAt from one reading of the clock', async () => {
+      startFailing(noAnswer);
+      // 1 ms after "7 days before notAfter": 6 whole days are left, which fails.
+      const now = vi.fn(() => new Date(new Date(NOT_AFTER).getTime() - 7 * 86_400_000 + 1));
+      const { cliDeps, out } = deps({ now });
+      expect(await runCli(['check', '--format', 'json', '--cert', nodeA], cliDeps)).toBe(3);
+      const parsed = JSON.parse(out.join(''));
+      expect(parsed.checkedAt).toEqual({ utc: '2099-12-24T23:59:59.001Z' });
+      expect(parsed.checks[5]).toMatchObject({
+        status: 'fail',
+        detail: 'fail (1 file, expires 2099-12-31, 6 days left)',
+        files: [{ status: 'fail', daysLeft: 6 }],
+      });
+      expect(now).toHaveBeenCalledTimes(1);
+    });
+
+    it('judges the days left with --cert-warn-days, apart from --warn-days, and a warning keeps exit code 3', async () => {
+      startFailing(noAnswer);
+      // 45 days before notAfter: ok at the default 30, warn at 60.
+      const now = () => new Date(new Date(NOT_AFTER).getTime() - 45 * 86_400_000);
+      const run = async (...extra: string[]) => {
+        const { cliDeps, out } = deps({ now });
+        expect(await runCli(['check', '--cert', nodeA, ...extra], cliDeps)).toBe(3);
+        return out.join('').split('\n');
+      };
+      expect(await run('--warn-days', '120')).toContain(
+        '[ok] certificate: ok (1 file, expires 2099-12-31, 45 days left)',
+      );
+      const warned = await run('--cert-warn-days', '60');
+      expect(warned[0]).toMatch(/^symbol check: ERROR /);
+      expect(warned).toContain(
+        '[warn] certificate: warn (1 file, expires 2099-12-31, 45 days left)',
+      );
+    });
+
+    it('writes the cause to stderr before the report', async () => {
+      startFailing(noAnswer);
+      const seen: string[] = [];
+      const { cliDeps } = deps({
+        stdout: () => seen.push('stdout'),
+        stderr: () => seen.push('stderr'),
+      });
+      expect(await runCli(['check', '--cert', nodeA], cliDeps)).toBe(3);
+      expect(seen).toEqual(['stderr', 'stdout']);
+    });
+
+    it('names the node on stderr as the report does, also for a URL that only trimming cleans', async () => {
+      startFailing(noAnswer);
+      // An ideographic space after the URL: the configuration accepts it, a URL parser does not.
+      const pasted = `https://node.test:3001${String.fromCodePoint(0x3000)}`;
+      const { cliDeps, out, err } = deps({ env: { SYMBOL_NODE_URL: pasted } });
+      expect(await runCli(['check', '--cert', nodeA], cliDeps)).toBe(3);
+      expect(out.join('').split('\n')[0]).toBe(HEAD);
+      expect(err).toEqual([
+        `symbol-mcp-server check: could not read /node/info from node.test:3001 (unreachable), so no check of the node could be made.\n${ADVICE}`,
+      ]);
+    });
+
+    it('reports an exception while the files are judged as an unexpected error, after the cause', async () => {
+      startFailing(noAnswer);
+      const { cliDeps, out, err } = deps({
+        now: () => {
+          throw new Error('the clock failed');
+        },
+      });
+      expect(await runCli(['check', '--cert', nodeA], cliDeps)).toBe(3);
+      expect(out).toEqual([]);
+      expect(err).toEqual([
+        `symbol-mcp-server check: could not read /node/info from node.test:3001 (unreachable), so no check of the node could be made.\n${ADVICE}`,
+        'symbol-mcp-server check: unexpected error: the clock failed',
+      ]);
+    });
+
+    it.each(FAILURES)(
+      'without --cert prints nothing on stdout and says that nothing was checked, when /node/info gets %s',
+      async (_answer, route, cause, advice) => {
+        const fake = startFailing(route);
+        const { cliDeps, out, err } = deps();
+        expect(await runCli(['check'], cliDeps)).toBe(3);
+        expect(out).toEqual([]);
+        expect(err).toEqual([
+          `symbol-mcp-server check: could not read /node/info from node.test:3001 (${cause}), so nothing was checked.\n${advice}`,
+        ]);
+        expect(fake.requests).toHaveLength(1);
+      },
+    );
+
+    it('prints nothing on stdout for a configuration error, with --cert too', async () => {
+      const fake = createFakeFetch(mainnetRoutes());
+      vi.stubGlobal('fetch', fake.fetch);
+      const unset = deps({ env: {} });
+      expect(await runCli(['check', '--cert', nodeA], unset.cliDeps)).toBe(3);
+      expect(unset.out).toEqual([]);
+      expect(unset.err).toHaveLength(1);
+      expect(unset.err[0]).toContain('SYMBOL_NODE_URL is required');
+      const badZone = deps({
+        env: { SYMBOL_NODE_URL: 'https://node.test:3001', SYMBOL_TIMEZONE: 'Not/AZone' },
+      });
+      expect(await runCli(['check', '--cert', nodeA], badZone.cliDeps)).toBe(3);
+      expect(badZone.out).toEqual([]);
+      expect(badZone.err).toHaveLength(1);
+      expect(badZone.err[0]).toContain('SYMBOL_TIMEZONE');
+      expect(fake.requests).toEqual([]);
+    });
+
+    it('prints nothing on stdout for a node on another network, with --cert too', async () => {
+      // The node answers /node/info, as mainnet: the configuration names another network.
+      const fake = createFakeFetch(mainnetRoutes());
+      vi.stubGlobal('fetch', fake.fetch);
+      const { cliDeps, out, err } = deps({
+        env: { SYMBOL_NODE_URL: 'https://node.test:3001', SYMBOL_NETWORK: 'testnet' },
+      });
+      expect(await runCli(['check', '--cert', nodeA], cliDeps)).toBe(3);
+      expect(out).toEqual([]);
+      expect(err).toEqual([
+        'symbol-mcp-server check: SYMBOL_NETWORK=testnet but node node.test:3001 is on mainnet. Fix SYMBOL_NODE_URL or SYMBOL_NETWORK; the server refuses to start on a mismatched network.',
+      ]);
+      expect(fake.requests.map((u) => u.pathname)).toEqual(['/node/info']);
+    });
+
+    it.each([
+      ['with --cert', ['check', '--cert', nodeA]],
+      ['without --cert', ['check']],
+    ])(
+      'reports an exception that escapes the run as an unexpected error, not as a failed start (%s)',
+      async (_case, argv) => {
+        // Start-up does not read the clock, so it succeeds. The run then fails where it stamps the
+        // report, outside every item. A RestError is the case to tell apart: taken for a failed
+        // start, it would be worded as one.
+        vi.stubGlobal('fetch', createFakeFetch(mainnetRoutes()).fetch);
+        const { cliDeps, out, err } = deps({
+          now: () => {
+            throw new RestError('unreachable', 'the clock failed', '/node/info');
+          },
+        });
+        expect(await runCli(argv, cliDeps)).toBe(3);
+        expect(out).toEqual([]);
+        expect(err.at(-1)).toBe('symbol-mcp-server check: unexpected error: the clock failed');
+        expect(err.join('\n')).not.toContain('could not read');
+      },
+    );
+
+    it('runCheckWithoutNode skips all six items when no file is named', async () => {
+      const report = await runCheckWithoutNode(
+        { host: 'node.test:3001', timeZone: undefined },
+        TEST_NOW,
+        { account: null, warnDays: 14 },
+      );
+      expect(CheckReportSchema.parse(report)).toEqual(report);
+      expect(report).toEqual({
+        verdict: 'error',
+        exitCode: 3,
+        node: { host: 'node.test:3001', network: 'unknown' },
+        checkedAt: { utc: '2026-09-10T03:05:00.000Z' },
+        checks: [
+          ...skippedItems,
+          { id: 'certificate', status: 'skip', detail: NO_CERT, hint: null },
+        ],
+        warnDays: 14,
+        account: null,
+      });
+    });
   });
 });
 

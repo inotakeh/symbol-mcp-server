@@ -431,7 +431,7 @@ symbol-mcp-server check [--account <address|publicKey|namespace>] [--warn-days <
 | 0 | すべて ok または skip |
 | 1 | warn あり（fail なし） |
 | 2 | fail あり |
-| 3 | 実行できなかった: 設定エラー、ノードに到達できない、引数エラー（stderr に 1〜2 行で原因とヒント） |
+| 3 | 実行できなかった: 設定エラー、ノードに到達できない、引数エラー（stderr に 1〜2 行で原因とヒント）。`--cert` を指定していて、読めなかったのがノードの場合は、証明書ファイルを判定して出力します（下の「ノード証明書ファイル」を参照） |
 
 text 出力（既定。値は説明用の例）:
 
@@ -448,8 +448,10 @@ symbol check: WARN (node.example:3001, mainnet, 2026-01-15T07:00:03+09:00)
 
 `--format json` は同じレポートを 1 つの JSON で出力します: `{ verdict, exitCode, node: { host, network }, checkedAt,
 checks: [{ id, status, detail, hint }], warnDays, account }`。`verdict` は `ok` / `warn` / `fail` / `error`（exit code 3）、
-`account` は解決後のアドレスです。`--quiet` は exit code が 0 のとき何も出力しないので、cron からは「読むものがあるときだけ」
-メールが届きます。
+`account` は解決後のアドレスです。起動時に `/node/info` を読めず、`--cert` を指定している場合は、`network` が `unknown`、
+ノードに問い合わせる 5 項目が `skip`、`certificate` が `ok` / `warn` / `fail` のいずれかになり、`account` は指定された値です
+（16 文字より長い値は、先頭 8 文字と `…` に短縮します）。全体の判定は、項目ではなく `verdict`（`error`）と `exitCode`（3）で
+見てください。`--quiet` は exit code が 0 のとき何も出力しないので、cron からは「読むものがあるときだけ」メールが届きます。
 
 ```
 MAILTO=you@example.com
@@ -466,7 +468,8 @@ MAILTO=you@example.com
   設定している場合、実行のたびに `symbol_harvesting_status` と同じファイルへスナップショットを 1 件追記します（新しい 60 件を保持）。
   `--cert` を指定した場合は、実行しているマシン上の指定ファイルを読みます。その内容をどこかへ送ることはありません。
 - 全体の実行時間は 120 秒が上限です。上限に達すると残りの項目は skip になり、理由を stderr に出し、総合判定は最良でも WARN で、
-  `--quiet` でも出力します。
+  `--quiet` でも出力します。起動時に `/node/info` を読めなかった場合（下の「ノード証明書ファイル」を参照）は、その後は
+  リクエストを送らず、`--cert` のファイルをそれぞれ 1 MiB まで読むだけなので、この上限は掛けません。
 - サブコマンド名の打ち間違いは従来どおりサーバーの「未知の引数」として exit 2 になります。
 
 ### ノード証明書ファイル（`--cert`）
@@ -510,9 +513,12 @@ symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
   commonName, reason }]` が付きます（`reason` は使えなかったファイルの理由で、それ以外は null。`daysLeft` は期限切れ後は負）。
 - 実行の途中でノードが応答しなくなり、ノードに問い合わせる項目がすべてそのために失敗した場合の exit code は、ファイルの結果に
   かかわらず 3 のままです。`certificate` の行は出力されます。起動時に `/node/info` を読めない場合（ノードが応答しない、
-  またはエラーを返す場合）は、`certificate` も含めて何も確認しません。exit code は 3 で、stderr の行だけが出力されます。
-  この項目は事前に知らせるためのものです。ノードがその状態になった後は、ファイルを直接確認してください
-  （`openssl x509 -noout -enddate -in <file>`）。
+  またはエラーを返す場合）も同じです。ファイルは読んで判定し、レポートを出力します（`--quiet` を付けていても出力します）。
+  1 行目は `ERROR` で、ネットワークは `unknown` になります。ノードに問い合わせる 5 項目は
+  `/node/info could not be read at start-up, so this check did not run` という理由で skip になり、続いて `certificate` の行と
+  ファイルごとの行が出ます。`/node/info` を読めなかった原因は stderr に出ます。その場合、`--cert` が無いときは stderr の
+  行だけが出力されます。設定エラー（環境変数が無い・正しくない、ノードのネットワークが違う）の場合は、ファイルを読む前に
+  終了します。
 
 ## セキュリティ
 

@@ -7,6 +7,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `check --cert` now judges the certificate files also when the node's `/node/info` cannot be read
+  at start-up (the node does not answer, times out, or answers with an error or a redirect).
+  Until now only the lines on stderr were printed then. The report is printed as text or JSON,
+  with `--quiet` too: `ERROR` as the verdict, exit code 3 as before, `unknown` as the network, the
+  five items that ask the node skipped with the reason
+  `/node/info could not be read at start-up, so this check did not run`, and the `certificate`
+  item with the line of each file. The first stderr line then ends
+  `so no check of the node could be made.` instead of `so nothing was checked.`. The limit of 120
+  seconds is not applied to this report: no further request is made, and the files are only read,
+  up to 1 MiB each. Nothing changes without `--cert`, or for a configuration error (an
+  environment variable that is missing or not valid, a node on the wrong network): stdout stays
+  empty. The keys of the JSON report, the requests sent and the MCP tools do not change.
+
 ### Fixed
 
 - README (English): the opening sentence still said that the server has 22 tools. It has 20 since
