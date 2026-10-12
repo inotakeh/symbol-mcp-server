@@ -7,6 +7,10 @@
  * The one exception is the `certificate` item (certificate.ts): no tool can see a node's
  * certificate files, so with --cert the check reads them on this machine and judges them itself.
  *
+ * When start-up could not read /node/info there is no AppContext and no tool can run:
+ * runCheckWithoutNode then reports the five items that ask the node as skipped and still judges
+ * the --cert files.
+ *
  * This directory must stay free of MCP SDK imports so the CLI can move to its own package later
  * (test/unit/cli-check.test.ts checks the import lines).
  */
@@ -16,7 +20,7 @@ import type { AppContext } from '../context.js';
 import { describeSignedStages } from '../domain/finality.js';
 import { sanitizeUntrusted, toSingleLine } from '../domain/sanitize.js';
 import type { Instant } from '../domain/time.js';
-import { formatInstantText } from '../domain/time.js';
+import { formatInstant, formatInstantText } from '../domain/time.js';
 import {
   BELOW_MIN_VOTER_BALANCE,
   hasSuccessorKey,
@@ -464,6 +468,19 @@ const NO_ACCOUNT =
   'no --account given; pass --account <address|publicKey|namespace> to check the voting key';
 const NO_CERT =
   'no --cert given; pass --cert <path> for each copy of the node certificate to check its expiry';
+/** Why an item that asks the node did not run after a failed start. Holds no text from the node. */
+const NO_NODE_INFO = '/node/info could not be read at start-up, so this check did not run';
+/** The network of a report made without the node's answer. */
+const UNKNOWN_NETWORK = 'unknown';
+
+/**
+ * --account as the report shows it: the resolved address, or the argument cut short when it could
+ * not be resolved (a 64-character hex value never appears whole); null without --account.
+ */
+function shownAccount(account: string | null, resolvedAddress: string | null): string | null {
+  if (account === null) return null;
+  return resolvedAddress ?? maskIdentifier(sanitizeUntrusted(account.trim(), 64));
+}
 
 export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<CheckReport> {
   const { account, warnDays } = options;
@@ -589,16 +606,56 @@ export async function runCheck(ctx: AppContext, options: CheckOptions): Promise<
     );
   }
 
-  const shownAccount =
-    account === null
-      ? null
-      : (resolved.address ?? maskIdentifier(sanitizeUntrusted(account.trim(), 64)));
   return {
     ...decideExit(checks, { timedOut: cutShort > 0, nodeUnreachable }),
     node: { host: ctx.rest.host, network: ctx.network.name },
     checkedAt: ctx.instant(ctx.now()),
     checks,
     warnDays,
-    account: shownAccount,
+    account: shownAccount(account, resolved.address),
+  };
+}
+
+/** What the configuration alone says about the node, when /node/info could not be read. */
+export interface ConfiguredNode {
+  /** Host of SYMBOL_NODE_URL as URL.host gives it (a default port is left out): RestClient.host. */
+  readonly host: string;
+  /** SYMBOL_TIMEZONE, for the local form of checkedAt. */
+  readonly timeZone: string | undefined;
+}
+
+/**
+ * The report of a start-up that read the configuration and not /node/info. Nothing is asked of
+ * the node: the five items that need it are skipped with one fixed reason, and the --cert files,
+ * which are on this machine, are judged as runCheck judges them. The check of the node could not
+ * be made, so the verdict is error and the exit code 3 whatever the files say. `now` counts both
+ * the days left and checkedAt. The time limit of runCheck is not applied: no request is made, and
+ * each file is read up to its own cap.
+ */
+export async function runCheckWithoutNode(
+  node: ConfiguredNode,
+  now: Date,
+  options: Pick<CheckOptions, 'account' | 'warnDays' | 'certPaths' | 'certWarnDays'>,
+): Promise<CheckReport> {
+  const certPaths = options.certPaths ?? [];
+  const certWarnDays = options.certWarnDays ?? DEFAULT_CERT_WARN_DAYS;
+  const checks: CheckItem[] = [];
+  for (const id of CHECK_IDS) {
+    if (id !== 'certificate') {
+      checks.push({ id, status: 'skip', detail: NO_NODE_INFO, hint: null });
+    } else if (certPaths.length === 0) {
+      checks.push({ id, status: 'skip', detail: NO_CERT, hint: null });
+    } else {
+      checks.push({ id, ...printableItem(await checkCertificates(certPaths, certWarnDays, now)) });
+    }
+  }
+  return {
+    verdict: 'error',
+    exitCode: 3,
+    node: { host: node.host, network: UNKNOWN_NETWORK },
+    checkedAt: formatInstant(now, node.timeZone),
+    checks,
+    warnDays: options.warnDays,
+    account: shownAccount(options.account, null),
   };
 }

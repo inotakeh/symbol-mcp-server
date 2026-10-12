@@ -457,7 +457,7 @@ certificate files, so the check reads the files itself and has no MCP tool behin
 | 0 | every item is ok or skipped |
 | 1 | at least one warning, no failure |
 | 2 | at least one failure |
-| 3 | the check could not run: configuration error, node unreachable, or bad arguments (one or two lines on stderr say why) |
+| 3 | the check could not run: configuration error, node unreachable, or bad arguments (one or two lines on stderr say why). With `--cert`, the certificate files are still judged and reported when it is the node that could not be read; see [Node certificate files](#node-certificate-files---cert) |
 
 Text output (the default; illustrative values):
 
@@ -474,8 +474,12 @@ symbol check: WARN (node.example:3001, mainnet, 2026-01-15T07:00:03+09:00)
 
 `--format json` prints the same report as one JSON document: `{ verdict, exitCode, node: { host,
 network }, checkedAt, checks: [{ id, status, detail, hint }], warnDays, account }`, with `verdict`
-one of `ok`, `warn`, `fail`, `error` (exit code 3) and `account` the resolved address. `--quiet`
-prints nothing when the exit code is 0, so cron only mails when there is something to read:
+one of `ok`, `warn`, `fail`, `error` (exit code 3) and `account` the resolved address. When
+`/node/info` cannot be read at start-up and `--cert` was given, `network` is `unknown`, the five
+items that ask the node are `skip`, `certificate` is `ok`, `warn` or `fail`, and `account` is the
+argument as given (one longer than 16 characters is cut to its first 8 and `…`); read the overall
+result from `verdict` (`error`) and `exitCode` (3), not from the items. `--quiet` prints nothing
+when the exit code is 0, so cron only mails when there is something to read:
 
 ```
 MAILTO=you@example.com
@@ -494,7 +498,10 @@ it on one line in the crontab.
   snapshot to the file `symbol_harvesting_status` uses (the newest 60 are kept). With `--cert` it
   reads the named files on the machine it runs on; nothing of them is sent anywhere.
 - The whole run is limited to 120 seconds. At the limit the remaining items are skipped, the reason
-  goes to stderr, and the result is WARN at best, printed even with `--quiet`.
+  goes to stderr, and the result is WARN at best, printed even with `--quiet`. The limit is not
+  applied when `/node/info` cannot be read at start-up (see
+  [Node certificate files](#node-certificate-files---cert)): no further request is made then, and
+  the `--cert` files are only read, up to 1 MiB each.
 - A typo in the subcommand name is an unknown argument of the server and exits with 2, as before.
 
 ### Node certificate files (`--cert`)
@@ -544,11 +551,16 @@ symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
   reason }]` to the `certificate` item when it ran (`reason` says why a file could not be used and
   is null otherwise; `daysLeft` is negative once expired).
 - When the node stops answering during the run and every node-backed item fails for that reason,
-  the exit code stays 3 whatever the files say; the `certificate` lines are still printed. When
-  `/node/info` cannot be read at start-up (the node does not answer, or answers with an error),
-  nothing is checked, `certificate` included: the exit code is 3 and only the lines on stderr are
-  printed. The item is there to warn ahead of time; once the node is in that state, look at the
-  files by hand (`openssl x509 -noout -enddate -in <file>`).
+  the exit code stays 3 whatever the files say; the `certificate` lines are still printed. The
+  same holds when `/node/info` cannot be read at start-up (the node does not answer, or answers
+  with an error): the files are read and judged all the same and the report is printed, with
+  `--quiet` too. Its first line says `ERROR` and gives the network as `unknown`, the five items
+  that ask the node are skipped with the reason
+  `/node/info could not be read at start-up, so this check did not run`, the `certificate` item
+  and the line of each file follow, and stderr says why `/node/info` could not be read. Without
+  `--cert`, only the lines on stderr are printed then. A configuration error (an environment
+  variable that is missing or not valid, or a node on the wrong network) ends the check before
+  any file is read.
 
 ## Security
 

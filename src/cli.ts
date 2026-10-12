@@ -10,20 +10,23 @@ import { resolve } from 'node:path';
 import { CERT_FAIL_DAYS, DEFAULT_CERT_WARN_DAYS, MIN_CERT_WARN_DAYS } from './cli/certificate.js';
 import {
   type CheckReport,
+  type ConfiguredNode,
   DEFAULT_WARN_DAYS,
   MAX_WARN_DAYS,
   MIN_WARN_DAYS,
   runCheck,
+  runCheckWithoutNode,
 } from './cli/check.js';
 import { formatCheckJson, formatCheckText } from './cli/format.js';
 import { RestError } from './client/rest.js';
 import {
   ConfigError,
   DEFAULT_REQUEST_TIMEOUT_MS,
+  loadConfig,
   NetworkVerificationError,
   REDIRECT_ADVICE,
 } from './config.js';
-import { createAppContext } from './context.js';
+import { type AppContext, createAppContext } from './context.js';
 import { classifyAccountId } from './domain/address.js';
 import { toSingleLine } from './domain/sanitize.js';
 import { SERVER_NAME } from './server.js';
@@ -174,8 +177,16 @@ export interface CliDeps {
   readonly now: () => Date;
 }
 
-/** Why the check could not even start, as the one or two stderr lines of exit code 3. */
-function startupFailureText(err: unknown, env: CliDeps['env']): string {
+function unexpectedErrorText(err: unknown): string {
+  return `unexpected error: ${err instanceof Error ? err.message : String(err)}`;
+}
+
+/**
+ * Why the check could not even start, as the one or two stderr lines of exit code 3.
+ * `certificatesJudged`: the --cert files are reported all the same, so "nothing was checked"
+ * would not be true.
+ */
+function startupFailureText(err: unknown, env: CliDeps['env'], certificatesJudged = false): string {
   if (err instanceof ConfigError) {
     return `${err.message}\nThe check reads the same environment variables as the server; run "${SERVER_NAME} --help" for the list.`;
   }
@@ -183,7 +194,10 @@ function startupFailureText(err: unknown, env: CliDeps['env']): string {
   if (err instanceof RestError) {
     let host = 'the node';
     try {
-      host = new URL(env.SYMBOL_NODE_URL ?? '').host;
+      // Before a report, the host as the report names it; without one, the line is as it was.
+      host = certificatesJudged
+        ? configuredNode(env).host
+        : new URL(env.SYMBOL_NODE_URL ?? '').host;
     } catch {
       // loadConfig has already accepted the URL; keep the generic wording if it somehow fails.
     }
@@ -192,9 +206,19 @@ function startupFailureText(err: unknown, env: CliDeps['env']): string {
       err.kind === 'redirect'
         ? `Redirects are never followed. ${REDIRECT_ADVICE}`
         : 'Verify SYMBOL_NODE_URL (scheme, host, and port: 3000 for http, 3001 for https) and that the node is up and reachable from this machine.';
-    return `could not read ${err.path} from ${host} (${err.kind}${status}), so nothing was checked.\n${advice}`;
+    const consequence = certificatesJudged
+      ? 'so no check of the node could be made'
+      : 'so nothing was checked';
+    return `could not read ${err.path} from ${host} (${err.kind}${status}), ${consequence}.\n${advice}`;
   }
-  return `unexpected error: ${err instanceof Error ? err.message : String(err)}`;
+  return unexpectedErrorText(err);
+}
+
+/** The configured node as a report names it when no AppContext could be built. */
+function configuredNode(env: CliDeps['env']): ConfiguredNode {
+  // createAppContext threw a RestError, so loadConfig has already accepted this environment.
+  const config = loadConfig(env);
+  return { host: new URL(config.nodeUrl).host, timeZone: config.timeZone };
 }
 
 /**
@@ -211,18 +235,32 @@ export function serverStartupFailureText(err: unknown): string {
 
 async function runCheckCommand(options: CheckCliOptions, deps: CliDeps): Promise<number> {
   const say = (text: string) => deps.stderr(`${SERVER_NAME} check: ${text}`);
+  const checkOptions = {
+    account: options.account,
+    warnDays: options.warnDays,
+    certPaths: options.certPaths,
+    certWarnDays: options.certWarnDays,
+  };
+  let ctx: AppContext | null = null;
+  try {
+    ctx = await createAppContext(deps.env, SERVER_NAME, deps.version, deps.now);
+  } catch (err) {
+    // The configuration was read and only /node/info was not: the --cert files are on this
+    // machine and are judged all the same. Without --cert there is nothing to report.
+    const judgeFiles = err instanceof RestError && options.certPaths.length > 0;
+    say(startupFailureText(err, deps.env, judgeFiles));
+    if (!judgeFiles) return 3;
+  }
+  // Apart from the failed start above: an exception that escapes the run is not a failed start,
+  // and must not be reported as one.
   let report: CheckReport;
   try {
-    const ctx = await createAppContext(deps.env, SERVER_NAME, deps.version, deps.now);
-    report = await runCheck(ctx, {
-      account: options.account,
-      warnDays: options.warnDays,
-      certPaths: options.certPaths,
-      certWarnDays: options.certWarnDays,
-      onDiagnostic: say,
-    });
+    report =
+      ctx === null
+        ? await runCheckWithoutNode(configuredNode(deps.env), deps.now(), checkOptions)
+        : await runCheck(ctx, { ...checkOptions, onDiagnostic: say });
   } catch (err) {
-    say(startupFailureText(err, deps.env));
+    say(unexpectedErrorText(err));
     return 3;
   }
   // --quiet keeps cron silent on success; anything else must reach the mail.
