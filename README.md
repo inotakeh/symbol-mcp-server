@@ -10,7 +10,7 @@
 
 [日本語版 README](README.ja.md)
 
-Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 22
+Read-only [MCP](https://modelcontextprotocol.io/) server that turns the Symbol REST API into 20
 task-level tools. Instead of mirroring REST endpoints one-to-one, each tool answers a question a
 person actually asks:
 
