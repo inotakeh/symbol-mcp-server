@@ -10,7 +10,10 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # ubuntu-24.04, not ubuntu-latest, in all three jobs: a release runs on an image that was
+    # chosen, not on the one the label names on the day of the tag (docs/RELEASING.md, "The runner
+    # image").
+    runs-on: ubuntu-24.04
     # GitHub Environment with "Required reviewers" = you. The job pauses until you approve in the UI.
     environment: npm-publish
     permissions:
@@ -63,7 +66,7 @@ jobs:
   # package is already on npm; rerun this job or create the release by hand with the same commands.
   github-release:
     needs: publish
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write       # create the GitHub Release and upload its assets
       id-token: write       # OIDC token for the Sigstore certificate of the .mcpb attestation
@@ -96,14 +99,14 @@ jobs:
   # server.json to the MCP Registry. Runs only after publish (and therefore the npm-publish approval)
   # succeeded, alongside github-release: the Registry entry names the npm package, not the GitHub
   # Release, so a failure there does not hold it back. The Registry reads the npm version back and
-  # accepts it only when its mcpName is server.json's name, so the job first waits until npm shows
-  # that (scripts/wait-for-npm.sh, which release-assets.sh also uses). mcp-publisher logs in with
-  # this job's GitHub OIDC token; the Registry grants io.github.<repository owner>/* for it, so no
-  # Registry token or secret exists. If it fails, npm is already published: rerun this job, or
-  # publish by hand (docs/RELEASING.md).
+  # accepts it only when its mcpName is server.json's name, so the job waits until npm shows that
+  # (scripts/wait-for-npm.sh, which release-assets.sh also uses) before it logs in and publishes.
+  # mcp-publisher logs in with this job's GitHub OIDC token; the Registry grants
+  # io.github.<repository owner>/* for it, so no Registry token or secret exists. If it fails, npm
+  # is already published: rerun this job, or publish by hand (docs/RELEASING.md).
   registry:
     needs: publish
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -116,14 +119,10 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - name: Wait until npm shows the version with its mcpName
-        run: |
-          package=$(node -p "require('./package.json').name")
-          server=$(node -p "require('./server.json').name")
-          bash scripts/wait-for-npm.sh "$package@${GITHUB_REF_NAME#v}" mcpName "$server"
       # One mcp-publisher release, checked against the SHA-256 that the release's cosign-signed
       # checksums file lists. Dependabot does not update these two values; docs/RELEASING.md
-      # ("Updating mcp-publisher") says how.
+      # ("Updating mcp-publisher") says how. Installed before the wait for npm, so that a failed
+      # download or a checksum that does not match stops the job at once, not after the wait.
       - name: Install mcp-publisher
         env:
           MCP_PUBLISHER_VERSION: "1.8.1"
@@ -137,6 +136,11 @@ jobs:
           tar -xzf "$archive" -C "$RUNNER_TEMP/bin" mcp-publisher
           "$RUNNER_TEMP/bin/mcp-publisher" --version
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Wait until npm shows the version with its mcpName
+        run: |
+          package=$(node -p "require('./package.json').name")
+          server=$(node -p "require('./server.json').name")
+          bash scripts/wait-for-npm.sh "$package@${GITHUB_REF_NAME#v}" mcpName "$server"
       - name: Log in to the MCP Registry with the job's OIDC token
         run: mcp-publisher login github-oidc
       - name: Publish server.json
