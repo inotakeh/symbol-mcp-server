@@ -183,12 +183,14 @@ Runs once `publish` has succeeded, alongside `github-release`: the Registry entr
 package, not the GitHub Release, so a failure there does not hold it back. The job has only
 `contents: read` and `id-token: write`.
 
-1. `bash scripts/wait-for-npm.sh symbol-mcp-server@X.Y.Z mcpName io.github.inotakeh/symbol` (the
+1. Downloads `mcp-publisher_linux_amd64.tar.gz` of the pinned `mcp-publisher` release and checks
+   its SHA-256 before unpacking it ([Updating mcp-publisher](#updating-mcp-publisher)). This comes
+   first, so that a failed download or a checksum that does not match stops the job at once, not
+   after the wait of the next step.
+2. `bash scripts/wait-for-npm.sh symbol-mcp-server@X.Y.Z mcpName io.github.inotakeh/symbol` (the
    names come from `package.json` and `server.json`): waits, up to `NPM_WAIT` seconds (default
    300), until npm shows the version with the `mcpName` that the Registry compares with
    `server.json`'s `name`. The Registry refuses a version that npm does not show yet.
-2. Downloads `mcp-publisher_linux_amd64.tar.gz` of the pinned `mcp-publisher` release and checks
-   its SHA-256 before unpacking it ([Updating mcp-publisher](#updating-mcp-publisher)).
 3. `mcp-publisher login github-oidc`: exchanges the job's GitHub OIDC token for a short-lived
    Registry token. The Registry grants `io.github.<repository owner>/*` from the token's
    `repository_owner` claim and looks at nothing else: a workflow in any repository of the owner
@@ -309,6 +311,25 @@ grep ' mcp-publisher_linux_amd64.tar.gz$' "registry_${v}_checksums.txt"   # the 
 ```
 
 `cosign` is available from Homebrew (`brew install cosign`).
+
+## The runner image
+
+The three jobs of `release.yml` run on `ubuntu-24.04`, not on `ubuntu-latest`. GitHub moves the
+`ubuntu-latest` label from Ubuntu 24.04 to Ubuntu 26.04 gradually between 2026-10-19 and
+2026-11-19
+(https://github.blog/changelog/2026-09-17-ubuntu-26-generally-available-and-latest-migration). A
+release cannot be repeated (a version on npm cannot be changed), so it runs on an image that was
+chosen, not on the one the label names on the day of the tag.
+
+`ci.yml` and `scorecard.yml` stay on `ubuntu-latest`, so every pull request shows whether the
+newer image still builds and tests this repository. Move `release.yml` to `ubuntu-26.04` in a PR
+(the workflow is a protected file) once CI has been green on Ubuntu 26.04 for a few weeks. A green
+CI does not cover everything a release runs: the tests run `scripts/wait-for-npm.sh`,
+`scripts/wait-for-attestations.sh`, `scripts/release-check.mjs` and `scripts/release-notes.mjs`,
+but not `scripts/release-assets.sh`, `scripts/build-mcpb.sh` or the steps written in the workflow
+itself. So check first that the newer image has what those call: `tar`, `zip` and `unzip`
+(`scripts/build-mcpb.sh`), `curl`, `sha256sum` and `tar` (the `registry` job) and the `gh` CLI
+(`github-release`). The log of a job says which image it ran on (step "Set up job").
 
 ## Backfilling or recreating an older release
 

@@ -14,8 +14,9 @@
 #                   node_modules installed with `npm ci --omit=dev` from this repository's lockfile
 # The lockfile must be the one of <version> (checked), so run it from the release commit.
 #
-# Needs bash, node, npm, tar, zip and unzip (all present on macOS and ubuntu-latest). The work
-# directory is left in place and printed, for inspection. Exit: 0 done, 1 failed, 2 usage.
+# Needs bash, node, npm, tar, zip and unzip (all present on macOS and on ubuntu-24.04, the image
+# of the release workflow). The work directory is left in place and printed, for inspection.
+# Exit: 0 done, 1 failed, 2 usage.
 set -euo pipefail
 
 usage() {
