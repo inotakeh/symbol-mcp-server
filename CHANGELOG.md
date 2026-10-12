@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- README (English): the opening sentence still said that the server has 22 tools. It has 20 since
+  0.10.0, as the "Tools" section and the Japanese README already said.
+
 ## [0.10.0] - 2026-10-07
 
 > **After upgrading, restart your MCP host (Claude Desktop, Claude Code and others).** This release
