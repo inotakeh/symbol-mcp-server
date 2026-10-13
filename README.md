@@ -281,6 +281,12 @@ On Windows, a client that cannot start `npx` may need `"command": "npx.cmd"`.
 - **A public node works, but its operator can see what you look up.** Its access logs can show
   which accounts, transactions and namespaces were queried, when, and from which IP address. Use a
   node you trust, or your own node for anything you would rather keep private.
+- **It must be the REST API of an API node.** Most tools read `/network/properties`, accounts,
+  transactions or blocks. Light REST, a REST with a reduced set of endpoints, is not enough: its
+  README in the Symbol repository (`client/rest/README_LIGHT.md` in symbol/symbol) lists only
+  `/chain/info`, `/node/info`, `/node/peers`, `/node/unlockedaccount` and `/node/server`. If a tool
+  answers `does not provide the endpoint … (no such route)`, see
+  [Troubleshooting](#troubleshooting).
 - **Finding one:** https://nodewatch.symbol.tools/ lists mainnet and testnet nodes with their height
   and version. Pick an API node that is at the current height, runs the majority version and answers
   over `https://` (usually port 3001). Set `SYMBOL_NETWORK` to make start-up fail if the node turns
@@ -720,6 +726,7 @@ hosts keep stderr in their logs (Claude Desktop: `~/Library/Logs/Claude/mcp*.log
 | `Node <host> reports an unknown network` | The node's generation hash seed is neither Symbol mainnet nor testnet (a private network, or a NEM NIS1 node). Use a Symbol mainnet or testnet node. |
 | `<host> did not answer /node/info within 10000 ms` or `could not reach <host> for /node/info` at start-up; `Node <host> did not answer … within … ms` or `Could not connect to node <host>` from a tool | The node is down, overloaded, or the port is wrong (3001 for https). Try another node from nodewatch, or give a slow node more time with `SYMBOL_REQUEST_TIMEOUT_MS` (up to 600000). |
 | `<host> answered /node/info with a redirect (HTTP 301), which is not followed` at start-up; `Node <host> answered … with a redirect` from a tool | The URL leads to something that redirects: http to https, a proxy, or a moved path. Redirects are never followed and the address in them is not contacted. Set `SYMBOL_NODE_URL` to the node's REST API URL itself, usually `https://<node-host>:3001`. |
+| `Node <host> does not provide the endpoint … (no such route)` from a tool (`check` prints it as a `hint:` line) | The node answered that it has no route for that path. This server needs the REST API of an API node. Possible causes: the node offers only Light REST, which serves only a few `/node` and `/chain` endpoints (see [Choosing a node](#choosing-a-node)), or it runs a catapult-rest version without that endpoint. Set `SYMBOL_NODE_URL` to the REST URL of an up-to-date API node, for example one from nodewatch. If an up-to-date API node answers this way, it is a bug in this server: please report it with the tool name. |
 | `Node <host> answered HTTP 429 for …` (or 503) from a tool | The node limits how many requests it accepts, or is overloaded. Wait and try again. For calls that read many pages (`symbol_account_rank` with a large `maxRank`, `symbol_harvesting_income` over a long period), use your own node or another node from nodewatch. |
 | Claude Desktop lists no `symbol_*` tools | With the bundle (.mcpb): open the extension's settings; it does not start while the **Symbol node URL** is empty. With a JSON configuration: Claude Desktop reads it at start-up only. Quit it completely (closing the window is not enough) and reopen it. If the tools are still missing, look for a `failed to start` line in the log above and check that the JSON is valid. |
 | `npm warn EBADENGINE Unsupported engine` (printed by npm) | Node.js is older than 22. Check `node --version` and install 22 or newer (for example `nvm install 22`). A desktop app may find a different `node` / `npx` on its `PATH` than your shell does; give the full path in `command` if needed. |

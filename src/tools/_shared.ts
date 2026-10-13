@@ -163,7 +163,7 @@ export function describeError(err: unknown, ctx: AppContext): string {
       case 'not_found':
         return `${err.path} was not found on ${host} (${ctx.network.name}). The resource may not exist on this network; check the identifier and whether you meant mainnet or testnet.`;
       case 'route_not_found':
-        return `Node ${host} does not provide the endpoint ${err.path} (no such route), so this answer could not be completed. This is likely a bug in symbol-mcp-server, or the node runs a catapult-rest version without this endpoint; try another node, and report it with the tool name if it persists.`;
+        return `Node ${host} does not provide the endpoint ${err.path} (no such route), so this answer could not be completed. The node may run Light REST, which serves only a few /node and /chain endpoints, or a catapult-rest version without this endpoint. Set SYMBOL_NODE_URL to the REST URL of an up-to-date API node (see https://nodewatch.symbol.tools/). If an up-to-date API node answers this way, this is a bug in symbol-mcp-server: report it with the tool name.`;
       case 'http':
         return `Node ${host} answered HTTP ${err.status ?? 'error'} for ${err.path}. The node may be overloaded or misconfigured; retry later or point SYMBOL_NODE_URL at another node (see https://nodewatch.symbol.tools/).`;
       case 'redirect':

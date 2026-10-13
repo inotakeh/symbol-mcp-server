@@ -379,6 +379,55 @@ describe('runCheck against the fixture node', () => {
     expect(existsSync(dir) ? readdirSync(dir) : []).toEqual([]);
   });
 
+  it('fails node_health with the sentence of the tools as the hint when the node has no /network/properties', async () => {
+    const { 'GET /network/properties': _properties, ...withoutProperties } = routes();
+    const { ctx } = await createTestContext({ routes: withoutProperties });
+    const report = await runCheck(ctx, { account: null, warnDays: 14 });
+    expect(statuses(report)).toEqual({
+      node_health: 'fail',
+      version_drift: 'ok',
+      harvester_watch: 'skip',
+      voting_key_status: 'skip',
+      finality_participation: 'skip',
+      certificate: 'skip',
+    });
+    expect(report.verdict).toBe('fail');
+    expect(report.exitCode).toBe(2);
+    const health = item(report, 'node_health');
+    expect(health.detail).toBe('could not run: route_not_found 404 on /network/properties');
+    // The start of the sentence, with the path; test/tools/account_get.test.ts has the whole text.
+    expect(health.hint).toMatch(
+      /^Node node\.test:3001 does not provide the endpoint \/network\/properties \(no such route\), so this answer could not be completed\. /,
+    );
+    expect(health.hint).not.toMatch(/likely a bug|does not exist/);
+    expect(formatCheckText(report).split('\n').slice(1, 3)).toEqual([
+      '[fail] node_health: could not run: route_not_found 404 on /network/properties',
+      `  hint: ${health.hint}`,
+    ]);
+  });
+
+  it('is FAIL with exit code 2, not ERROR with 3, when every path answers "no such route"', async () => {
+    // The node answers, so the check ran and its items failed: "no such route" is not counted
+    // with the answers that mean the node could not be reached.
+    const { ctx } = await createTestContext({ routes: routes() });
+    vi.stubGlobal('fetch', createFakeFetch({}).fetch);
+    const diagnostics: string[] = [];
+    const report = await runCheck(ctx, {
+      account: null,
+      warnDays: 14,
+      onDiagnostic: (line) => diagnostics.push(line),
+    });
+    expect(item(report, 'node_health').detail).toBe(
+      'could not run: route_not_found 404 on /network/properties',
+    );
+    expect(item(report, 'version_drift').detail).toBe(
+      'could not run: route_not_found 404 on /node/info',
+    );
+    expect(report.verdict).toBe('fail');
+    expect(report.exitCode).toBe(2);
+    expect(diagnostics).toEqual([]);
+  });
+
   it('is ERROR with exit code 3 when the node stops answering after start-up', async () => {
     const { ctx } = await createTestContext({ routes: routes(), env: { SYMBOL_STATE_DIR: dir } });
     vi.stubGlobal('fetch', async () => {

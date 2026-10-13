@@ -247,7 +247,7 @@ describe('symbol_account_get', () => {
     const result = await server.callTool('symbol_account_get', { account: ADDRESS });
     expect(result.isError).toBe(true);
     expect(result.text).toBe(
-      `Node ${TEST_NODE_HOST} does not provide the endpoint /account/${ADDRESS}/multisig (no such route), so this answer could not be completed. This is likely a bug in symbol-mcp-server, or the node runs a catapult-rest version without this endpoint; try another node, and report it with the tool name if it persists.`,
+      `Node ${TEST_NODE_HOST} does not provide the endpoint /account/${ADDRESS}/multisig (no such route), so this answer could not be completed. The node may run Light REST, which serves only a few /node and /chain endpoints, or a catapult-rest version without this endpoint. Set SYMBOL_NODE_URL to the REST URL of an up-to-date API node (see https://nodewatch.symbol.tools/). If an up-to-date API node answers this way, this is a bug in symbol-mcp-server: report it with the tool name.`,
     );
     expect(result.text).not.toMatch(/not a multisig account|does not exist/);
   });
