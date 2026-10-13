@@ -31,6 +31,45 @@ describe('validateNodeUrl', () => {
     expect(() => validateNodeUrl('https://user:pw@example.test:3001')).toThrow(ConfigError);
     expect(() => validateNodeUrl('https://example.test:3001/?x=1')).toThrow(ConfigError);
   });
+
+  // The URL parser reports an empty query or fragment as '' in `search` and `hash`, so a URL that
+  // ends with "?" or "#" used to pass, and the base URL kept that character: every request path
+  // then landed in the query or the fragment.
+  it.each([
+    ['https://example.test:3001/?'],
+    ['https://example.test:3001?'],
+    ['https://example.test:3001/#'],
+    ['https://example.test:3001#'],
+    ['https://example.test:3001/?#'],
+    ['  https://example.test:3001/?  '],
+    ['http://localhost:3000?'],
+    ['https://example.test:3001/api/?'],
+    ['https://example.test:3001/?x=1'],
+    ['https://example.test:3001/#top'],
+    ['https://example.test:3001/?x=1#top'],
+  ])('refuses %j: a query or a fragment, also an empty one', (url) => {
+    expect(() => validateNodeUrl(url)).toThrow(ConfigError);
+    expect(() => validateNodeUrl(url)).toThrow(
+      /^SYMBOL_NODE_URL must not contain a query string or fragment$/,
+    );
+  });
+
+  it.each([
+    ['https://example.test:3001', 'https://example.test:3001'],
+    ['https://example.test:3001/', 'https://example.test:3001'],
+    ['https://example.test:3001//', 'https://example.test:3001'],
+    ['https://example.test:3001/api', 'https://example.test:3001/api'],
+    ['https://example.test:3001/api/', 'https://example.test:3001/api'],
+    ['https://example.test', 'https://example.test'],
+    ['https://example.test:443/', 'https://example.test'],
+    ['HTTPS://Example.Test:3001/', 'https://example.test:3001'],
+    // "?" and "#" as part of a path are percent-encoded there and are not a query or a fragment.
+    ['https://example.test:3001/a%3Fb', 'https://example.test:3001/a%3Fb'],
+    ['https://example.test:3001/a%23b/', 'https://example.test:3001/a%23b'],
+    ['http://localhost:3000/', 'http://localhost:3000'],
+  ])('still accepts %j as %j', (url, expected) => {
+    expect(validateNodeUrl(url)).toBe(expected);
+  });
 });
 
 describe('loadConfig', () => {
@@ -98,6 +137,29 @@ describe('loadConfig', () => {
       ConfigError,
     );
   });
+
+  it.each([['/?'], ['?'], ['/#'], ['#'], ['/?#']])(
+    'refuses a SYMBOL_NODE_URL and a reference node that end with %j',
+    (ending) => {
+      const good = 'https://example.test:3001';
+      const node = () => loadConfig({ SYMBOL_NODE_URL: `${good}${ending}` });
+      expect(node).toThrow(ConfigError);
+      expect(node).toThrow(/^SYMBOL_NODE_URL must not contain a query string or fragment$/);
+
+      // Each entry of the list is checked, wherever it stands.
+      for (const list of [
+        `https://ref.test:3001${ending}`,
+        `https://a.test:3001, https://ref.test:3001${ending}`,
+        `https://ref.test:3001${ending} ,https://b.test:3001`,
+      ]) {
+        const reference = () => loadConfig({ SYMBOL_NODE_URL: good, SYMBOL_REFERENCE_NODES: list });
+        expect(reference).toThrow(ConfigError);
+        expect(reference).toThrow(
+          /^SYMBOL_REFERENCE_NODES entry must not contain a query string or fragment$/,
+        );
+      }
+    },
+  );
 });
 
 describe('resolveNetwork', () => {

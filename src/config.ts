@@ -71,7 +71,11 @@ export function validateNodeUrl(raw: string, label = 'SYMBOL_NODE_URL'): string 
   if (url.username || url.password) {
     throw new ConfigError(`${label} must not contain credentials`);
   }
-  if (url.search || url.hash) {
+  // Read from href, not from search and hash: those are '' for an empty query or fragment (a URL
+  // that ends with "?" or "#"), while href keeps the character, and so would the base URL, which
+  // puts every request path into the query or the fragment. In a path, "?" and "#" are
+  // percent-encoded, so href has them only when the URL has a query or a fragment.
+  if (url.href.includes('?') || url.href.includes('#')) {
     throw new ConfigError(`${label} must not contain a query string or fragment`);
   }
   return url.toString().replace(/\/+$/, '');

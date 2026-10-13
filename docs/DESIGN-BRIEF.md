@@ -65,7 +65,7 @@ The design comes down to 3 points. Make task-level tools that answer questions i
 
 | Environment variable | Required | Contents |
 |---|---|---|
-| `SYMBOL_NODE_URL` | **yes** | E.g. `https://<node-host>:3001`. Works with or without a trailing slash. `https://` is required (`http://` is allowed only for `localhost` / `127.0.0.1` / `[::1]`). A URL with credentials (`user:pass@`), a query or a fragment is a `ConfigError` (`validateNodeUrl` in `src/config.ts`) |
+| `SYMBOL_NODE_URL` | **yes** | E.g. `https://<node-host>:3001`. Works with or without a trailing slash. `https://` is required (`http://` is allowed only for `localhost` / `127.0.0.1` / `[::1]`). A URL with credentials (`user:pass@`), a query or a fragment is a `ConfigError` (`validateNodeUrl` in `src/config.ts`), also when the query or the fragment is empty (a URL that ends with `?` or `#`; since 0.10.1) |
 | `SYMBOL_NETWORK` | no | `mainnet` / `testnet`. When set, it is checked at start-up, and a mismatch makes start-up fail |
 | `SYMBOL_TIMEZONE` | no | IANA name (e.g. `Asia/Tokyo`). Adds the local time to date and time output |
 | `SYMBOL_REFERENCE_NODES` | no | Comma-separated URLs. Each URL is validated by the same rules as `SYMBOL_NODE_URL` (`validateNodeUrl`). What `symbol_network_compare` compares against, and the version sample of `symbol_version_drift` (only the reference nodes' `/node/info`; the same for the version_drift of CLI check). **No URL outside this list is ever contacted** |
