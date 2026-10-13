@@ -14,17 +14,49 @@ export interface Instant {
   readonly local?: string;
 }
 
+/** The last millisecond a Date can hold, on either side of 1970 (ECMAScript, not a network value). */
+export const MAX_DATE_MS = 8_640_000_000_000_000;
+
 /**
  * A network timestamp that gives no valid time. A node may send any uint64: one too long for a
  * number, or one beyond the last date JavaScript knows. A caller that can answer without the time
- * catches this error (symbol_node_status makes the check concerned unknown); for any other caller
- * it is a failure.
+ * catches this error (symbol_node_status makes the check concerned unknown), and
+ * symbol_transaction_status catches it to name the transactions concerned; for any other caller
+ * describeError says that the node returned a time that cannot be shown as a date.
  */
 export class InvalidNetworkTimestampError extends Error {
   constructor(timestampMs: string | number | bigint) {
     super(`invalid network timestamp: ${timestampMs}`);
     this.name = 'InvalidNetworkTimestampError';
   }
+}
+
+/**
+ * A Date that holds no time, met where a date is written as text. It comes from arithmetic that
+ * left the range of Date: a height or an epoch too far from the current one (estimateDateAtHeight),
+ * or an epoch adjustment that is no time. The value that caused it is not known here.
+ */
+export class InvalidDateError extends Error {
+  constructor() {
+    super('the date holds no valid time (outside the range of Date)');
+    this.name = 'InvalidDateError';
+  }
+}
+
+export function isValidDate(date: Date): boolean {
+  return !Number.isNaN(date.getTime());
+}
+
+/** The two errors of a time that cannot be shown as a date; describeError words them alike. */
+export function isUnusableTimeError(
+  err: unknown,
+): err is InvalidNetworkTimestampError | InvalidDateError {
+  return err instanceof InvalidNetworkTimestampError || err instanceof InvalidDateError;
+}
+
+/** The last network timestamp (ms) that networkTimestampToDate accepts for this epoch adjustment. */
+export function lastNetworkTimestamp(epochAdjustmentSeconds: number): number {
+  return MAX_DATE_MS - epochAdjustmentSeconds * 1000;
 }
 
 /**
@@ -57,8 +89,12 @@ export function isValidTimeZone(timeZone: string): boolean {
   }
 }
 
-/** Formats a date in an IANA zone as YYYY-MM-DDTHH:mm:ss+HH:MM. */
+/**
+ * Formats a date in an IANA zone as YYYY-MM-DDTHH:mm:ss+HH:MM. Throws InvalidDateError for a Date
+ * that holds no time.
+ */
 export function formatLocal(date: Date, timeZone: string): string {
+  if (!isValidDate(date)) throw new InvalidDateError();
   const fmt = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hourCycle: 'h23',
@@ -77,7 +113,12 @@ export function formatLocal(date: Date, timeZone: string): string {
   return `${parts.get('year')}-${parts.get('month')}-${parts.get('day')}T${parts.get('hour')}:${parts.get('minute')}:${parts.get('second')}${offset}`;
 }
 
+/**
+ * The instant as output shows it. Throws InvalidDateError for a Date that holds no time, where
+ * toISOString would throw a RangeError that says nothing about its cause.
+ */
 export function formatInstant(date: Date, timeZone?: string): Instant {
+  if (!isValidDate(date)) throw new InvalidDateError();
   const utc = date.toISOString();
   return timeZone ? { utc, local: formatLocal(date, timeZone) } : { utc };
 }
@@ -92,7 +133,8 @@ export function formatInstantText(instant: Instant): string {
 
 /**
  * Estimates the wall-clock time at which `targetHeight` will be reached, using the measured
- * average block time. Negative distances (past heights) are extrapolated backwards.
+ * average block time. Negative distances (past heights) are extrapolated backwards. A height too
+ * far from the current one gives a Date that holds no time; formatInstant refuses it.
  */
 export function estimateDateAtHeight(
   currentHeight: number,

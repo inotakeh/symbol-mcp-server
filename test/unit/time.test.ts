@@ -5,8 +5,13 @@ import {
   formatInstant,
   formatInstantText,
   formatLocal,
+  InvalidDateError,
   InvalidNetworkTimestampError,
+  isUnusableTimeError,
+  isValidDate,
   isValidTimeZone,
+  lastNetworkTimestamp,
+  MAX_DATE_MS,
   networkTimestampToDate,
 } from '../../src/domain/time.js';
 
@@ -96,5 +101,54 @@ describe('estimateDateAtHeight', () => {
   });
   it('rejects a non-positive block time', () => {
     expect(() => estimateDateAtHeight(1, 2, 0, now)).toThrow();
+  });
+});
+
+describe('a date that holds no time', () => {
+  const none = new Date(Number.NaN);
+
+  it('is refused with InvalidDateError where a date is written as text', () => {
+    expect(() => formatInstant(none)).toThrow(InvalidDateError);
+    expect(() => formatInstant(none, 'Asia/Tokyo')).toThrow(InvalidDateError);
+    expect(() => formatLocal(none, 'Asia/Tokyo')).toThrow(InvalidDateError);
+    // Not the RangeError of toISOString, and with a message that holds no value.
+    expect(() => formatInstant(none)).toThrow(
+      'the date holds no valid time (outside the range of Date)',
+    );
+    expect(new InvalidDateError().name).toBe('InvalidDateError');
+  });
+
+  it('still formats the last instant a Date can hold, and not the next one', () => {
+    expect(MAX_DATE_MS).toBe(8_640_000_000_000_000);
+    expect(formatInstant(new Date(MAX_DATE_MS))).toEqual({ utc: '+275760-09-13T00:00:00.000Z' });
+    expect(formatInstant(new Date(-MAX_DATE_MS))).toEqual({ utc: '-271821-04-20T00:00:00.000Z' });
+    expect(() => formatInstant(new Date(MAX_DATE_MS + 1))).toThrow(InvalidDateError);
+    expect(() => formatInstant(new Date(-MAX_DATE_MS - 1))).toThrow(InvalidDateError);
+  });
+
+  it('is what an estimate for a height too far away returns, without throwing', () => {
+    const now = new Date('2026-09-10T03:05:00.000Z');
+    const estimate = estimateDateAtHeight(5_763_675, 1_000_000_000_000, 30_030, now);
+    expect(isValidDate(estimate)).toBe(false);
+    expect(() => formatInstant(estimate)).toThrow(InvalidDateError);
+    expect(isValidDate(now)).toBe(true);
+  });
+
+  it('gives the last network timestamp that is still a date', () => {
+    const last = lastNetworkTimestamp(EPOCH_ADJUSTMENT);
+    expect(last).toBe(8_638_384_146_815_000);
+    expect(isValidDate(networkTimestampToDate(last, EPOCH_ADJUSTMENT))).toBe(true);
+    expect(() => networkTimestampToDate(last + 1, EPOCH_ADJUSTMENT)).toThrow(
+      InvalidNetworkTimestampError,
+    );
+  });
+
+  it('knows the two errors of an unusable time, and no other', () => {
+    expect(isUnusableTimeError(new InvalidDateError())).toBe(true);
+    expect(isUnusableTimeError(new InvalidNetworkTimestampError('9000000000000000'))).toBe(true);
+    expect(isUnusableTimeError(new RangeError('Invalid time value'))).toBe(false);
+    expect(isUnusableTimeError(new Error('invalid height: 1'))).toBe(false);
+    expect(isUnusableTimeError('invalid network timestamp: 1')).toBe(false);
+    expect(isUnusableTimeError(undefined)).toBe(false);
   });
 });

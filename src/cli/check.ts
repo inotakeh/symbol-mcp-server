@@ -20,7 +20,7 @@ import type { AppContext } from '../context.js';
 import { describeSignedStages } from '../domain/finality.js';
 import { sanitizeUntrusted, toSingleLine } from '../domain/sanitize.js';
 import type { Instant } from '../domain/time.js';
-import { formatInstant, formatInstantText } from '../domain/time.js';
+import { formatInstant, formatInstantText, isUnusableTimeError } from '../domain/time.js';
 import {
   BELOW_MIN_VOTER_BALANCE,
   hasSuccessorKey,
@@ -28,7 +28,14 @@ import {
   RENEWAL_WINDOW_END_DAYS,
   SLOTS_FULL,
 } from '../domain/voting.js';
-import { describeError, maskIdentifier, ToolInputError } from '../tools/_shared.js';
+import {
+  describeError,
+  logUnusableTime,
+  maskIdentifier,
+  ToolInputError,
+  UNUSABLE_TIME_ADVICE,
+  unusableTimeDetail,
+} from '../tools/_shared.js';
 import { InstantSchema } from '../tools/_transactions.js';
 import {
   finalityParticipationTool,
@@ -419,6 +426,20 @@ function describeFailure(id: CheckId, err: unknown, ctx: AppContext): Failure {
       body: proofMissing
         ? { status: 'warn', detail: first, hint: UNAVAILABLE_NOTE }
         : { status: 'fail', detail: first, hint: rest },
+      unreachable: false,
+    };
+  }
+  // A time from the node that cannot be shown as a date: the two parts of the tools' own text,
+  // what happened and what to do. They are not found by splitting the text, because a host can end
+  // in a dot. The details go to stderr, as describeError writes them.
+  if (isUnusableTimeError(err)) {
+    logUnusableTime(err, ctx.rest.host);
+    return {
+      body: {
+        status: 'fail',
+        detail: unusableTimeDetail(ctx.rest.host),
+        hint: UNUSABLE_TIME_ADVICE,
+      },
       unreachable: false,
     };
   }

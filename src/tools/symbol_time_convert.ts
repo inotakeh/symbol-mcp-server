@@ -5,6 +5,8 @@ import {
   dateToNetworkTimestamp,
   estimateDateAtHeight,
   formatInstantText,
+  isValidDate,
+  lastNetworkTimestamp,
   networkTimestampToDate,
   roundTo,
 } from '../domain/time.js';
@@ -78,6 +80,42 @@ export const timeConvertTool = defineTool({
       votingSetGrouping: G,
       averageBlockTimeSeconds: avgSeconds,
     };
+
+    // A value of the caller's that is too large to give a date is an input error. It is found by
+    // comparing the value with the range, not by the type of an error: a node time that cannot be
+    // used throws the same errors, and that is the node's failure (describeError words it). The
+    // node values the comparison needs were read above.
+    if (timestamp !== undefined && timestamp > lastNetworkTimestamp(epochAdjustment)) {
+      throw new ToolInputError(
+        `timestamp ${timestamp} ms is beyond the last time that can be shown as a date. Pass a network timestamp in milliseconds since the network epoch (as in block.timestamp); the current one is about ${dateToNetworkTimestamp(now, epochAdjustment)} ms.`,
+      );
+    }
+    // Too far for the measured average and for the target block time alike. When only the
+    // measured average gives no date, the block times the node sent are extreme, or the height
+    // lies in the narrow band between the two limits: the estimate below then fails with the
+    // node's text. A block time that is not a positive number cannot judge the caller's value.
+    const blockTimes = [
+      blockTime.averageBlockTimeMs,
+      properties.blockGenerationTargetTimeMs,
+    ].filter((ms) => Number.isFinite(ms) && ms > 0);
+    const tooFar = (h: number) =>
+      h > currentHeight &&
+      blockTimes.length > 0 &&
+      blockTimes.every((ms) => !isValidDate(estimateDateAtHeight(currentHeight, h, ms, now)));
+    if (height !== undefined && tooFar(height)) {
+      throw new ToolInputError(
+        `height ${formatInteger(height)} is too far in the future to estimate a date (the current height is ${formatInteger(currentHeight)}). Pass a height closer to the current one.`,
+      );
+    }
+    if (epoch !== undefined && epoch > current.finalizationEpoch) {
+      // The last height of the epoch; beyond the safe integers it would not be exact either.
+      const endHeight = epochEndHeight(epoch, G);
+      if (!Number.isSafeInteger(endHeight) || tooFar(endHeight)) {
+        throw new ToolInputError(
+          `epoch ${epoch} is too far in the future to estimate a date (the current finalization epoch is ${current.finalizationEpoch}). Pass an epoch closer to the current one.`,
+        );
+      }
+    }
 
     /** Exact time for a past height, estimate for a future one. */
     const timeAtHeight = async (h: number) => {

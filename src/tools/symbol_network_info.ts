@@ -2,6 +2,7 @@ import * as z from 'zod/v4';
 import { ChainInfoSchema, TransactionFeesSchema } from '../client/schemas.js';
 import { parseHeight } from '../domain/epoch.js';
 import { mosaicLabel } from '../domain/quote.js';
+import { formatInstant } from '../domain/time.js';
 import { defineTool, formatInteger, nullable } from './_shared.js';
 
 const outputSchema = z.object({
@@ -52,7 +53,10 @@ export const networkInfoTool = defineTool({
     const alias = text.useOrNull(currency.alias);
     const height = parseHeight(chain.height);
     const finalizedHeight = parseHeight(chain.latestFinalizedBlock.height);
-    const epochAdjustmentUtc = new Date(properties.epochAdjustmentSeconds * 1000).toISOString();
+    // formatInstant: an epoch adjustment that is no time is a typed error, not a RangeError.
+    const epochAdjustmentUtc = formatInstant(
+      new Date(properties.epochAdjustmentSeconds * 1000),
+    ).utc;
 
     const summary = [
       `Symbol ${ctx.network.name} (identifier ${ctx.network.identifier}) via ${ctx.rest.host}: height ${formatInteger(height)}, finalized ${formatInteger(finalizedHeight)} (epoch ${chain.latestFinalizedBlock.finalizationEpoch}).`,

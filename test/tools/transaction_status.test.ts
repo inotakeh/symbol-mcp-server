@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { unusableTimeText } from '../../src/tools/_shared.js';
 import {
+  fixture,
   jsonResponse,
   mainnetRoutes,
+  type Routes,
   STATUS_HASH_FAILED,
   STATUS_HASH_PARTIAL,
   STATUS_HASH_UNCONFIRMED,
@@ -174,5 +177,144 @@ describe('symbol_transaction_status', () => {
     const result = await server.callTool('symbol_transaction_status', { transactionHashes: [] });
     expect(result.isError).toBe(true);
     expect(result.text).toMatch(/transactionHashes is empty/);
+  });
+});
+
+describe('symbol_transaction_status: a deadline that gives no date', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  // Any digits pass the schema of a deadline: beyond the last date, and too long for a number.
+  const BEYOND = '9000000000000000';
+  const TOO_LONG = '9'.repeat(400);
+  const FAILED = `${STATUS_HASH_FAILED.slice(0, 8)}…`;
+  const UNCONFIRMED = `${STATUS_HASH_UNCONFIRMED.slice(0, 8)}…`;
+  const GET_HINT =
+    ' For a failed transaction, symbol_transaction_get reports the validation code and its meaning without reading the deadline.';
+  const LOG = `symbol-mcp-server: unusable time from node ${TEST_NODE_HOST}: `;
+
+  /** The default status rows, with the deadline of the given hashes replaced. */
+  function routesWithDeadlines(deadlines: Record<string, string>): Routes {
+    return {
+      ...mainnetRoutes(),
+      'POST /transactionStatus': async (request: Request) => {
+        const body = (await request.json()) as { hashes?: string[] };
+        const wanted = new Set((body.hashes ?? []).map((h) => h.toUpperCase()));
+        const rows = fixture<Array<{ hash: string; deadline: string }>>(
+          'mainnet/transaction-status.json',
+        );
+        return jsonResponse(
+          rows
+            .filter((row) => wanted.has(row.hash))
+            .map((row) => ({ ...row, deadline: deadlines[row.hash] ?? row.deadline })),
+        );
+      },
+    };
+  }
+  const status = (transactionHashes: string[]) => {
+    if (server === undefined) throw new Error('start the server first');
+    return server.callTool('symbol_transaction_status', { transactionHashes });
+  };
+
+  it('names the transaction and its group, and says to ask again without it', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    server = await startTestServer({
+      routes: routesWithDeadlines({ [STATUS_HASH_FAILED]: BEYOND }),
+    });
+    const result = await status([TRANSFER_HASH, STATUS_HASH_FAILED]);
+    expect(result.isError).toBe(true);
+    expect(FAILED).toBe('9539AD0F…');
+    expect(result.text).toBe(
+      `Node node.test:3001 reports a deadline that cannot be shown as a date for transaction 9539AD0F… (failed), so no status of this call could be returned. Call symbol_transaction_status again without that hash.${GET_HINT}`,
+    );
+    expect(result.structuredContent).toBeUndefined();
+    // Neither the deadline nor a whole hash is in the reply; the deadline is on stderr.
+    expect(result.text).not.toContain(BEYOND);
+    expect(result.text).not.toContain(STATUS_HASH_FAILED);
+    expect(errors.mock.calls.map((c) => String(c[0]))).toEqual([
+      `${LOG}InvalidNetworkTimestampError: invalid network timestamp: ${BEYOND}`,
+    ]);
+
+    // As the text says: the same call without that hash answers.
+    const again = await status([TRANSFER_HASH]);
+    expect(again.isError).toBe(false);
+    expect(again.structuredContent).toMatchObject({
+      statuses: [{ hash: TRANSFER_HASH, group: 'confirmed' }],
+    });
+  });
+
+  it('names every transaction concerned, in the order asked', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    server = await startTestServer({
+      routes: routesWithDeadlines({
+        [STATUS_HASH_FAILED]: BEYOND,
+        [STATUS_HASH_UNCONFIRMED]: BEYOND,
+      }),
+    });
+    const text = (rows: string) =>
+      `Node ${TEST_NODE_HOST} reports a deadline that cannot be shown as a date for transactions ${rows}, so no status of this call could be returned. Call symbol_transaction_status again without those hashes.${GET_HINT}`;
+    const both = await status([STATUS_HASH_FAILED, TRANSFER_HASH, STATUS_HASH_UNCONFIRMED]);
+    expect(both.isError).toBe(true);
+    expect(both.text).toBe(text(`${FAILED} (failed), ${UNCONFIRMED} (unconfirmed)`));
+    // One line on stderr for each of them.
+    const line = `${LOG}InvalidNetworkTimestampError: invalid network timestamp: ${BEYOND}`;
+    expect(errors.mock.calls.map((c) => String(c[0]))).toEqual([line, line]);
+    const reversed = await status([STATUS_HASH_UNCONFIRMED, STATUS_HASH_FAILED]);
+    expect(reversed.text).toBe(text(`${UNCONFIRMED} (unconfirmed), ${FAILED} (failed)`));
+  });
+
+  it('points to symbol_transaction_get only when a transaction concerned is failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    server = await startTestServer({
+      routes: routesWithDeadlines({ [STATUS_HASH_UNCONFIRMED]: BEYOND }),
+    });
+    const result = await status([STATUS_HASH_UNCONFIRMED, STATUS_HASH_FAILED]);
+    expect(result.isError).toBe(true);
+    expect(result.text).toBe(
+      `Node ${TEST_NODE_HOST} reports a deadline that cannot be shown as a date for transaction ${UNCONFIRMED} (unconfirmed), so no status of this call could be returned. Call symbol_transaction_status again without that hash.`,
+    );
+    expect(result.text).not.toContain('symbol_transaction_get');
+  });
+
+  it('gives the same text for a deadline too long for a number, and cuts it on stderr', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    server = await startTestServer({
+      routes: routesWithDeadlines({ [STATUS_HASH_FAILED]: TOO_LONG }),
+    });
+    const result = await status([STATUS_HASH_FAILED]);
+    expect(result.isError).toBe(true);
+    expect(result.text).toBe(
+      `Node ${TEST_NODE_HOST} reports a deadline that cannot be shown as a date for transaction ${FAILED} (failed), so no status of this call could be returned. Call symbol_transaction_status again without that hash.${GET_HINT}`,
+    );
+    expect(result.text).not.toContain('9'.repeat(16));
+    const logged = errors.mock.calls.map((c) => String(c[0]));
+    expect(logged).toHaveLength(1);
+    expect(
+      logged[0]?.startsWith(
+        `${LOG}InvalidNetworkTimestampError: invalid network timestamp: ${'9'.repeat(50)}`,
+      ),
+    ).toBe(true);
+    expect(logged[0]).not.toContain('9'.repeat(300));
+  });
+
+  it('gives the general text when the epoch adjustment is what gives no date', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const properties = fixture<{ network: Record<string, string> }>(
+      'mainnet/network-properties.json',
+    );
+    properties.network.epochAdjustment = `${BEYOND}s`;
+    server = await startTestServer({
+      routes: { ...mainnetRoutes(), 'GET /network/properties': properties },
+    });
+    // Every deadline fails then, and none is the fault of its transaction.
+    const result = await status([TRANSFER_HASH, STATUS_HASH_FAILED]);
+    expect(result.isError).toBe(true);
+    expect(result.text).toBe(unusableTimeText(TEST_NODE_HOST));
+    expect(errors.mock.calls.map((c) => String(c[0]))).toEqual([
+      `${LOG}InvalidDateError: the date holds no valid time (outside the range of Date)`,
+    ]);
+    // A call that converts no deadline still answers, as before.
+    const unknown = await status([UNKNOWN_HASH]);
+    expect(unknown.isError).toBe(false);
+    expect(unknown.structuredContent).toMatchObject({ counts: { notFound: 1 } });
   });
 });

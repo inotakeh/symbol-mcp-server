@@ -15,6 +15,7 @@ import { REDIRECT_ADVICE } from '../config.js';
 import type { AppContext } from '../context.js';
 import { PropertyParseError } from '../domain/properties.js';
 import { sanitizeUntrusted, UntrustedText } from '../domain/sanitize.js';
+import { isUnusableTimeError } from '../domain/time.js';
 import { StateFileError } from '../state/snapshotfile.js';
 
 export const TOOL_ANNOTATIONS: ToolAnnotations = {
@@ -181,9 +182,43 @@ export function describeError(err: unknown, ctx: AppContext): string {
   if (err instanceof StateFileError) {
     return `Could not ${err.operation === 'read' ? 'read' : 'write'} the harvester snapshot file ${err.path} (${err.code}). Check that SYMBOL_STATE_DIR exists or can be created and is writable by the server process, or unset SYMBOL_STATE_DIR to run without comparisons.`;
   }
+  if (isUnusableTimeError(err)) {
+    logUnusableTime(err, ctx.rest.host);
+    return unusableTimeText(ctx.rest.host);
+  }
   // Internal failures: details go to stderr (never to the model), the reply stays generic.
   logUnexpectedError(err);
   return 'Unexpected internal error while running the tool. Retry; if it persists, report it with the tool name and arguments (details were written to the server log).';
+}
+
+/**
+ * What a tool answers when a time from the node cannot be shown as a date: a timestamp no Date can
+ * hold, or a date estimated from a height or an epoch too far from the current one. One text for
+ * both errors of domain/time.ts. It quotes no value from the node. It is made of two parts, what
+ * happened and what to do, which the CLI check prints as the detail and the hint of an item.
+ */
+export function unusableTimeText(host: string): string {
+  return `${unusableTimeDetail(host)} ${UNUSABLE_TIME_ADVICE}`;
+}
+
+/** Sentence 1 of unusableTimeText: what happened. */
+export function unusableTimeDetail(host: string): string {
+  return `Node ${host} returned a time that cannot be shown as a date (a timestamp, or a height or an epoch too far from now), so this answer could not be completed.`;
+}
+
+/** The rest of unusableTimeText: what to do. */
+export const UNUSABLE_TIME_ADVICE =
+  'If it happens for one transaction, account, namespace or mosaic only, the data the node holds for it is unusual: ask for the other items separately. If it happens for every call, the node may be faulty: point SYMBOL_NODE_URL at another node (see https://nodewatch.symbol.tools/). Details were written to stderr (the server log).';
+
+/**
+ * Writes the error of a time that cannot be shown as a date to stderr for the operator. Its
+ * message can quote the node's value, so it is cleaned and capped like any untrusted text. The
+ * line does not say "unexpected internal error": the reply says that the node sent the time.
+ */
+export function logUnusableTime(err: Error, host: string): void {
+  console.error(
+    `symbol-mcp-server: unusable time from node ${host}: ${err.name}: ${sanitizeUntrusted(err.message)}`,
+  );
 }
 
 /**

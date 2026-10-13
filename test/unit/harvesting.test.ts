@@ -11,6 +11,7 @@ import {
   shrinkChunkBlocks,
   splitHeightRange,
 } from '../../src/domain/harvesting.js';
+import { InvalidNetworkTimestampError } from '../../src/domain/time.js';
 
 const XYM = '6BED913FA20223F8';
 const OTHER_MOSAIC = '66BAE04E8758599E';
@@ -354,6 +355,34 @@ describe('aggregateHarvestIncome', () => {
       { ...opts, currencyMosaicId: XYM.toLowerCase() },
     );
     expect(out.totals.harvester.raw).toBe(70n);
+  });
+
+  it('refuses a statement of the account whose timestamp gives no time', () => {
+    // Beyond the last date JavaScript knows, and too long to be a finite number.
+    for (const timestamp of ['9000000000000000', '9'.repeat(400)]) {
+      const statements = [
+        statement(10, timestamp, [receipt('70', ME), receipt('25', PEER), receipt('5', SINK)]),
+      ];
+      expect(() => aggregateHarvestIncome(statements, opts)).toThrow(InvalidNetworkTimestampError);
+      expect(() => aggregateHarvestIncome(statements, { ...opts, timeZone: 'Asia/Tokyo' })).toThrow(
+        InvalidNetworkTimestampError,
+      );
+    }
+  });
+
+  it('does not read the time of a statement that has no receipt for the account', () => {
+    const out = aggregateHarvestIncome(
+      [
+        statement(10, '9000000000000000', [
+          receipt('70', PEER),
+          receipt('25', PEER),
+          receipt('5', SINK),
+        ]),
+      ],
+      opts,
+    );
+    expect(out.totals.receipts).toBe(0);
+    expect(out.totals.blocks).toBe(0);
   });
 });
 
