@@ -13,7 +13,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > in 0.10.0. With `check --cert`, when the node's `/node/info` cannot be read at start-up, the
 > report is now printed on stdout; the exit code is 3 as before. With `--account`, `check` can exit
 > 2 where it exited 0 or 1: when a block timestamp that the average block time is measured from is
-> no valid time, the `voting_key_status` item fails.
+> no valid time, the `voting_key_status` item fails. An entry of `SYMBOL_REFERENCE_NODES` that ends
+> with `?` or `#` now stops the server and `check` at start-up with a configuration error (0.10.0
+> accepted such an entry): remove the character.
 
 ### Added
 
