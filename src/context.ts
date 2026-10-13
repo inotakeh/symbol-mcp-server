@@ -16,7 +16,7 @@ import {
 import { type Config, loadConfig, type ResolvedNetwork, resolveNetwork } from './config.js';
 import { type NetworkProperties, parseNetworkProperties } from './domain/properties.js';
 import { type CleanedText, cleanUntrusted, joinCleaned } from './domain/sanitize.js';
-import { formatInstant, type Instant } from './domain/time.js';
+import { formatInstant, type Instant, networkTimestampToDate } from './domain/time.js';
 
 export interface CurrencyInfo {
   readonly mosaicId: string;
@@ -191,7 +191,8 @@ export class AppContext {
 
   /**
    * Measured average block time over the last `sample` blocks (two block fetches). Used for
-   * future date estimates instead of the nominal blockGenerationTargetTime.
+   * future date estimates instead of the nominal blockGenerationTargetTime. A block time that is
+   * no valid time is refused (InvalidNetworkTimestampError): no average is measured from it.
    */
   async getAverageBlockTime(
     currentHeight: number,
@@ -204,8 +205,11 @@ export class AppContext {
       this.rest.get(`/blocks/${toHeight}`, BlockInfoSchema),
     ]);
     const span = toHeight - fromHeight;
-    const deltaMs = Number(to.block.timestamp) - Number(from.block.timestamp);
     const { properties } = await this.getNetworkData();
+    const epochAdjustment = properties.epochAdjustmentSeconds;
+    const deltaMs =
+      networkTimestampToDate(to.block.timestamp, epochAdjustment).getTime() -
+      networkTimestampToDate(from.block.timestamp, epochAdjustment).getTime();
     const averageBlockTimeMs =
       span > 0 && deltaMs > 0 ? deltaMs / span : properties.blockGenerationTargetTimeMs;
     return { averageBlockTimeMs, sampleBlocks: span, fromHeight, toHeight };

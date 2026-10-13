@@ -8,6 +8,7 @@ import {
   parseCalendarDate,
   zoneOffsetMinutes,
 } from '../../src/domain/localdate.js';
+import { InvalidDateError } from '../../src/domain/time.js';
 
 describe('parseCalendarDate', () => {
   it('parses YYYY-MM-DD', () => {
@@ -70,5 +71,10 @@ describe('calendarDateKey', () => {
     expect(calendarDateKey(instant, 'America/New_York')).toBe('2026-09-10');
     expect(calendarDateKey(new Date('2026-12-31T15:00:00.000Z'), 'Asia/Tokyo')).toBe('2027-01-01');
     expect(calendarDateKey(new Date('2026-12-31T14:59:59.999Z'), 'Asia/Tokyo')).toBe('2026-12-31');
+  });
+  it('refuses a date that holds no time, with and without a zone', () => {
+    const none = new Date(Number.NaN);
+    expect(() => calendarDateKey(none)).toThrow(InvalidDateError);
+    expect(() => calendarDateKey(none, 'Asia/Tokyo')).toThrow(InvalidDateError);
   });
 });

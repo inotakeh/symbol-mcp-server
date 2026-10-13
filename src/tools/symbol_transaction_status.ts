@@ -1,8 +1,21 @@
 import * as z from 'zod/v4';
 import { parseHeight } from '../domain/epoch.js';
-import { formatInstantText, type Instant, networkTimestampToDate } from '../domain/time.js';
+import {
+  formatInstant,
+  formatInstantText,
+  type Instant,
+  InvalidNetworkTimestampError,
+  networkTimestampToDate,
+} from '../domain/time.js';
 import { TRANSACTION_GROUPS } from '../domain/txstatus.js';
-import { defineTool, formatInteger, maskIdentifier, nullable, ToolInputError } from './_shared.js';
+import {
+  defineTool,
+  formatInteger,
+  logUnusableTime,
+  maskIdentifier,
+  nullable,
+  ToolInputError,
+} from './_shared.js';
 import { InstantSchema } from './_transactions.js';
 import { failedStatusText, fetchTransactionStatuses, readStatusCode } from './_txstatus.js';
 
@@ -80,6 +93,28 @@ function describeStatus(entry: StatusEntry): string {
   }
 }
 
+/** A status row whose deadline gives no date: the hash the caller passed, and the row's group. */
+interface UnusableDeadline {
+  readonly hash: string;
+  readonly group: (typeof TRANSACTION_GROUPS)[number];
+}
+
+/**
+ * What the tool answers when a deadline gives no date (the schema accepts any digits). It names
+ * every transaction concerned, so that the call can be repeated without them; the general text of
+ * describeError could not say which of up to 20 hashes it was. The deadline itself is not quoted.
+ * symbol_transaction_get is named only when a row is failed: for the other groups it converts
+ * the deadline of the transaction too.
+ */
+function unusableDeadlineText(host: string, rows: readonly UnusableDeadline[]): string {
+  const one = rows.length === 1;
+  const named = rows.map((row) => `${maskIdentifier(row.hash)} (${row.group})`).join(', ');
+  const failedHint = rows.some((row) => row.group === 'failed')
+    ? ' For a failed transaction, symbol_transaction_get reports the validation code and its meaning without reading the deadline.'
+    : '';
+  return `Node ${host} reports a deadline that cannot be shown as a date for transaction${one ? '' : 's'} ${named}, so no status of this call could be returned. Call symbol_transaction_status again without ${one ? 'that hash' : 'those hashes'}.${failedHint}`;
+}
+
 export const transactionStatusTool = defineTool({
   name: 'symbol_transaction_status',
   title: 'Symbol transaction status',
@@ -109,7 +144,23 @@ export const transactionStatusTool = defineTool({
     }
 
     const { properties } = await ctx.getNetworkData();
+    const epochAdjustment = properties.epochAdjustmentSeconds;
     const byHash = await fetchTransactionStatuses(ctx, hashes);
+
+    const unusable: UnusableDeadline[] = [];
+    const deadlineOf = (row: UnusableDeadline, deadline: string): Instant | null => {
+      try {
+        return ctx.instant(networkTimestampToDate(deadline, epochAdjustment));
+      } catch (err) {
+        if (!(err instanceof InvalidNetworkTimestampError)) throw err;
+        // An epoch adjustment that is no time fails every deadline, and none is this row's fault:
+        // formatInstant then throws, and describeError gives the general text.
+        formatInstant(new Date(epochAdjustment * 1000));
+        logUnusableTime(err, ctx.rest.host);
+        unusable.push(row);
+        return null;
+      }
+    };
 
     const statuses = hashes.map((hash): StatusEntry => {
       const s = byHash.get(hash);
@@ -131,11 +182,13 @@ export const transactionStatusTool = defineTool({
         code,
         codeMeaning,
         height: s.group === 'confirmed' && height > 0 ? height : null,
-        deadline: ctx.instant(
-          networkTimestampToDate(s.deadline, properties.epochAdjustmentSeconds),
-        ),
+        deadline: deadlineOf({ hash, group: s.group }, s.deadline),
       };
     });
+    // No row is returned without its deadline: the call fails and names the rows to leave out.
+    if (unusable.length > 0) {
+      throw new ToolInputError(unusableDeadlineText(ctx.rest.host, unusable));
+    }
 
     const counts = {
       confirmed: statuses.filter((s) => s.group === 'confirmed').length,

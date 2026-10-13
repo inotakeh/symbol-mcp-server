@@ -26,6 +26,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - README (English): the opening sentence still said that the server has 22 tools. It has 20 since
   0.10.0, as the "Tools" section and the Japanese README already said.
+- A time that cannot be shown as a date no longer ends in "Unexpected internal error … Retry",
+  which did not say what was wrong. The REST client accepts any digits for a timestamp, and a
+  height or an epoch far enough from the current one gives an estimated date beyond the last date
+  JavaScript knows (year 275760). The tools that meet such a value (`symbol_transaction_get`,
+  `symbol_transaction_search`, `symbol_delegation_diagnose`, `symbol_harvesting_income`,
+  `symbol_time_convert`, `symbol_voting_key_status`, `symbol_namespace_get`, `symbol_mosaic_get`,
+  `symbol_network_info`) now say what happened and what to do: ask for the other items when one
+  transaction, account, namespace or mosaic is concerned, or use another node when every call
+  fails. The reply quotes no value from the node; the details are written to stderr, on a line
+  `symbol-mcp-server: unusable time from node <host>: …` (it was
+  `symbol-mcp-server: unexpected internal error: …`). The call still fails as a whole, and no
+  output field changes.
+- `symbol_transaction_status` names the transaction whose deadline cannot be shown as a date (the
+  first 8 characters of its hash, and its group) and says to ask again without it, where the whole
+  batch failed with "Unexpected internal error".
+- `symbol_time_convert` answers a `timestamp`, `height` or `epoch` too large to give a date with an
+  input error that gives the current value, instead of "Unexpected internal error". Its input
+  schema does not change.
+- The average block time is no longer measured from a block timestamp that is no valid time.
+  `symbol_voting_key_status`, `symbol_time_convert`, `symbol_delegation_diagnose` and, for a
+  namespace or a mosaic that expires, `symbol_namespace_get` and `symbol_mosaic_get` then fail
+  and say that the node returned a time that cannot be shown as a date (the text of the entry
+  above that begins "A time that cannot be shown as a date"); before, the value distorted the
+  estimate, or the target block time was used in its place without notice. `check --account`
+  reads the voting key through `symbol_voting_key_status`, so its `voting_key_status` item then
+  fails (exit code 2) where it could be ok before.
+- `check`: when the `voting_key_status` item meets such a time, its detail says so and its hint
+  says what to do (the detail was "could not run: internal error").
 
 ## [0.10.0] - 2026-10-07
 

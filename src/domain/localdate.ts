@@ -6,7 +6,7 @@
  * as the local timestamps in output (`formatLocal`), so a receipt is always bucketed into the day
  * its displayed local time falls on.
  */
-import { formatLocal } from './time.js';
+import { formatInstant, formatLocal } from './time.js';
 
 export interface CalendarDate {
   readonly year: number;
@@ -70,9 +70,12 @@ export function dayEnd(d: CalendarDate, timeZone?: string): Date {
   return new Date(nextStart.getTime() - 1);
 }
 
-/** The calendar day ("YYYY-MM-DD") an instant falls on in the zone (UTC when none is given). */
+/**
+ * The calendar day ("YYYY-MM-DD") an instant falls on in the zone (UTC when none is given). Throws
+ * InvalidDateError for a Date that holds no time, as the two formatters do.
+ */
 export function calendarDateKey(date: Date, timeZone?: string): string {
-  return timeZone ? formatLocal(date, timeZone).slice(0, 10) : date.toISOString().slice(0, 10);
+  return (timeZone ? formatLocal(date, timeZone) : formatInstant(date).utc).slice(0, 10);
 }
 
 export function compareCalendarDates(a: CalendarDate, b: CalendarDate): number {

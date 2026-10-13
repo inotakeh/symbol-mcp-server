@@ -274,6 +274,74 @@ describe('runCheck against the fixture node', () => {
     expect(report.exitCode).toBe(1);
   });
 
+  it('fails the voting item with the text of the tools when a time cannot be shown as a date', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // A voting key whose end epoch is too far away for a date, and a block time of the two the
+      // average block time is measured from that no Date can hold.
+      const far = {
+        publicKey: H('fixture:voting-key-3'),
+        startEpoch: 4060,
+        endEpoch: 4_000_000_000,
+      };
+      const older = fixture<{ block: Record<string, unknown> }>('mainnet/block-5753675.json');
+      older.block.timestamp = '9000000000000000';
+      const cases: Array<[Routes, string]> = [
+        [
+          { [`GET /accounts/${ADDRESS}`]: votingAccount({ third: far }) },
+          'InvalidDateError: the date holds no valid time (outside the range of Date)',
+        ],
+        [
+          { 'GET /blocks/5753675': older },
+          'InvalidNetworkTimestampError: invalid network timestamp: 9000000000000000',
+        ],
+      ];
+      for (const [extra, logged] of cases) {
+        errors.mockClear();
+        const { ctx } = await createTestContext({ routes: routes(extra) });
+        const report = await runCheck(ctx, { account: ADDRESS, warnDays: 14 });
+        // Sentence 1 of the tools' text is the detail and the rest the hint: not "internal error".
+        expect(item(report, 'voting_key_status')).toEqual({
+          id: 'voting_key_status',
+          status: 'fail',
+          detail: `Node ${TEST_NODE_HOST} returned a time that cannot be shown as a date (a timestamp, or a height or an epoch too far from now), so this answer could not be completed.`,
+          hint: 'If it happens for one transaction, account, namespace or mosaic only, the data the node holds for it is unusual: ask for the other items separately. If it happens for every call, the node may be faulty: point SYMBOL_NODE_URL at another node (see https://nodewatch.symbol.tools/). Details were written to stderr (the server log).',
+        });
+        expect(report.verdict).toBe('fail');
+        expect(report.exitCode).toBe(2);
+        // The other items run and are judged as on any day.
+        expect(statuses(report)).toMatchObject({
+          node_health: 'ok',
+          version_drift: 'ok',
+          finality_participation: 'ok',
+        });
+        const printed = `${formatCheckText(report)}${formatCheckJson(report)}`;
+        expect(printed).not.toContain('4000000000');
+        expect(printed).not.toContain('9000000000000000');
+        expect(errors.mock.calls.map((c) => String(c[0]))).toEqual([
+          `symbol-mcp-server: unusable time from node ${TEST_NODE_HOST}: ${logged}`,
+        ]);
+        vi.unstubAllGlobals();
+      }
+
+      // The two parts are not found by cutting the text at the first ". ": a host can end in one.
+      const dotted = await createTestContext({
+        routes: routes({ 'GET /blocks/5753675': older }),
+        env: { SYMBOL_NODE_URL: 'https://node.test./' },
+      });
+      const voting = item(
+        await runCheck(dotted.ctx, { account: ADDRESS, warnDays: 14 }),
+        'voting_key_status',
+      );
+      expect(voting.detail).toBe(
+        'Node node.test. returned a time that cannot be shown as a date (a timestamp, or a height or an epoch too far from now), so this answer could not be completed.',
+      );
+      expect(voting.hint).toMatch(/^If it happens for one transaction, /);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it('keeps node_health ok when /node/peers fails: the item reads the peer count but never judges it', async () => {
     const { ctx } = await createTestContext({
       routes: routes({ 'GET /node/peers': () => jsonResponse({ message: 'down' }, 503) }),

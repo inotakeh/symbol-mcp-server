@@ -20,6 +20,7 @@
  */
 import type { Receipt, TransactionStatementInfo } from '../client/schemas.js';
 import { calendarDateKey } from './localdate.js';
+import { networkTimestampToDate } from './time.js';
 
 export type HarvestKind = 'harvester' | 'beneficiary' | 'unknown';
 
@@ -271,7 +272,7 @@ export function aggregateHarvestIncome(
     if (mine.length === 0) continue;
     if (mine.some((c) => c.kind === 'unknown')) unknownStatements += 1;
     const height = Number(info.statement.height);
-    const time = new Date(options.epochAdjustmentSeconds * 1000 + Number(info.meta.timestamp));
+    const time = networkTimestampToDate(info.meta.timestamp, options.epochAdjustmentSeconds);
     for (const c of mine) rows.push({ height, time, kind: c.kind, raw: c.amount });
   }
 

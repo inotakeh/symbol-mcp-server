@@ -344,6 +344,31 @@ describe('symbol_transaction_get', () => {
     }
   });
 
+  it('reports failed with its code whatever the deadline of the status row is', async () => {
+    // symbol_transaction_status refuses a deadline that gives no date and points here for a
+    // failed transaction: this tool does not read the deadline of the status.
+    for (const deadline of ['9000000000000000', '9'.repeat(400)]) {
+      const hash = 'F'.repeat(64);
+      server = await startTestServer({
+        routes: statusRoutes(hash, {
+          group: 'failed',
+          code: 'Failure_Core_Insufficient_Balance',
+          deadline,
+        }),
+      });
+      const result = await server.callTool('symbol_transaction_get', { transactionHash: hash });
+      expect(result.isError, result.text).toBe(false);
+      expect(result.structuredContent).toMatchObject({
+        status: 'failed',
+        transaction: null,
+        failure: { code: 'Failure_Core_Insufficient_Balance', codeMeaning: BALANCE_MEANING },
+      });
+      expect(result.text).not.toContain('9'.repeat(16));
+      await server.close();
+      server = undefined;
+    }
+  });
+
   it('ignores a status row for another hash', async () => {
     const hash = 'A'.repeat(64);
     const other = { group: 'failed', code: 'Failure_Core_Past_Deadline', hash: 'B'.repeat(64) };
