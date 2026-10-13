@@ -275,9 +275,10 @@ On Windows, a client that cannot start `npx` may need `"command": "npx.cmd"`.
 
 ## Choosing a node
 
-- **Your own node is the best choice.** Every call sends the addresses, public keys, hashes and
-  namespace names you ask about to `SYMBOL_NODE_URL`. The reference nodes only receive
-  `/node/info` and `/chain/info` requests, never your identifiers.
+- **Your own node is the best choice.** `SYMBOL_NODE_URL` receives what you look up: addresses,
+  transaction hashes, and the ids of namespaces and mosaics ([Privacy Policy](#privacy-policy)
+  has the full list). The reference nodes only receive `/node/info` and `/chain/info` requests,
+  never your identifiers.
 - **A public node works, but its operator can see what you look up.** Its access logs can show
   which accounts, transactions and namespaces were queried, when, and from which IP address. Use a
   node you trust, or your own node for anything you would rather keep private.
@@ -613,6 +614,53 @@ symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
   lands through a pull request, with linear history) and private vulnerability reporting are enabled.
 
 Vulnerability reports: see [`SECURITY.md`](SECURITY.md).
+
+## Privacy Policy
+
+What the MCP server and its `check` command send, who receives it, and what stays on your machine.
+
+- **This project.** The maintainer receives nothing: the server has no telemetry, no analytics and
+  no update check. The only network connections it opens go to the nodes you set in
+  `SYMBOL_NODE_URL` and `SYMBOL_REFERENCE_NODES`.
+- **The node in `SYMBOL_NODE_URL`.** It receives what you look up: addresses, transaction hashes,
+  namespace and mosaic ids, heights and epochs, and the paging, sort order and filter options of
+  a search. Its operator can see these, together with the time and the IP address they came from.
+- **Names and public keys.** A namespace name is sent as the id computed from it on your machine
+  (this does not hide the name: the id follows from the name), and an account given as a public key
+  is asked for by the address derived from it. One tool sends a public key:
+  `symbol_delegation_diagnose` sends the key the node reported for the account back to that same
+  node, to find the account's delegation request.
+- **The nodes in `SYMBOL_REFERENCE_NODES`.** They receive only `/node/info` and `/chain/info`
+  requests, so their operators see the time and your IP address but nothing you looked up. Every
+  request, to them and to `SYMBOL_NODE_URL`, has the header
+  `User-Agent: symbol-mcp-server/<version>`.
+- **Your disk.** Only if you set `SYMBOL_STATE_DIR`: each saved snapshot (`symbol_harvesting_status`
+  in mode `compare_and_save` or `save_only`, and each run of `check`) goes into one file per node
+  there, which holds the node's `nodePublicKey` and, for the newest 60 snapshots, the time, the
+  height and the public keys of the unlocked harvesters. The files (their names start with
+  `harvesters-`) stay until you delete them; deleting them removes every snapshot the server has
+  kept.
+- **Logs.** The server and `check` log a few lines to stderr: the server's start-up line (version,
+  network, node host and, when set, the time zone, the number of reference nodes and the state
+  directory), a line for a failed start, for a wrong argument, for an error on the connection to
+  the MCP host, for an unexpected error or for a time from the node that cannot be shown as a
+  date, and the diagnostics of `check`. They write no log file and, apart from the snapshots
+  above, keep no record of tool calls; what becomes of stderr is decided by the program that
+  started them (see [Troubleshooting](#troubleshooting)).
+- **`check --cert`.** The certificate files you name are read on the machine the command runs on,
+  and nothing of them is stored or sent. The report shows the path you gave and the certificate's
+  expiry date and SHA-256 fingerprint (with `--format json`, also its common name), and goes to
+  stdout; where it goes from there (cron's mail, a log file) is your own setting.
+- **Outside this server.** The answers the server gives to your MCP host hold chain data and
+  values of your own settings: the node URL, the reference node URLs, the time zone, the request
+  timeout and, in the snapshot modes, the path of the snapshot file. How the host and the provider
+  of the model treat your questions and those answers, and what npm and GitHub see when the
+  package is fetched (the `npx` configurations above run npx at every start) or the bundle is
+  downloaded, is set by their policies.
+- **Questions.** Use one of the forms of the
+  [issue tracker](https://github.com/inotakeh/symbol-mcp-server/issues); issues are public, so
+  leave out what you would not publish. Report a vulnerability or a privacy problem through the
+  private report described in [`SECURITY.md`](SECURITY.md) instead.
 
 ## Release integrity
 

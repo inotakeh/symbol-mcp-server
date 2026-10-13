@@ -7,6 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- README (English and Japanese): a "Privacy Policy" section, right after "Security". It says in
+  one place what the server and `check` send and who receives it (the node in `SYMBOL_NODE_URL`,
+  the reference nodes; the maintainer receives nothing), what is kept on disk (the snapshot files
+  under `SYMBOL_STATE_DIR`), what is written to stderr, what `check --cert` reads and reports, and
+  what lies outside the server (the MCP host, the provider of the model, npm and GitHub). The
+  first item of "Choosing a node" is corrected with it: it said that the public keys and namespace
+  names you ask about are sent to `SYMBOL_NODE_URL`, while an account given as a public key is
+  asked for by its address and a namespace name is sent as its id (the new section names the one
+  tool that sends a public key). The requests the server sends do not change.
+- npm keywords: `mcp-server`, `symbol-blockchain`, `catapult`, `harvesting` and `voting-node`, so
+  that searches for these words find the package.
+
 ### Changed
 
 - `check --cert` now judges the certificate files also when the node's `/node/info` cannot be read

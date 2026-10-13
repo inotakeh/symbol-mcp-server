@@ -28,7 +28,12 @@
     "xym",
     "blockchain",
     "mcp",
-    "model-context-protocol"
+    "model-context-protocol",
+    "mcp-server",
+    "symbol-blockchain",
+    "catapult",
+    "harvesting",
+    "voting-node"
   ],
   "repository": {
     "type": "git",

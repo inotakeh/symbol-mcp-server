@@ -2,8 +2,9 @@
  * Keeps the user-facing documents in step with the code: every registered tool and every
  * environment variable is documented in both READMEs, server.json (the MCP Registry entry)
  * declares exactly the variables the server reads, its versions and those of package-lock.json
- * follow package.json, the two READMEs have the same number of `## ` sections, both have a
- * heading on the Claude Desktop bundle (.mcpb), no document a user reads names a tool that was
+ * follow package.json, the two READMEs have the same number of `## ` sections, both have the
+ * Privacy Policy section right after Security and a heading on the Claude Desktop bundle (.mcpb),
+ * no document a user reads names a tool that was
  * removed (test/removed-tools.ts), and the numbers of tools that the READMEs, evals/README.md and
  * docs/DESIGN-BRIEF.md state are those of the code.
  */
@@ -201,6 +202,22 @@ describe('documentation stays in sync with the code', () => {
     expect(en.length).toBeGreaterThan(0);
     expect(ja).toHaveLength(en.length);
   });
+
+  // README.md#privacy-policy is meant to be given as the privacy policy URL where the server is
+  // listed, so the English heading must stay as it is, and the section stays where both READMEs
+  // have it.
+  const PRIVACY_SECTIONS = [
+    { file: 'README.md', security: '## Security', privacy: '## Privacy Policy' },
+    { file: 'README.ja.md', security: '## セキュリティ', privacy: '## プライバシーポリシー' },
+  ] as const;
+  for (const { file, security, privacy } of PRIVACY_SECTIONS) {
+    it(`${file} has the Privacy Policy section right after Security`, () => {
+      const sections = level2Headings(read(file));
+      const at = sections.indexOf(security);
+      expect(at).toBeGreaterThanOrEqual(0);
+      expect(sections[at + 1]).toBe(privacy);
+    });
+  }
 
   for (const file of READMES) {
     it(`${file} has a section on the Claude Desktop bundle (.mcpb)`, () => {
