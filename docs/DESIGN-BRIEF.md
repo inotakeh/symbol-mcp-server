@@ -558,4 +558,4 @@ Users get it in 3 forms, and the content of all of them comes from the same tarb
 
 **Checking the origin**: the `.mcpb` gets a GitHub build provenance (`actions/attest`) and can be checked with `gh attestation verify <file>.mcpb --repo inotakeh/symbol-mcp-server`. It is not signed with `mcpb sign`, so Claude Desktop may show it as "unverified". State this in the README.
 
-**Icon**: `mcpb/icon.png` (512×512) is an original shape that does not use the Symbol / NEM logos, and it can be regenerated with `scripts/make-icon.mjs` (no dependencies, only `node:zlib`).
+**Icon**: `mcpb/icon.png` (512×512) is an original shape that does not use the Symbol / NEM logos, and it can be regenerated with `scripts/make-icon.mjs` (no dependencies, only `node:zlib`). `server.json` gives the same file to the MCP Registry as the icon of the entry, by its URL on `main` (`icons[0].src`), so the file must stay at this path.

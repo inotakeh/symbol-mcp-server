@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-13
+
+> No MCP host restart is needed after upgrading: the tool and prompt definitions are the same as
+> in 0.10.0. With `check --cert`, when the node's `/node/info` cannot be read at start-up, the
+> report is now printed on stdout; the exit code is 3 as before. With `--account`, `check` can exit
+> 2 where it exited 0 or 1: when a block timestamp that the average block time is measured from is
+> no valid time, the `voting_key_status` item fails. An entry of `SYMBOL_REFERENCE_NODES` that ends
+> with `?` or `#` now stops the server and `check` at start-up with a configuration error (0.10.0
+> accepted such an entry): remove the character.
+
 ### Added
 
 - README (English and Japanese): a "Privacy Policy" section, right after "Security". It says in
@@ -873,7 +883,8 @@ Initial release candidate (0.1.0).
 - Every request has a timeout, a `User-Agent`, a 5 MB response cap and a concurrency limit of 4,
   and every response is schema-validated before use.
 
-[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.1...v0.9.2

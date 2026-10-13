@@ -1,17 +1,26 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.inotakeh/symbol",
+  "title": "Symbol (XYM)",
   "description": "Read-only MCP server for the Symbol blockchain (XYM): node health, harvesting, voting keys.",
   "repository": {
     "url": "https://github.com/inotakeh/symbol-mcp-server",
     "source": "github"
   },
-  "version": "0.10.0",
+  "version": "0.10.1",
+  "websiteUrl": "https://github.com/inotakeh/symbol-mcp-server#readme",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/inotakeh/symbol-mcp-server/main/mcpb/icon.png",
+      "mimeType": "image/png",
+      "sizes": ["512x512"]
+    }
+  ],
   "packages": [
     {
       "registryType": "npm",
       "identifier": "symbol-mcp-server",
-      "version": "0.10.0",
+      "version": "0.10.1",
       "transport": {
         "type": "stdio"
       },
