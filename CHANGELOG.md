@@ -80,6 +80,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fails (exit code 2) where it could be ok before.
 - `check`: when the `voting_key_status` item meets such a time, its detail says so and its hint
   says what to do (the detail was "could not run: internal error").
+- A node URL that ends with `?` or `#` (an empty query or fragment) is refused at start-up like
+  any other query or fragment: `SYMBOL_NODE_URL must not contain a query string or fragment`, and
+  the same for an entry of `SYMBOL_REFERENCE_NODES`. Until now such a URL was accepted with the
+  `?` or `#` kept, so the path of every request to that node ended up in the query or the
+  fragment, and the node was asked only for the path of the URL itself (`/` when the URL has
+  none). Every other URL is handled as before.
 
 ## [0.10.0] - 2026-10-07
 
