@@ -283,9 +283,9 @@ On Windows, a client that cannot start `npx` may need `"command": "npx.cmd"`.
   node you trust, or your own node for anything you would rather keep private.
 - **It must be the REST API of an API node.** Most tools read `/network/properties`, accounts,
   transactions or blocks. Light REST, a REST with a reduced set of endpoints, is not enough: its
-  README in the Symbol repository (`client/rest/README_LIGHT.md` on the `dev` branch of
-  symbol/symbol) lists only `/chain/info`, `/node/info`, `/node/peers`, `/node/unlockedaccount` and
-  `/node/server`. If a tool answers `does not provide the endpoint … (no such route)`, see
+  README in the Symbol repository (`client/rest/README_LIGHT.md` in symbol/symbol) lists only
+  `/chain/info`, `/node/info`, `/node/peers`, `/node/unlockedaccount` and `/node/server`. If a tool
+  answers `does not provide the endpoint … (no such route)`, see
   [Troubleshooting](#troubleshooting).
 - **Finding one:** https://nodewatch.symbol.tools/ lists mainnet and testnet nodes with their height
   and version. Pick an API node that is at the current height, runs the majority version and answers

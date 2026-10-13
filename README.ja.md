@@ -275,10 +275,9 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
   知られたくない照会には自分のノードを使ってください。
 - **API ノードの REST API が必要です。** ほとんどのツールは、`/network/properties`、アカウント、トランザクション、ブロックの
   いずれかを読みます。エンドポイントを絞った REST である Light REST では足りません。Symbol のリポジトリにある Light REST の
-  README（symbol/symbol の `dev` ブランチの `client/rest/README_LIGHT.md`）に載っているのは、`/chain/info`、`/node/info`、
-  `/node/peers`、`/node/unlockedaccount`、`/node/server` だけです。ツールが
-  `does not provide the endpoint … (no such route)` と答えたときは、[トラブルシューティング](#トラブルシューティング)を
-  参照してください。
+  README（symbol/symbol の `client/rest/README_LIGHT.md`）に載っているのは、`/chain/info`、`/node/info`、`/node/peers`、
+  `/node/unlockedaccount`、`/node/server` だけです。ツールが `does not provide the endpoint … (no such route)` と
+  答えたときは、[トラブルシューティング](#トラブルシューティング)を参照してください。
 - **探し方:** https://nodewatch.symbol.tools/ に mainnet / testnet のノードが高さとバージョン付きで並んでいます。
   現在の高さに追いついていて、多数派のバージョンで、`https://`（通常 3001 番ポート）で応答する API ノードを選んでください。
   `SYMBOL_NETWORK` を設定すると、別ネットワークのノードだった場合に起動が失敗します。動作確認は
