@@ -107,4 +107,19 @@ describe('symbol_network_info', () => {
     expect(result.text).toMatch(/unexpected response shape for \/chain\/info/);
     expect(result.text).not.toMatch(/DO-NOT-LEAK/);
   });
+
+  it('names the endpoint, and no longer calls it a likely bug of this server, when the node has no /network/properties', async () => {
+    // Start-up reads only /node/info, so it passes. The harness answers an unstubbed path as
+    // catapult-rest answers a route it does not serve.
+    const { 'GET /network/properties': _properties, ...withoutProperties } = mainnetRoutes();
+    server = await startTestServer({ routes: withoutProperties });
+    const result = await server.callTool('symbol_network_info');
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
+    // The start of the sentence, with the path; test/tools/account_get.test.ts has the whole text.
+    expect(result.text).toMatch(
+      /^Node node\.test:3001 does not provide the endpoint \/network\/properties \(no such route\), so this answer could not be completed\. /,
+    );
+    expect(result.text).not.toMatch(/likely a bug|does not exist/);
+  });
 });

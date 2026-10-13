@@ -273,6 +273,12 @@ Windows で `npx` を起動できないクライアントでは、`"command": "n
 - **公開ノードも使えますが、何を調べたかはそのノードの運営者に見えます。** アクセスログから、どのアカウント・
   トランザクション・ネームスペースを、いつ、どの IP アドレスから照会したかが分かります。信頼できるノードを使うか、
   知られたくない照会には自分のノードを使ってください。
+- **API ノードの REST API が必要です。** ほとんどのツールは、`/network/properties`、アカウント、トランザクション、ブロックの
+  いずれかを読みます。エンドポイントを絞った REST である Light REST では足りません。Symbol のリポジトリにある Light REST の
+  README（symbol/symbol の `dev` ブランチの `client/rest/README_LIGHT.md`）に載っているのは、`/chain/info`、`/node/info`、
+  `/node/peers`、`/node/unlockedaccount`、`/node/server` だけです。ツールが
+  `does not provide the endpoint … (no such route)` と答えたときは、[トラブルシューティング](#トラブルシューティング)を
+  参照してください。
 - **探し方:** https://nodewatch.symbol.tools/ に mainnet / testnet のノードが高さとバージョン付きで並んでいます。
   現在の高さに追いついていて、多数派のバージョンで、`https://`（通常 3001 番ポート）で応答する API ノードを選んでください。
   `SYMBOL_NETWORK` を設定すると、別ネットワークのノードだった場合に起動が失敗します。動作確認は
@@ -660,6 +666,7 @@ symbol-mcp-server check --cert target/nodes/node/cert/node.crt.pem \
 | `Node <host> reports an unknown network` | ノードの generationHashSeed が Symbol の mainnet でも testnet でもありません（プライベートネットワークや NEM NIS1 のノード）。Symbol の mainnet / testnet のノードを使ってください。 |
 | 起動時の `<host> did not answer /node/info within 10000 ms` / `could not reach <host> for /node/info`、ツールの `Node <host> did not answer … within … ms` / `Could not connect to node <host>` | ノードが停止・過負荷か、ポートが違います（https は 3001）。nodewatch で別のノードを選ぶか、遅いノードなら `SYMBOL_REQUEST_TIMEOUT_MS`（最大 600000）で待ち時間を延ばしてください。 |
 | 起動時の `<host> answered /node/info with a redirect (HTTP 301), which is not followed`、ツールの `Node <host> answered … with a redirect` | URL の先がリダイレクトを返しています（http から https へ、プロキシ、パスの移動など）。リダイレクトは追わず、転送先にも接続しません。`SYMBOL_NODE_URL` にはノードの REST API の URL（通常 `https://<node-host>:3001`）を直接指定してください。 |
+| ツールの `Node <host> does not provide the endpoint … (no such route)`（`check` では `hint:` の行に出ます） | ノードが、そのパスのルートは無いと答えました。このサーバーには API ノードの REST API が必要です。考えられる原因は、ノードが Light REST（`/node` と `/chain` の一部のエンドポイントだけを提供します。[ノードの選び方](#ノードの選び方)を参照）しか提供していないか、そのエンドポイントが無いバージョンの catapult-rest を動かしているかです。`SYMBOL_NODE_URL` に、バージョンが最新の API ノード（たとえば nodewatch で選んだもの）の REST URL を指定してください。バージョンが最新の API ノードでも同じ答えになる場合は、このサーバーのバグです。ツール名を添えて報告してください。 |
 | ツールの `Node <host> answered HTTP 429 for …`（または 503） | ノードがリクエストの数を制限しているか、過負荷です。時間をおいて再試行してください。多くのページを読む呼び出し（大きな `maxRank` の `symbol_account_rank`、長い期間の `symbol_harvesting_income`）は、自分のノードか nodewatch で選んだ別のノードで使ってください。 |
 | Claude Desktop に `symbol_*` ツールが出ない | バンドル（.mcpb）の場合: 拡張機能の設定を開いてください。**Symbol node URL** が空のあいだは起動しません。JSON で設定した場合: Claude Desktop は起動時にしか設定を読みません。完全に終了して（ウィンドウを閉じるだけでは不十分）起動し直してください。それでも出なければ、上のログで `failed to start` の行を探し、JSON が正しいか確認してください。 |
 | `npm warn EBADENGINE Unsupported engine`（npm が出す警告） | Node.js が 22 より古いです。`node --version` で確認し、22 以上を入れてください（例 `nvm install 22`）。デスクトップアプリはシェルとは別の `PATH` で `node` / `npx` を探すことがあるので、必要なら `command` にフルパスを書いてください。 |

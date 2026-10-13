@@ -21,6 +21,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   up to 1 MiB each. Nothing changes without `--cert`, or for a configuration error (an
   environment variable that is missing or not valid, a node on the wrong network): stdout stays
   empty. The keys of the JSON report, the requests sent and the MCP tools do not change.
+- The error for an endpoint the node does not serve now gives the possible causes and the fix:
+  `Node <host> does not provide the endpoint <path> (no such route), …`. It used to call this
+  "likely a bug in symbol-mcp-server". It now says that the node may run Light REST, which serves
+  only a few `/node` and `/chain` endpoints, or a catapult-rest version without the endpoint, and
+  to set `SYMBOL_NODE_URL` to the REST URL of an up-to-date API node; it is a bug to report only
+  when such a node answers this way. `check` shows the same sentence as the hint of an item that
+  could not run. The README (English and Japanese) has a row for this error under Troubleshooting
+  and a new item under "Choosing a node": the server needs the REST API of an API node, and Light
+  REST, by the list of endpoints in its README in the Symbol repository
+  (`client/rest/README_LIGHT.md`), is not enough. The tool and prompt definitions do not change.
+  This follows from reading that README, the upstream REST source and this server's code; it was
+  not tried against a node that runs Light REST.
 
 ### Fixed
 
