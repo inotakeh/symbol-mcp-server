@@ -165,9 +165,17 @@ export function roundingRule(currency: string, callerDecimals?: number): Roundin
     : { decimals: digits, source: 'currency' };
 }
 
-/** A fixed-point string without trailing fractional zeros: "0.0003000" -> "0.0003", "21.0" -> "21". */
+/**
+ * A fixed-point string without trailing fractional zeros: "0.0003000" -> "0.0003", "21.0" -> "21".
+ * It scans back from the end: the digits come from the node's balance, and /0+$/ is tried from every
+ * zero of a run inside the value, in time that grows with the square of the run's length.
+ */
 export function trimFraction(value: string): string {
-  return value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value;
+  if (!value.includes('.')) return value;
+  let end = value.length;
+  while (value[end - 1] === '0') end -= 1;
+  if (value[end - 1] === '.') end -= 1;
+  return value.slice(0, end);
 }
 
 /**

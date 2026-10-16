@@ -34,6 +34,9 @@ export function formatAmount(raw: string | number | bigint, divisibility: number
 /**
  * Inserts thousands separators into the integer part of a formatted amount, for prose only:
  * groupThousands('23237.845492') -> '23,237.845492'. Never used for JSON or CSV values.
+ * The digits come from the node, and Uint64String (client/schemas.ts) does not limit their number,
+ * so the groups are cut in one pass: the usual lookahead /\B(?=(\d{3})+(?!\d))/g goes back over the
+ * remaining digits from every position, in time that grows with the square of their number.
  */
 export function groupThousands(formatted: string): string {
   const match = /^(-?)(\d+)(\.\d+)?$/.exec(formatted);
@@ -41,7 +44,10 @@ export function groupThousands(formatted: string): string {
   const sign = match[1] ?? '';
   const whole = match[2] ?? '';
   const frac = match[3] ?? '';
-  return `${sign}${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${frac}`;
+  const head = whole.length % 3 || 3;
+  const groups = [whole.slice(0, head)];
+  for (let i = head; i < whole.length; i += 3) groups.push(whole.slice(i, i + 3));
+  return `${sign}${groups.join(',')}${frac}`;
 }
 
 /** Ratio helper used for "margin" style outputs; returns a signed formatted amount. */

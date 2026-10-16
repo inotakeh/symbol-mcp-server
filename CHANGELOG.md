@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A node can no longer keep the server busy with an amount of millions of digits. The schema of
+  the node's amounts and supplies does not limit their number of digits, and the summaries of
+  `symbol_account_rank`, `symbol_holdings_value` and the month lines of `symbol_harvesting_income`
+  inserted their thousands separators with a regular expression that went back over the digits
+  from every position, in time that grew with the square of their number; `symbol_holdings_value`
+  removed the trailing zeros of an unrounded value in the same way. While that ran, the server
+  answered no tool. Both now take time in proportion to the number of digits, and every output is
+  the same as before.
+
 ## [0.10.1] - 2026-10-13
 
 > No MCP host restart is needed after upgrading: the tool and prompt definitions are the same as
