@@ -165,6 +165,24 @@ describe('trimFraction', () => {
     expect(trimFraction('1200')).toBe('1200');
     expect(trimFraction('0.000')).toBe('0');
   });
+  it('trims as the patterns it replaced did', () => {
+    const patterns = (value: string) =>
+      value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value;
+    for (const whole of ['0', '1', '10', '100', '1200', '1002']) {
+      for (const fraction of ['', '.', '.0', '.00', '.5', '.50', '.05', '.0003000', '.10010']) {
+        const value = `${whole}${fraction}`;
+        expect(trimFraction(value)).toBe(patterns(value));
+      }
+    }
+  });
+  it('takes time in proportion to a run of zeros inside the value, whose length the node sets', () => {
+    // /0+$/ takes time that grows with the square of the run's length (seconds for this input).
+    const zeros = '0'.repeat(100_000);
+    const started = performance.now();
+    const trimmed = trimFraction(`1${zeros}1.50`);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(trimmed).toBe(`1${zeros}1.5`);
+  });
 });
 
 describe('formatScaled', () => {

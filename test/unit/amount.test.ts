@@ -14,6 +14,25 @@ describe('groupThousands', () => {
     expect(() => groupThousands('abc')).toThrow();
     expect(() => groupThousands('1,000')).toThrow();
   });
+  it('groups as the lookahead pattern it replaced did, for every length up to 30', () => {
+    const lookahead = (whole: string) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    for (const digits of ['9081726354'.repeat(3), '0918273645'.repeat(3)]) {
+      for (let length = 1; length <= digits.length; length += 1) {
+        const whole = digits.slice(0, length);
+        expect(groupThousands(whole)).toBe(lookahead(whole));
+        expect(groupThousands(`-${whole}.050`)).toBe(`-${lookahead(whole)}.050`);
+      }
+    }
+  });
+  it('takes time in proportion to the number of digits, which the node sets', () => {
+    // The lookahead pattern above takes time that grows with the square of the number of digits
+    // (seconds for this input).
+    const whole = '7'.repeat(100_000);
+    const started = performance.now();
+    const grouped = groupThousands(`${whole}.5`);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(grouped).toBe(`7${',777'.repeat(33_333)}.5`);
+  });
 });
 
 describe('formatAmount', () => {
