@@ -98,10 +98,13 @@ function line1(verdictAndSync: string): string {
 
 const SYNC_UNKNOWN = '; whether it is synced could not be judged';
 const RETRY_HINT = 'Retry later; the other checks do not depend on it.';
-/** A timestamp or height beyond the last date and the last safe integer JavaScript knows. */
-const OUT_OF_RANGE = '99999999999999999999';
-/** Digits too many for a finite number. Any digits pass the uint64 schema of the REST client. */
-const TOO_LONG = '9'.repeat(400);
+/**
+ * A timestamp or height beyond the last date and the last safe integer JavaScript knows: the
+ * largest uint64, which the schema of the REST client accepts.
+ */
+const OUT_OF_RANGE = '18446744073709551615';
+/** Numbers that do not fit in 64 bits, which the schema of the REST client refuses. */
+const BEYOND_UINT64 = ['18446744073709551616', '9'.repeat(400)];
 
 describe('symbol_node_status', () => {
   it('reports a healthy, synced node from the fixtures (block 201 s old, skew -1 s, lag 19 blocks)', async () => {
@@ -452,7 +455,8 @@ describe('symbol_node_status', () => {
   });
 
   it('treats a node time that is no valid time as an unknown clock check, not an error', async () => {
-    for (const timestamp of [OUT_OF_RANGE, TOO_LONG]) {
+    // Beyond the last date JavaScript knows, up to the largest uint64.
+    for (const timestamp of ['9000000000000000', OUT_OF_RANGE]) {
       server = await startTestServer({
         routes: routes({
           'GET /node/time': {
@@ -603,8 +607,8 @@ describe('symbol_node_status', () => {
   });
 
   it('treats a block timestamp that is no valid time as an unknown chain tip, not an error', async () => {
-    // Beyond the last date JavaScript knows (twice), and too long to be a finite number.
-    for (const timestamp of ['9000000000000000', OUT_OF_RANGE, TOO_LONG]) {
+    // Beyond the last date JavaScript knows, up to the largest uint64.
+    for (const timestamp of ['9000000000000000', OUT_OF_RANGE]) {
       server = await startTestServer({
         routes: routes({ [LATEST_BLOCK]: latestBlockWith(timestamp) }),
       });
@@ -627,6 +631,46 @@ describe('symbol_node_status', () => {
         checkedAt: { utc: TEST_NOW.toISOString() },
       });
       expect(summaryLines(result)[0]).toBe(line1(`degraded${SYNC_UNKNOWN}`));
+      expect(nodeStatusTool.outputSchema.safeParse(result.structuredContent).success).toBe(true);
+      await server.close();
+      server = undefined;
+    }
+  });
+
+  it('counts a time that does not fit in 64 bits as a request that failed, not an error', async () => {
+    // The schema of the REST client refuses it, as any answer of an unexpected shape.
+    for (const timestamp of BEYOND_UINT64) {
+      server = await startTestServer({
+        routes: routes({
+          'GET /node/time': {
+            communicationTimestamps: { sendTimestamp: timestamp, receiveTimestamp: timestamp },
+          },
+          [LATEST_BLOCK]: latestBlockWith(timestamp),
+        }),
+      });
+      const result = await server.callTool('symbol_node_status');
+      expect(result.isError, result.text).toBe(false);
+      expect(result.structuredContent?.verdict).toBe('degraded');
+      expect(statusesOf(result)).toEqual(
+        allOkBut({ clock_skew: 'unknown', chain_tip_age: 'unknown' }),
+      );
+      expect([checksOf(result)[3], checksOf(result)[6]]).toEqual([
+        {
+          id: 'clock_skew',
+          status: 'unknown',
+          detail: `${TEST_NODE_HOST} did not answer /node/time (invalid_response).`,
+          hint: RETRY_HINT,
+        },
+        {
+          id: 'chain_tip_age',
+          status: 'unknown',
+          detail: `${TEST_NODE_HOST} did not answer /blocks/${HEIGHT} (invalid_response).`,
+          hint: RETRY_HINT,
+        },
+      ]);
+      expect(result.structuredContent?.time).toMatchObject({ nodeTime: null, skewMs: null });
+      expect(result.structuredContent?.sync).toMatchObject({ synced: null, latestBlockTime: null });
+      expect(result.text).not.toContain(timestamp.slice(0, 16));
       expect(nodeStatusTool.outputSchema.safeParse(result.structuredContent).success).toBe(true);
       await server.close();
       server = undefined;

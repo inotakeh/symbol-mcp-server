@@ -7,16 +7,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- A number the node sends as a decimal string (a height, a timestamp, an amount, a supply, a
+  duration, an importance or a fee) is refused when it does not fit in 64 bits: more than 20
+  digits, or above 18446744073709551615. As for any other answer of an unexpected shape, the tool
+  then says that the node returned an unexpected response shape, and `symbol_node_status` (with
+  the `node_health` item of `check`) counts that request as failed, so the checks that need it are
+  unknown. 0.10.1 accepted any number of digits: such an amount was formatted as sent, and such a
+  timestamp was reported as a time that cannot be shown as a date.
+
 ### Fixed
 
 - A node can no longer keep the server busy with an amount of millions of digits. The schema of
-  the node's amounts and supplies does not limit their number of digits, and the summaries of
-  `symbol_account_rank`, `symbol_holdings_value` and the month lines of `symbol_harvesting_income`
-  inserted their thousands separators with a regular expression that went back over the digits
-  from every position, in time that grew with the square of their number; `symbol_holdings_value`
-  removed the trailing zeros of an unrounded value in the same way. While that ran, the server
-  answered no tool. Both now take time in proportion to the number of digits, and every output is
-  the same as before.
+  the node's amounts and supplies did not limit their number of digits (it does now, see Changed),
+  and the summaries of `symbol_account_rank`, `symbol_holdings_value` and the month lines of
+  `symbol_harvesting_income` inserted their thousands separators with a regular expression that
+  went back over the digits from every position, in time that grew with the square of their
+  number; `symbol_holdings_value` removed the trailing zeros of an unrounded value in the same way.
+  While that ran, the server answered no tool. Both now take time in proportion to the number of
+  digits, and every output is the same as before.
 
 ## [0.10.1] - 2026-10-13
 

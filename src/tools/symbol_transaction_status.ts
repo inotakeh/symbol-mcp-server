@@ -100,7 +100,7 @@ interface UnusableDeadline {
 }
 
 /**
- * What the tool answers when a deadline gives no date (the schema accepts any digits). It names
+ * What the tool answers when a deadline gives no date (the schema accepts any uint64). It names
  * every transaction concerned, so that the call can be repeated without them; the general text of
  * describeError could not say which of up to 20 hashes it was. The deadline itself is not quoted.
  * symbol_transaction_get is named only when a row is failed: for the other groups it converts

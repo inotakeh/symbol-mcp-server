@@ -1,14 +1,17 @@
 /**
  * A time from the node that cannot be shown as a date, in every place a tool meets one: a
- * timestamp no Date can hold (any digits pass the uint64 schema of the REST client), and a date
- * estimated from a height or an epoch too far from the current one. Each place answers with the one
- * text of describeError, never with "Unexpected internal error", quotes no value in the reply and
- * writes the details to stderr. symbol_time_convert and symbol_transaction_status word some cases
- * themselves; their own test files have those.
+ * timestamp no Date can hold (the uint64 schema of the REST client accepts far larger ones), and a
+ * date estimated from a height or an epoch too far from the current one. Each place answers with
+ * the one text of describeError, never with "Unexpected internal error", quotes no value in the
+ * reply and writes the details to stderr. symbol_time_convert and symbol_transaction_status word
+ * some cases themselves; their own test files have those.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PERSISTENT_DELEGATION_MARKER } from '../../src/domain/message.js';
+import { DEFAULT_MAX_UNTRUSTED_LENGTH } from '../../src/domain/sanitize.js';
+import { InvalidNetworkTimestampError } from '../../src/domain/time.js';
 import {
+  logUnusableTime,
   UNUSABLE_TIME_ADVICE,
   unusableTimeDetail,
   unusableTimeText,
@@ -38,8 +41,8 @@ const MAIN_HEX = '68ABD3C432290D37B428A3C3501AD7B5F3CD8B936BA14C53';
 
 /** Beyond the last date JavaScript knows. */
 const BEYOND = '9000000000000000';
-/** Too long to be a finite number. */
-const TOO_LONG = '9'.repeat(400);
+/** The largest uint64, which the schema accepts; read as a number, it is rounded. */
+const LARGEST = '18446744073709551615';
 /** A height or a duration whose estimated date lies beyond the last date. */
 const FAR_HEIGHT = '1000000000000';
 const FAR_EPOCH = 4_000_000_000;
@@ -214,13 +217,13 @@ const CONVERSIONS: Place[] = [
     logged: `${TIMESTAMP_ERROR}${BEYOND}`,
   },
   {
-    what: 'the time of the delegation request, too long for a number',
+    what: 'the time of the delegation request, the largest uint64',
     tool: 'symbol_delegation_diagnose',
     args: { account: ADDRESS },
     usable: { 'GET /transactions/confirmed': delegationRequestPage('173135863808') },
-    unusable: { 'GET /transactions/confirmed': delegationRequestPage(TOO_LONG) },
+    unusable: { 'GET /transactions/confirmed': delegationRequestPage(LARGEST) },
     // The tool reads this time as a number first.
-    logged: `${TIMESTAMP_ERROR}Infinity`,
+    logged: `${TIMESTAMP_ERROR}18446744073709552000`,
   },
   {
     what: 'the time of a harvest statement',
@@ -239,12 +242,12 @@ const CONVERSIONS: Place[] = [
     logged: `${TIMESTAMP_ERROR}${BEYOND}`,
   },
   {
-    what: 'the time of the first block of the range, too long for a number',
+    what: 'the time of the first block of the range, the largest uint64',
     tool: 'symbol_harvesting_income',
     args: HEIGHT_RANGE,
     usable: {},
-    unusable: { 'GET /blocks/5763675': block(5_763_675, TOO_LONG) },
-    logged: `${TIMESTAMP_ERROR}Infinity`,
+    unusable: { 'GET /blocks/5763675': block(5_763_675, LARGEST) },
+    logged: `${TIMESTAMP_ERROR}18446744073709552000`,
   },
   {
     what: 'the time of the last block of the range only',
@@ -305,10 +308,9 @@ const MEASURED_BLOCKS: ReadonlyArray<readonly [string, Routes, string]> = [
     `${TIMESTAMP_ERROR}${BEYOND}`,
   ],
   [
-    'the latest block, too long for a number',
-    { 'GET /blocks/5763675': block(5_763_675, TOO_LONG) },
-    // Cut at the cap of an untrusted string.
-    `${TIMESTAMP_ERROR}${'9'.repeat(50)}`,
+    'the latest block, the largest uint64',
+    { 'GET /blocks/5763675': block(5_763_675, LARGEST) },
+    `${TIMESTAMP_ERROR}${LARGEST}`,
   ],
   [
     'the older block',
@@ -396,18 +398,30 @@ describe('a time from the node that cannot be shown as a date', () => {
       expect(result.text).toBe(unusableTimeText(TEST_NODE_HOST));
       expect(result.text).not.toMatch(/Unexpected internal error|Invalid time value/);
       expect(result.structuredContent).toBeUndefined();
-      // Nothing of the value in the reply: not the digits, not a height, not an epoch.
-      for (const value of [BEYOND, '9'.repeat(20), FAR_HEIGHT, String(FAR_EPOCH), 'Infinity']) {
+      // Nothing of the value in the reply: not the digits (as sent or rounded), not a height, not
+      // an epoch.
+      for (const value of [BEYOND, LARGEST.slice(0, 16), FAR_HEIGHT, String(FAR_EPOCH)]) {
         expect(result.text).not.toContain(value);
       }
-      // The details are on stderr, under their own heading, cleaned and capped.
+      // The details are on stderr, under their own heading.
       const logged = errors.mock.calls.map((call) => String(call[0]));
       expect(logged).toHaveLength(1);
       expect(logged[0]?.startsWith(`${LOG}${place.logged}`)).toBe(true);
-      expect(logged[0]).not.toContain('9'.repeat(300));
       expect(logged[0]).not.toMatch(/unexpected internal error/);
     },
   );
+
+  it('cleans and caps the details on stderr, though the REST schema keeps a long value away', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    logUnusableTime(
+      new InvalidNetworkTimestampError(`${String.fromCodePoint(0x1b)}[2J${'9'.repeat(400)}`),
+      TEST_NODE_HOST,
+    );
+    const message = `invalid network timestamp: [2J${'9'.repeat(400)}`;
+    expect(errors.mock.calls.map((call) => String(call[0]))).toEqual([
+      `${LOG}InvalidNetworkTimestampError: ${message.slice(0, DEFAULT_MAX_UNTRUSTED_LENGTH)}…`,
+    ]);
+  });
 
   it.each(CALLS.map((place) => [`${place.tool} ${JSON.stringify(place.args)}`, place] as const))(
     'answers the same call when the times can be used: %s',

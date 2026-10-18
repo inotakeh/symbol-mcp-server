@@ -350,6 +350,26 @@ describe('symbol_account_rank', () => {
     expect(result.structuredContent).toBeUndefined();
   });
 
+  it('refuses a supply that does not fit in 64 bits, millions of digits included', async () => {
+    // The response cap lets one value have millions of digits, and up to 0.10.1 formatting them
+    // for the summary kept the server busy. The schema of the REST client refuses such a value.
+    for (const supply of ['18446744073709551616', '7'.repeat(4_000_000)]) {
+      const mosaic = fixture<{ mosaic: Record<string, unknown> }>('mainnet/mosaic-xym.json');
+      mosaic.mosaic.supply = supply;
+      server = await startTestServer({
+        routes: { ...mainnetRoutes(), [`GET /mosaics/${XYM_MOSAIC_ID}`]: mosaic },
+      });
+      const result = await server.callTool(TOOL, {});
+      expect(result.isError).toBe(true);
+      expect(result.text).toBe(
+        `Node ${TEST_NODE_HOST} returned an unexpected response shape for /mosaics/${XYM_MOSAIC_ID}. It may run an incompatible catapult-rest version; try another node.`,
+      );
+      expect(result.structuredContent).toBeUndefined();
+      await server.close();
+      server = undefined;
+    }
+  });
+
   it('gives a hinted error for an unknown account and for a bad identifier', async () => {
     server = await startTestServer({
       routes: {

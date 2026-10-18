@@ -5,7 +5,20 @@
  */
 import * as z from 'zod/v4';
 
-export const Uint64String = z.string().regex(/^\d+$/, 'expected a decimal uint64 string');
+/** The largest uint64, 2^64 - 1. */
+const MAX_UINT64 = 18_446_744_073_709_551_615n;
+
+/**
+ * A uint64 as catapult-rest writes it: a decimal string of at most 20 digits, at most 2^64 - 1.
+ * Anything else is no uint64, and refusing it here keeps an oversized number (the response cap lets
+ * one value have millions of digits) away from every tool. The length is checked first, so such a
+ * value is refused without reading it.
+ */
+export const Uint64String = z
+  .string()
+  .refine((value) => value.length <= 20 && /^\d+$/.test(value) && BigInt(value) <= MAX_UINT64, {
+    message: 'expected a decimal uint64 string',
+  });
 export const HexString = z.string().regex(/^[0-9A-Fa-f]*$/, 'expected hex');
 export const Hex16 = z.string().regex(/^[0-9A-Fa-f]{16}$/);
 export const Hex48 = z.string().regex(/^[0-9A-Fa-f]{48}$/);

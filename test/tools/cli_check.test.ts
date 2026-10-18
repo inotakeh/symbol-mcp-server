@@ -258,10 +258,10 @@ describe('runCheck against the fixture node', () => {
   });
 
   it('is WARN (exit 1), not a failed item, when the node time is no valid time', async () => {
-    // Any digits pass the uint64 schema; this value lies beyond the last date JavaScript knows.
+    // The largest uint64 passes the schema and lies beyond the last date JavaScript knows.
     const { ctx } = await createTestContext({
       routes: routes({
-        'GET /node/time': { communicationTimestamps: { sendTimestamp: '99999999999999999999' } },
+        'GET /node/time': { communicationTimestamps: { sendTimestamp: '18446744073709551615' } },
       }),
     });
     const report = await runCheck(ctx, { account: null, warnDays: 14 });

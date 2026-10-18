@@ -183,9 +183,9 @@ describe('symbol_transaction_status', () => {
 describe('symbol_transaction_status: a deadline that gives no date', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  // Any digits pass the schema of a deadline: beyond the last date, and too long for a number.
+  // The schema of a deadline accepts any uint64; these lie beyond the last date.
   const BEYOND = '9000000000000000';
-  const TOO_LONG = '9'.repeat(400);
+  const LARGEST = '18446744073709551615';
   const FAILED = `${STATUS_HASH_FAILED.slice(0, 8)}…`;
   const UNCONFIRMED = `${STATUS_HASH_UNCONFIRMED.slice(0, 8)}…`;
   const GET_HINT =
@@ -275,25 +275,20 @@ describe('symbol_transaction_status: a deadline that gives no date', () => {
     expect(result.text).not.toContain('symbol_transaction_get');
   });
 
-  it('gives the same text for a deadline too long for a number, and cuts it on stderr', async () => {
+  it('gives the same text for the largest deadline the schema accepts', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     server = await startTestServer({
-      routes: routesWithDeadlines({ [STATUS_HASH_FAILED]: TOO_LONG }),
+      routes: routesWithDeadlines({ [STATUS_HASH_FAILED]: LARGEST }),
     });
     const result = await status([STATUS_HASH_FAILED]);
     expect(result.isError).toBe(true);
     expect(result.text).toBe(
       `Node ${TEST_NODE_HOST} reports a deadline that cannot be shown as a date for transaction ${FAILED} (failed), so no status of this call could be returned. Call symbol_transaction_status again without that hash.${GET_HINT}`,
     );
-    expect(result.text).not.toContain('9'.repeat(16));
-    const logged = errors.mock.calls.map((c) => String(c[0]));
-    expect(logged).toHaveLength(1);
-    expect(
-      logged[0]?.startsWith(
-        `${LOG}InvalidNetworkTimestampError: invalid network timestamp: ${'9'.repeat(50)}`,
-      ),
-    ).toBe(true);
-    expect(logged[0]).not.toContain('9'.repeat(300));
+    expect(result.text).not.toContain(LARGEST.slice(0, 16));
+    expect(errors.mock.calls.map((c) => String(c[0]))).toEqual([
+      `${LOG}InvalidNetworkTimestampError: invalid network timestamp: ${LARGEST}`,
+    ]);
   });
 
   it('gives the general text when the epoch adjustment is what gives no date', async () => {
