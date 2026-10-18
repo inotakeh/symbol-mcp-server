@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-19
+
+> No MCP host restart is needed after upgrading: the tool and prompt definitions are the same as
+> in 0.10.1. `check` can exit 1 or 2 where it exited 0 or 1: when the node answers with a number
+> that does not fit in 64 bits, the item that reads that answer fails (`node_health` warns).
+
 ### Changed
 
 - A number the node sends as a decimal string (a height, a timestamp, an amount, a supply, a
@@ -904,7 +910,8 @@ Initial release candidate (0.1.0).
 - Every request has a timeout, a `User-Agent`, a 5 MB response cap and a concurrency limit of 4,
   and every response is schema-validated before use.
 
-[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/inotakeh/symbol-mcp-server/compare/v0.9.2...v0.9.3
