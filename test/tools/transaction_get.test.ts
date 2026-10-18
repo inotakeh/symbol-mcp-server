@@ -346,8 +346,9 @@ describe('symbol_transaction_get', () => {
 
   it('reports failed with its code whatever the deadline of the status row is', async () => {
     // symbol_transaction_status refuses a deadline that gives no date and points here for a
-    // failed transaction: this tool does not read the deadline of the status.
-    for (const deadline of ['9000000000000000', '9'.repeat(400)]) {
+    // failed transaction: this tool does not read the deadline of the status. These lie beyond the
+    // last date, up to the largest uint64, which the schema accepts.
+    for (const deadline of ['9000000000000000', '18446744073709551615']) {
       const hash = 'F'.repeat(64);
       server = await startTestServer({
         routes: statusRoutes(hash, {
@@ -363,7 +364,7 @@ describe('symbol_transaction_get', () => {
         transaction: null,
         failure: { code: 'Failure_Core_Insufficient_Balance', codeMeaning: BALANCE_MEANING },
       });
-      expect(result.text).not.toContain('9'.repeat(16));
+      expect(result.text).not.toContain(deadline.slice(0, 16));
       await server.close();
       server = undefined;
     }

@@ -324,8 +324,8 @@ describe('symbol_time_convert: a value too large to give a date', () => {
 
   it('blames the node, not the caller, when a block time the average is measured from cannot be used', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-    // Beyond the range of a date, and too long for a number.
-    for (const timestamp of ['9000000000000000', '9'.repeat(400)]) {
+    // Beyond the range of a date, up to the largest uint64, which the schema accepts.
+    for (const timestamp of ['9000000000000000', '18446744073709551615']) {
       const latest = fixture<{ block: Record<string, unknown> }>('mainnet/block-5763675.json');
       latest.block.timestamp = timestamp;
       server = await startTestServer({
@@ -341,14 +341,14 @@ describe('symbol_time_convert: a value too large to give a date', () => {
       await server.close();
       server = undefined;
     }
-    // The value goes to stderr, cleaned and capped: the long one is cut.
+    // The value goes to stderr, as the node sent it.
     const logged = errors.mock.calls.map((c) => String(c[0]));
     const prefix = `symbol-mcp-server: unusable time from node ${TEST_NODE_HOST}: InvalidNetworkTimestampError: invalid network timestamp: `;
-    expect(logged.slice(0, 2)).toEqual([`${prefix}9000000000000000`, `${prefix}9000000000000000`]);
-    expect(logged).toHaveLength(4);
-    for (const line of logged.slice(2)) {
-      expect(line.startsWith(`${prefix}${'9'.repeat(50)}`)).toBe(true);
-      expect(line).not.toContain('9'.repeat(300));
-    }
+    expect(logged).toEqual([
+      `${prefix}9000000000000000`,
+      `${prefix}9000000000000000`,
+      `${prefix}18446744073709551615`,
+      `${prefix}18446744073709551615`,
+    ]);
   });
 });

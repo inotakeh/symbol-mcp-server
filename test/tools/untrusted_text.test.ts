@@ -215,14 +215,14 @@ describe('other node strings', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     const chain = fixture<Record<string, unknown>>('mainnet/chain-info.json');
     server = await startTestServer({
-      // Digits pass the REST schema but overflow parseHeight, an internal error.
-      routes: routes({ 'GET /chain/info': { ...chain, height: '9'.repeat(30) } }),
+      // The largest uint64 passes the REST schema but overflows parseHeight, an internal error.
+      routes: routes({ 'GET /chain/info': { ...chain, height: '18446744073709551615' } }),
     });
     const result = await server.callTool('symbol_network_compare');
     expect(result.isError).toBe(false);
     const nodes = result.structuredContent?.nodes as Array<{ reachable: boolean; error: string }>;
     expect(nodes[0]).toMatchObject({ reachable: false, error: INTERNAL_ERROR_TEXT });
-    expect(result.text).not.toMatch(/9{20}/);
+    expect(result.text).not.toContain('18446744073709551615');
     expect(logged).toHaveBeenCalledWith(
       expect.stringMatching(/unexpected internal error \(own node [^)]+\): Error: invalid height/),
     );

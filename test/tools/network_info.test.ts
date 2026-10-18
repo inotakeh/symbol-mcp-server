@@ -83,14 +83,14 @@ describe('symbol_network_info', () => {
   it('keeps internal error details out of the reply and logs them to stderr', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const chain = fixture<{ height: string }>('mainnet/chain-info.json');
-    // Passes the REST schema (digits only) but overflows parseHeight -> internal Error.
-    chain.height = '99999999999999999999';
+    // The largest uint64 passes the REST schema but overflows parseHeight -> internal Error.
+    chain.height = '18446744073709551615';
     server = await startTestServer({ routes: { ...mainnetRoutes(), 'GET /chain/info': chain } });
     const result = await server.callTool('symbol_network_info');
     expect(result.isError).toBe(true);
     expect(result.text).toMatch(/Unexpected internal error while running the tool/);
     expect(result.text).not.toMatch(/invalid height/);
-    expect(result.text).not.toMatch(/99999999999999999999/);
+    expect(result.text).not.toContain('18446744073709551615');
     const logged = errorSpy.mock.calls.flat().map(String).join('\n');
     expect(logged).toMatch(/unexpected internal error: Error: invalid height/);
   });

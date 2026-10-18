@@ -34,9 +34,10 @@ export function formatAmount(raw: string | number | bigint, divisibility: number
 /**
  * Inserts thousands separators into the integer part of a formatted amount, for prose only:
  * groupThousands('23237.845492') -> '23,237.845492'. Never used for JSON or CSV values.
- * The digits come from the node, and Uint64String (client/schemas.ts) does not limit their number,
- * so the groups are cut in one pass: the usual lookahead /\B(?=(\d{3})+(?!\d))/g goes back over the
- * remaining digits from every position, in time that grows with the square of their number.
+ * The groups are cut in one pass, whatever the number of digits: the usual lookahead
+ * /\B(?=(\d{3})+(?!\d))/g goes back over the remaining digits from every position, in time that
+ * grows with the square of their number. A node amount has at most 20 digits (Uint64String in
+ * client/schemas.ts), but a sum or a product of amounts can have more.
  */
 export function groupThousands(formatted: string): string {
   const match = /^(-?)(\d+)(\.\d+)?$/.exec(formatted);

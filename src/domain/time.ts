@@ -18,11 +18,12 @@ export interface Instant {
 export const MAX_DATE_MS = 8_640_000_000_000_000;
 
 /**
- * A network timestamp that gives no valid time. A node may send any uint64: one too long for a
- * number, or one beyond the last date JavaScript knows. A caller that can answer without the time
- * catches this error (symbol_node_status makes the check concerned unknown), and
- * symbol_transaction_status catches it to name the transactions concerned; for any other caller
- * describeError says that the node returned a time that cannot be shown as a date.
+ * A network timestamp that gives no valid time. A node may send any uint64, up to 2^64 - 1 ms, far
+ * beyond the last date JavaScript knows (a value too long for a number, which the REST schema
+ * refuses, is caught here too). A caller that can answer without the time catches this error
+ * (symbol_node_status makes the check concerned unknown), and symbol_transaction_status catches it
+ * to name the transactions concerned; for any other caller describeError says that the node
+ * returned a time that cannot be shown as a date.
  */
 export class InvalidNetworkTimestampError extends Error {
   constructor(timestampMs: string | number | bigint) {
