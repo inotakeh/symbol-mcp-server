@@ -365,6 +365,134 @@ describe('extractTransactionDetails', () => {
     expect(fields.proof).toHaveLength(257);
   });
 
+  it('types an amount, a duration, a supply delta and a restriction value only as a uint64', () => {
+    const MAX_UINT64 = '18446744073709551615';
+    const MOSAIC = '66BAE04E8758599E';
+    // Every typed kind with a number the node writes as a decimal string, and the fields it is in.
+    const cases: Array<{
+      kind: string;
+      tx: Record<string, unknown> & { type: number };
+      numbers: string[];
+    }> = [
+      {
+        kind: 'namespaceRegistration',
+        tx: {
+          type: 0x414e,
+          id: 'A95F1F8A96159516',
+          name: 'symbol',
+          registrationType: 0,
+          duration: '2102400',
+        },
+        numbers: ['duration'],
+      },
+      {
+        kind: 'mosaicDefinition',
+        tx: { type: 0x414d, id: MOSAIC, nonce: 12, flags: 7, divisibility: 3, duration: '0' },
+        numbers: ['duration'],
+      },
+      {
+        kind: 'mosaicSupplyChange',
+        tx: { type: 0x424d, mosaicId: MOSAIC, delta: '1000', action: 1 },
+        numbers: ['delta'],
+      },
+      {
+        kind: 'mosaicSupplyRevocation',
+        tx: { type: 0x434d, sourceAddress: HEX_ADDRESS, mosaicId: MOSAIC, amount: '5' },
+        numbers: ['amount'],
+      },
+      {
+        kind: 'hashLock',
+        tx: { type: 0x4148, mosaicId: MOSAIC, amount: '10000000', duration: '480', hash: KEY },
+        numbers: ['amount', 'duration'],
+      },
+      {
+        kind: 'secretLock',
+        tx: {
+          type: 0x4152,
+          recipientAddress: HEX_ADDRESS,
+          secret: KEY,
+          mosaicId: MOSAIC,
+          amount: '1',
+          duration: '10',
+          hashAlgorithm: 1,
+        },
+        numbers: ['amount', 'duration'],
+      },
+      {
+        kind: 'mosaicAddressRestriction',
+        tx: {
+          type: 0x4251,
+          mosaicId: MOSAIC,
+          restrictionKey: '00000000000000FF',
+          previousRestrictionValue: '0',
+          newRestrictionValue: '1',
+          targetAddress: HEX_ADDRESS,
+        },
+        numbers: ['previousRestrictionValue', 'newRestrictionValue'],
+      },
+      {
+        kind: 'mosaicGlobalRestriction',
+        tx: {
+          type: 0x4151,
+          mosaicId: MOSAIC,
+          referenceMosaicId: '0000000000000000',
+          restrictionKey: '00000000000000FF',
+          previousRestrictionValue: '0',
+          newRestrictionValue: '1',
+          previousRestrictionType: 0,
+          newRestrictionType: 1,
+        },
+        numbers: ['previousRestrictionValue', 'newRestrictionValue'],
+      },
+    ];
+    for (const { kind, tx, numbers } of cases) {
+      expect(details(tx).kind, kind).toBe(kind);
+      for (const field of numbers) {
+        const at = `${kind}.${field}`;
+        // The largest uint64 keeps the typed shape.
+        expect(details({ ...tx, [field]: MAX_UINT64 }), at).toMatchObject({
+          kind,
+          [field]: MAX_UINT64,
+        });
+        // One more, 20 digits above it, or 21 digits: no uint64, so the kind has no typed shape.
+        for (const value of [
+          '18446744073709551616',
+          '99999999999999999999',
+          `1${'0'.repeat(20)}`,
+          '0'.repeat(21),
+        ]) {
+          expect(details({ ...tx, [field]: value }), `${at} = ${value}`).toMatchObject({
+            kind: 'other',
+            fields: { [field]: value },
+          });
+        }
+      }
+    }
+  });
+
+  it('cuts a number of millions of digits, which the response cap allows, like any other text', () => {
+    const hashLock = {
+      type: 0x4148,
+      mosaicId: '6BED913FA20223F8',
+      amount: '7'.repeat(4_000_000),
+      duration: '480',
+      hash: KEY,
+    };
+    expect(details(hashLock)).toEqual({
+      kind: 'other',
+      fields: {
+        mosaicId: '6BED913FA20223F8',
+        amount: `${'7'.repeat(256)}…`,
+        duration: '480',
+        hash: KEY,
+      },
+    });
+    // Counted like any text of kind other: nothing was removed, the value was only cut.
+    const count = new UntrustedText();
+    details(hashLock, count);
+    expect(count.removed).toBe(0);
+  });
+
   it('cleans the field names of kind other and keeps at most MAX_OTHER_FIELDS of them', () => {
     const at = (codePoint: number) => String.fromCodePoint(codePoint);
     const tx: Record<string, unknown> & { type: number } = {

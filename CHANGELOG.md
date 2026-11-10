@@ -7,6 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Transaction details (`symbol_transaction_get`, `symbol_transaction_search`) accept an amount, a
+  duration, a supply delta or a mosaic restriction value only when it fits in 64 bits: at most 20
+  digits, and at most 18446744073709551615. 0.10.2 set this limit for the numbers the node sends
+  as decimal strings, but these fields of a namespace registration, a mosaic definition, a mosaic
+  supply change or revocation, a hash lock, a secret lock and a mosaic restriction were left out:
+  they were accepted with any number of digits and shown as sent, so one such number could add
+  millions of digits to an answer (the server kept answering: these numbers are not formatted). A
+  transaction with such a value is now shown with the cleaned fields of kind `other`, where the
+  value is cut at 256 characters like any other text from the node.
+
 ## [0.10.2] - 2026-10-19
 
 > No MCP host restart is needed after upgrading: the tool and prompt definitions are the same as

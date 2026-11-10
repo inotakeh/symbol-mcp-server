@@ -495,6 +495,57 @@ describe('symbol_transaction_get', () => {
     expect(tx.message.messageText).toBe(longText);
   });
 
+  it('gives typed details only for a number that fits in 64 bits, and cuts one of millions of digits', async () => {
+    const MOSAIC = '6BED913FA20223F8';
+    // The captured transfer, turned into a hash lock. TransactionBodySchema is loose and does not
+    // look at the fields of a hash lock, so the details are where its amount is checked.
+    const hashLock = (amount: string) => {
+      const info = fixture<{ transaction: Record<string, unknown> }>(
+        'mainnet/transaction-transfer.json',
+      );
+      const { recipientAddress: _recipient, mosaics: _mosaics, ...common } = info.transaction;
+      info.transaction = {
+        ...common,
+        type: 0x4148,
+        mosaicId: MOSAIC,
+        amount,
+        duration: '480',
+        hash: AGGREGATE_HASH,
+      };
+      return info;
+    };
+    const fields = { mosaicId: MOSAIC, duration: '480', hash: AGGREGATE_HASH };
+    const MAX_UINT64 = '18446744073709551615';
+    const TWO_TO_THE_64 = '18446744073709551616';
+    // The response cap allows one value to have millions of digits.
+    const digits = '7'.repeat(4_000_000);
+    const cases: Array<[string, Record<string, unknown>]> = [
+      [MAX_UINT64, { kind: 'hashLock', ...fields, amount: MAX_UINT64 }],
+      [TWO_TO_THE_64, { kind: 'other', fields: { ...fields, amount: TWO_TO_THE_64 } }],
+      [digits, { kind: 'other', fields: { ...fields, amount: `${'7'.repeat(256)}…` } }],
+    ];
+    for (const [amount, details] of cases) {
+      server = await startTestServer({
+        routes: {
+          ...mainnetRoutes(),
+          [`GET /transactions/confirmed/${TRANSFER_HASH}`]: hashLock(amount),
+        },
+      });
+      const result = await server.callTool('symbol_transaction_get', {
+        transactionHash: TRANSFER_HASH,
+      });
+      expect(result.isError, result.text.slice(0, 300)).toBe(false);
+      const tx = result.structuredContent?.transaction as Record<string, unknown>;
+      expect(tx.type).toEqual({ code: 16712, name: 'HashLock' });
+      expect(tx.details).toEqual(details);
+      // Neither the text block nor the structured answer carries more of the number than that.
+      expect(result.text).not.toContain('7'.repeat(257));
+      expect(JSON.stringify(result.structuredContent)).not.toContain('7'.repeat(257));
+      await server.close();
+      server = undefined;
+    }
+  });
+
   it('rejects malformed hashes with a hint and without contacting the node', async () => {
     server = await startTestServer();
     const before = server.requests.length;
