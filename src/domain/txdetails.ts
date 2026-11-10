@@ -15,17 +15,21 @@
  *
  * Fields are only accepted in the form the REST API documents, so nothing else reaches the typed
  * output: scopedMetadataKey (MetadataKey) and restrictionKey (RestrictionKeyHex) are exactly 16 hex
- * digits, the voting key of a VotingKeyLink (VotingKey) is 64, and account restriction values are
- * an address (48 hex), a mosaic id (16 hex) or a transaction type code.
+ * digits, the voting key of a VotingKeyLink (VotingKey) is 64, account restriction values are an
+ * address (48 hex), a mosaic id (16 hex) or a transaction type code, and an amount, a duration, a
+ * supply delta or a mosaic restriction value is a uint64 (Uint64String, the schema of every number
+ * the node writes as a decimal string: at most 20 digits, at most 2^64 - 1). TransactionBodySchema
+ * reads the body loosely, so these numbers are checked here and nowhere before: one that is no
+ * uint64 fails the typed shape, and in kind "other" it is cut like any text the node writes.
  */
 import * as z from 'zod/v4';
+import { Uint64String } from '../client/schemas.js';
 import { hexAddressToBase32, hexToBytes } from './address.js';
 import { cleanUntrusted, type UntrustedText } from './sanitize.js';
 
 const Hex16 = z.string().regex(/^[0-9A-Fa-f]{16}$/);
 const Hex48 = z.string().regex(/^[0-9A-Fa-f]{48}$/);
 const Hex64 = z.string().regex(/^[0-9A-Fa-f]{64}$/);
-const Uint64 = z.string().regex(/^\d+$/);
 
 /**
  * Longest SecretProof proof in hex: catbuffer declares `proof_size = uint16`, so a proof has at most
@@ -245,7 +249,7 @@ const namespaceRegistration = z.object({
   // Untrusted: cleaned after parsing, through the call's UntrustedText (not in the schema).
   name: z.string(),
   registrationType,
-  duration: Uint64.optional(),
+  duration: Uint64String.optional(),
   parentId: upperHex16.optional(),
 });
 const mosaicDefinition = z.object({
@@ -253,13 +257,17 @@ const mosaicDefinition = z.object({
   nonce: z.number().int(),
   flags: z.number().int(),
   divisibility: z.number().int(),
-  duration: Uint64,
+  duration: Uint64String,
 });
-const mosaicSupplyChange = z.object({ mosaicId: upperHex16, delta: Uint64, action: supplyAction });
+const mosaicSupplyChange = z.object({
+  mosaicId: upperHex16,
+  delta: Uint64String,
+  action: supplyAction,
+});
 const mosaicSupplyRevocation = z.object({
   sourceAddress: address,
   mosaicId: upperHex16,
-  amount: Uint64,
+  amount: Uint64String,
 });
 const addressAlias = z.object({
   namespaceId: upperHex16,
@@ -273,16 +281,16 @@ const mosaicAlias = z.object({
 });
 const hashLock = z.object({
   mosaicId: upperHex16,
-  amount: Uint64,
-  duration: Uint64,
+  amount: Uint64String,
+  duration: Uint64String,
   hash: upperHex64,
 });
 const secretLock = z.object({
   recipientAddress: address,
   secret: upperHex64,
   mosaicId: upperHex16,
-  amount: Uint64,
-  duration: Uint64,
+  amount: Uint64String,
+  duration: Uint64String,
   hashAlgorithm: named(HASH_ALGORITHMS),
 });
 const secretProof = z.object({
@@ -321,16 +329,16 @@ const accountRestriction = z.object({
 const mosaicAddressRestriction = z.object({
   mosaicId: upperHex16,
   restrictionKey: upperHex16,
-  previousRestrictionValue: Uint64,
-  newRestrictionValue: Uint64,
+  previousRestrictionValue: Uint64String,
+  newRestrictionValue: Uint64String,
   targetAddress: address,
 });
 const mosaicGlobalRestriction = z.object({
   mosaicId: upperHex16,
   referenceMosaicId: upperHex16,
   restrictionKey: upperHex16,
-  previousRestrictionValue: Uint64,
-  newRestrictionValue: Uint64,
+  previousRestrictionValue: Uint64String,
+  newRestrictionValue: Uint64String,
   previousRestrictionType: named(RESTRICTION_TYPES),
   newRestrictionType: named(RESTRICTION_TYPES),
 });
